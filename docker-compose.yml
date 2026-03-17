@@ -1,0 +1,108 @@
+services:
+  frontend:
+    container_name: gestao-metas-frontend
+    build:
+      context: ./Front
+      dockerfile: Dockerfile
+      target: dev
+    environment:
+      # Dentro da rede do Compose o frontend deve falar com o servico backend.
+      NEXT_PUBLIC_API_URL: http://backend:3001
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      # Bind mount do codigo para hot reload.
+      - ./Front:/app
+      # Volumes nomeados evitam conflito entre modulos Linux do container e Windows local.
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    restart: unless-stopped
+    networks:
+      - app_net
+
+  backend:
+    container_name: gestao-metas-backend
+    build:
+      context: ./Back
+      dockerfile: Dockerfile
+      target: dev
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+
+      # Placeholders de banco/integracoes para voce ajustar depois.
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-app_user}
+      DB_PASSWORD: ${DB_PASSWORD:-change_me}
+      DB_NAME: ${DB_NAME:-gestao_metas}
+      DB_CONNECT_STRING: ${DB_CONNECT_STRING:-oracle-host:1521/service_name}
+      ADMIN_RESET_TOKEN: ${ADMIN_RESET_TOKEN:-change_me}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
+      N8N_ATIVACAO_WEBHOOK: ${N8N_ATIVACAO_WEBHOOK:-}
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./Back:/app
+      - backend_node_modules:/app/node_modules
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - app_net
+
+  mysql:
+    container_name: gestao-metas-mysql
+    image: mysql:8.4
+    environment:
+      # Banco base para desenvolvimento local. Ajuste se quiser alinhar com producao.
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gestao_metas}
+      MYSQL_USER: ${MYSQL_USER:-app_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - app_net
+
+    # Placeholder util para evolucao futura:
+    # quando voce quiser adicionar um servico Oracle, Redis, fila ou observabilidade,
+    # mantenha a mesma separacao por responsabilidade usada aqui.
+
+networks:
+  app_net:
+    driver: bridge
+
+volumes:
+  frontend_node_modules:
+  frontend_next:
+  backend_node_modules:
+  mysql_data:

@@ -1,0 +1,15 @@
+# Evita enviar dependências e build local para o daemon do Docker.
+node_modules
+.next
+npm-debug.log*
+
+# Segredos e configurações locais ficam fora da imagem.
+.env
+.env.*
+
+# Arquivos auxiliares gerados localmente.
+coverage
+tsconfig.tsbuildinfo
+.git
+.gitignore
+Dockerfile*

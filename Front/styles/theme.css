@@ -1,0 +1,106 @@
+:root,
+:root.dark {
+  --background: hsl(224 34% 7%);
+  --foreground: hsl(210 20% 98%);
+  --card: hsl(222 28% 10%);
+  --card-foreground: hsl(210 20% 98%);
+  --popover: hsl(222 28% 10%);
+  --popover-foreground: hsl(210 20% 98%);
+  --primary: hsl(145 70% 42%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(221 28% 15%);
+  --secondary-foreground: hsl(210 20% 98%);
+  --muted: hsl(221 22% 22%);
+  --muted-foreground: hsl(216 18% 67%);
+  --accent: hsl(152 62% 48%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(0 72% 51%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(221 24% 20%);
+  --input: hsl(221 24% 20%);
+  --ring: hsl(145 70% 42%);
+  --warning: hsl(38 92% 50%);
+  --warning-foreground: hsl(0 0% 100%);
+  --success: hsl(142 70% 45%);
+  --success-foreground: hsl(0 0% 100%);
+  --info: hsl(160 60% 56%);
+  --chart-1: hsl(145 70% 42%);
+  --chart-2: hsl(160 60% 56%);
+  --chart-3: hsl(38 92% 50%);
+  --chart-4: hsl(155 53% 36%);
+  --chart-5: hsl(0 72% 51%);
+  --radius: 0.625rem;
+  --sidebar: hsl(224 34% 9%);
+  --sidebar-foreground: hsl(210 20% 98%);
+  --sidebar-primary: hsl(220 83% 56%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(221 28% 15%);
+  --sidebar-accent-foreground: hsl(210 20% 98%);
+  --sidebar-border: hsl(221 24% 20%);
+  --sidebar-ring: hsl(220 83% 56%);
+  --bg-primary: #08101d;
+  --bg-card: #0f1726;
+  --text-primary: #f1f5f9;
+  --border-color: #243247;
+  --shell-bg: linear-gradient(180deg, #060910 0%, #0a1020 100%);
+  --shell-surface: rgba(9, 14, 24, 0.92);
+  --shell-surface-strong: rgba(8, 11, 20, 0.96);
+  --shell-panel: rgba(255, 255, 255, 0.04);
+  --shell-panel-strong: rgba(255, 255, 255, 0.07);
+  --shell-card: rgba(7, 10, 17, 0.45);
+  --shell-border: rgba(74, 222, 128, 0.16);
+  --shell-text: #f8fafc;
+  --shell-muted: rgba(226, 232, 240, 0.72);
+  --shell-subtle: rgba(148, 163, 184, 0.68);
+  --shell-grid: rgba(74, 222, 128, 0.05);
+  --shell-shadow: 0 24px 80px rgba(1, 4, 13, 0.42);
+}
+
+.theme-shell {
+  background: var(--shell-bg);
+  color: var(--shell-text);
+}
+
+.theme-shell-surface {
+  background: var(--shell-surface);
+  border-color: var(--shell-border);
+  box-shadow: var(--shell-shadow);
+}
+
+.theme-shell-surface-strong {
+  background: var(--shell-surface-strong);
+  border-color: var(--shell-border);
+}
+
+.theme-shell-panel {
+  background: var(--shell-panel);
+  border-color: var(--shell-border);
+}
+
+.theme-shell-panel-strong {
+  background: var(--shell-panel-strong);
+  border-color: var(--shell-border);
+}
+
+.theme-shell-card {
+  background: var(--shell-card);
+  border-color: var(--shell-border);
+}
+
+.theme-shell-text {
+  color: var(--shell-text);
+}
+
+.theme-shell-muted {
+  color: var(--shell-muted);
+}
+
+.theme-shell-subtle {
+  color: var(--shell-subtle);
+}
+
+.theme-shell-grid {
+  background-image:
+    linear-gradient(var(--shell-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--shell-grid) 1px, transparent 1px);
+}

@@ -1,0 +1,14 @@
+# Dependências locais não devem ir para o contexto do build.
+node_modules
+npm-debug.log*
+
+# Arquivos de ambiente ficam fora da imagem.
+.env
+.env.*
+
+# Artefatos e diretórios gerados localmente.
+uploads
+coverage
+.git
+.gitignore
+Dockerfile*
