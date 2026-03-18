@@ -1,9 +1,8 @@
 # 🚀 SIP - Gestao de Metas
 
-<img width="1342" height="931" alt="image" src="https://github.com/user-attachments/assets/c99beb15-bb7f-43e5-87f1-8403de413baa" />
-
-
 Sistema de inteligencia comercial para acompanhamento de metas, ranking de vendedores, leitura gerencial e ativacao de carteira.
+
+<img width="1342" height="931" alt="image" src="https://github.com/user-attachments/assets/c99beb15-bb7f-43e5-87f1-8403de413baa" />
 
 ## ✨ Visao geral
 
