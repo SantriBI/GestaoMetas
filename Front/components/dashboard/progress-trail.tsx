@@ -77,9 +77,6 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
         </div>
         <div className="flex items-center justify-center gap-2">
           <Car className="h-5 w-5 text-primary" />
-          <h3 className="text-center font-semibold text-muted-foreground">
-            Trilha de Progresso - {viewMode === "diario" ? "Diario" : "Mensal"}
-          </h3>
         </div>
       </div>
 
@@ -88,7 +85,7 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-white/45">Ritmo de corrida</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Do 4o lugar em diante, cada vendedor segue vivo na disputa por volta mais forte.
+              Do 4° lugar em diante, cada vendedor segue vivo na disputa.
             </p>
           </div>
           <div className="rounded-full border border-emerald-400/18 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200">

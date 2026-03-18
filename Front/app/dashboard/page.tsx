@@ -334,7 +334,7 @@ export default function DashboardPage() {
                     <h2 className="text-xl font-semibold text-foreground">Ranking da equipe</h2>
                   </div>
                   <p className="max-w-xl text-sm text-muted-foreground">
-                    Toque em um vendedor para abrir o panorama detalhado e entender ritmo, saldo e potencial.
+                    Toque em um vendedor para abrir o panorama detalhado e entender ritmo, receita e potencial.
                   </p>
                 </div>
                 <RankingTable vendedores={vendedores} viewMode={viewMode} />
@@ -349,7 +349,7 @@ export default function DashboardPage() {
                     Grand Prix de Vendas
                   </h2>
                   <span className="rounded-full border border-emerald-400/18 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200">
-                    Visao de corrida e disputa
+                    Visao da disputa
                   </span>
                 </div>
 
