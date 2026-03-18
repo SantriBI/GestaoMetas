@@ -1,6 +1,9 @@
-# 📈 SIP - Gestao de Metas
+# 🚀 SIP - Gestao de Metas
 
-Sistema interno de inteligencia comercial para acompanhamento de metas, ranking de vendedores, leitura gerencial e ativacao de carteira.
+<img width="1342" height="931" alt="image" src="https://github.com/user-attachments/assets/c99beb15-bb7f-43e5-87f1-8403de413baa" />
+
+
+Sistema de inteligencia comercial para acompanhamento de metas, ranking de vendedores, leitura gerencial e ativacao de carteira.
 
 ## ✨ Visao geral
 
@@ -292,5 +295,5 @@ Pelo codigo atual e pelos arquivos de infraestrutura, o projeto espera ao menos:
 
 ## 🚀 Resumo final
 
-O SIP e uma plataforma interna para acompanhar performance comercial com foco em meta, ranking, carteira, ativacao e cultura do time. A base tecnica combina `Next.js` no frontend com `Express` no backend e forte dependencia de dados vindos do `Oracle`.
+O SIP e uma plataforma para acompanhar performance comercial com foco em meta, ranking, carteira, ativacao e cultura do time. A base tecnica combina `Next.js` no frontend com `Express` no backend e forte dependencia de dados vindos do `Oracle`.
 
