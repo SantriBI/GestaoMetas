@@ -2,6 +2,7 @@
 
 import { useRankingVendedores } from "@/hooks/useRankingVendedores"
 import { useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
   Target,
@@ -62,19 +63,18 @@ export default function LandingPage() {
             </span>
           </div>
 
-          <div className="hidden items-center gap-8 md:flex">
-            <a href="#recursos" className="text-sm text-white/60 transition-colors hover:text-white">
-              Recursos
-            </a>
-            <a href="#como-funciona" className="text-sm text-white/60 transition-colors hover:text-white">
-              Como Funciona
-            </a>
-            <a href="#ranking" className="text-sm text-white/60 transition-colors hover:text-white">
-              Ranking
-            </a>
-            <a href="#ajuda" className="text-sm text-white/60 transition-colors hover:text-white">
-              Ajuda
-            </a>
+          <div className="hidden items-center md:flex">
+            <Link
+              href="/como-funciona"
+              className="animate-beacon-glow group relative inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-[linear-gradient(135deg,rgba(11,59,46,0.92),rgba(34,197,94,0.92))] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_12px_34px_rgba(34,197,94,0.24)] transition-all hover:-translate-y-0.5 hover:brightness-110"
+            >
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-200/80 opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
+              </span>
+              Como funciona
+              <Sparkles className="h-4 w-4 transition-transform group-hover:rotate-12" />
+            </Link>
           </div>
 
           <button
@@ -353,4 +353,3 @@ export default function LandingPage() {
     </div>
   )
 }
-

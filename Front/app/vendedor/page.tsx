@@ -74,6 +74,8 @@ interface OportunidadesData {
   }>
 }
 
+type ActiveView = "jornada" | "ataque" | "cliente" | null
+
 function formatDateBR(dateString: string | Date) {
   const d = new Date(dateString)
   return d.toLocaleDateString("pt-BR")
@@ -147,8 +149,12 @@ export default function VendedorDashboard() {
   const [empresaId, setEmpresaId] = useState<string | number | null>(null)
   const [skVendedor, setSkVendedor] = useState<string | number | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [activeView, setActiveView] = useState<ActiveView>(null)
+  const [journeyAnimationCycle, setJourneyAnimationCycle] = useState(0)
+  const [isJourneyButtonPressed, setIsJourneyButtonPressed] = useState(false)
   const [confettiActive, setConfettiActive] = useState(false)
   const confettiCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const jornadaSectionRef = useRef<HTMLDivElement | null>(null)
   const hasPlayedConfettiRef = useRef(false)
 
   useEffect(() => {
@@ -355,6 +361,21 @@ export default function VendedorDashboard() {
     }
   }, [confettiActive, vendedor])
 
+  useEffect(() => {
+    if (activeView !== "jornada") {
+      return
+    }
+
+    const scrollTimeout = window.setTimeout(() => {
+      jornadaSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+    }, 120)
+
+    return () => window.clearTimeout(scrollTimeout)
+  }, [activeView])
+
 
   if (!vendedor) {
     return (
@@ -460,6 +481,17 @@ export default function VendedorDashboard() {
     return "Ainda dá tempo de subir no ranking 🚀 Vamos acelerar as vendas!"
   }
 
+  const getJourneyAnimationStyle = (delayMs: number) =>
+    activeView === "jornada"
+      ? {
+          animationName: "journey-drop-in",
+          animationDuration: "860ms",
+          animationTimingFunction: "cubic-bezier(0.2, 0.8, 0.22, 1.04)",
+          animationFillMode: "both" as const,
+          animationDelay: `${delayMs}ms`,
+        }
+      : undefined
+
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_24%),radial-gradient(circle_at_78%_18%,rgba(245,158,11,0.08),transparent_22%),linear-gradient(135deg,rgba(8,16,29,1),rgba(9,14,24,1)_45%,rgba(13,22,36,1))]">
       {confettiActive ? (
@@ -539,65 +571,110 @@ export default function VendedorDashboard() {
               </div>
             </div>
 
-            <div className="grid w-full max-w-3xl gap-3 lg:grid-cols-2">
+            <div className="grid w-full max-w-4xl gap-3 lg:grid-cols-3">
               <button
                 type="button"
-                onClick={() => router.push("/area-ataque")}
-                className="group block w-full overflow-hidden rounded-[26px] border border-emerald-400/18 bg-[linear-gradient(135deg,rgba(34,197,94,0.18),rgba(74,222,128,0.08),rgba(20,83,45,0.16))] p-[1px] text-left shadow-[0_14px_34px_rgba(34,197,94,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(34,197,94,0.18)]"
+                onClick={() => {
+                  setIsJourneyButtonPressed(true)
+                  setActiveView((prev) => {
+                    if (prev === "jornada") {
+                      return null
+                    }
+                    setJourneyAnimationCycle((cycle) => cycle + 1)
+                    return "jornada"
+                  })
+                  window.setTimeout(() => setIsJourneyButtonPressed(false), 180)
+                }}
+                className={`group block w-full overflow-hidden rounded-[26px] border text-left transition-all duration-300 hover:-translate-y-0.5 ${
+                  activeView === "jornada"
+                    ? "border-sky-300/35 bg-[linear-gradient(135deg,rgba(14,165,233,0.16),rgba(59,130,246,0.1),rgba(15,23,42,0.2))] shadow-[0_16px_38px_rgba(37,99,235,0.2)]"
+                    : "border-white/10 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(56,189,248,0.06),rgba(15,23,42,0.18))] shadow-[0_14px_34px_rgba(37,99,235,0.12)] hover:border-sky-300/24 hover:shadow-[0_18px_42px_rgba(37,99,235,0.18)]"
+                } ${isJourneyButtonPressed ? "scale-[0.985] shadow-[0_0_0_1px_rgba(125,211,252,0.28),0_0_36px_rgba(56,189,248,0.22)]" : "scale-100"}`}
               >
-                <div className="rounded-[24px] bg-[linear-gradient(135deg,rgba(7,12,19,0.96),rgba(7,14,23,0.94))] px-4 py-3.5">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/25 via-emerald-400/15 to-lime-500/20 text-emerald-100 transition-transform duration-300 group-hover:scale-105">
-                      <Swords className="h-5.5 w-5.5" />
+                <div className="flex items-start gap-3 px-4 py-3.5">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400/28 via-blue-400/18 to-cyan-300/16 text-sky-50 transition-transform duration-300 group-hover:scale-105">
+                    <TrendingUp className="h-5.5 w-5.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Target className="h-3.5 w-3.5 text-sky-300" />
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-100/70">
+                        Ação principal
+                      </span>
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Crosshair className="h-3.5 w-3.5 text-emerald-300" />
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/50">
-                          Funcionalidade principal
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-lg font-black tracking-tight text-white">
-                        Área de Ataque
-                      </p>
-                      <p className="mt-1 text-sm leading-snug text-white/72">
-                        Descubra onde agir agora para vender mais.
-                      </p>
-                      <p className="mt-2 text-[11px] leading-snug text-emerald-200/80">
-                        Veja onde estão suas melhores oportunidades de venda.
-                      </p>
-                    </div>
+                    <p className="mt-1.5 text-lg font-black tracking-tight text-white">
+                      Minha Jornada
+                    </p>
+                    <p className="mt-1 text-sm leading-snug text-white/78">
+                      Abra sua visão completa de performance e prioridades do dia.
+                    </p>
+                    <p className="mt-2 text-[11px] leading-snug text-sky-200/85">
+                      Meta, missão, oportunidades e carteira em um só fluxo.
+                    </p>
                   </div>
                 </div>
               </button>
 
               <button
                 type="button"
-                onClick={() => router.push("/investigar-cliente")}
-                className="group block w-full overflow-hidden rounded-[26px] border border-emerald-400/14 bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(34,197,94,0.08),rgba(15,23,42,0.18))] p-[1px] text-left shadow-[0_14px_34px_rgba(16,185,129,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_18px_42px_rgba(16,185,129,0.18)]"
+                onClick={() => {
+                  setActiveView("ataque")
+                  router.push("/area-ataque")
+                }}
+                className="group block w-full overflow-hidden rounded-[26px] border border-white/10 bg-[linear-gradient(135deg,rgba(34,197,94,0.14),rgba(74,222,128,0.07),rgba(15,23,42,0.18))] text-left shadow-[0_14px_34px_rgba(34,197,94,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-300/22 hover:shadow-[0_18px_42px_rgba(34,197,94,0.16)]"
               >
-                <div className="rounded-[24px] bg-[linear-gradient(135deg,rgba(11,12,24,0.96),rgba(8,13,26,0.94))] px-4 py-3.5">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/22 via-teal-400/16 to-lime-500/16 text-emerald-100 transition-transform duration-300 group-hover:scale-105">
-                      <Search className="h-5.5 w-5.5" />
+                <div className="flex items-start gap-3 px-4 py-3.5">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/22 via-emerald-400/14 to-lime-500/16 text-emerald-100 transition-transform duration-300 group-hover:scale-105">
+                    <Swords className="h-5.5 w-5.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Crosshair className="h-3.5 w-3.5 text-emerald-300" />
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/50">
+                        Funcionalidade principal
+                      </span>
                     </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Search className="h-3.5 w-3.5 text-emerald-300" />
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/50">
-                          Análise de cliente
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-lg font-black tracking-tight text-white">
-                        Investigar Cliente
-                      </p>
-                      <p className="mt-1 text-sm leading-snug text-white/72">
-                        Pesquise qualquer cliente e descubra o que faz sentido ofertar.
-                      </p>
-                      <p className="mt-2 text-[11px] leading-snug text-emerald-200/78">
-                        Entenda RFV, histórico, produtos preferidos e comportamento de compra.
-                      </p>
+                    <p className="mt-1.5 text-lg font-black tracking-tight text-white">
+                      Área de Ataque
+                    </p>
+                    <p className="mt-1 text-sm leading-snug text-white/72">
+                      Descubra onde agir agora para vender mais.
+                    </p>
+                    <p className="mt-2 text-[11px] leading-snug text-emerald-200/80">
+                      Veja onde estão suas melhores oportunidades de venda.
+                    </p>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveView("cliente")
+                  router.push("/investigar-cliente")
+                }}
+                className="group block w-full overflow-hidden rounded-[26px] border border-white/10 bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(34,197,94,0.08),rgba(15,23,42,0.18))] text-left shadow-[0_14px_34px_rgba(16,185,129,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-300/20 hover:shadow-[0_18px_42px_rgba(16,185,129,0.18)]"
+              >
+                <div className="flex items-start gap-3 px-4 py-3.5">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/22 via-teal-400/16 to-lime-500/16 text-emerald-100 transition-transform duration-300 group-hover:scale-105">
+                    <Search className="h-5.5 w-5.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Search className="h-3.5 w-3.5 text-emerald-300" />
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/50">
+                        Análise de cliente
+                      </span>
                     </div>
+                    <p className="mt-1.5 text-lg font-black tracking-tight text-white">
+                      Investigar Cliente
+                    </p>
+                    <p className="mt-1 text-sm leading-snug text-white/72">
+                      Pesquise qualquer cliente e descubra o que faz sentido ofertar.
+                    </p>
+                    <p className="mt-2 text-[11px] leading-snug text-emerald-200/78">
+                      Entenda RFV, histórico, produtos preferidos e comportamento de compra.
+                    </p>
                   </div>
                 </div>
               </button>
@@ -605,14 +682,21 @@ export default function VendedorDashboard() {
           </div>
         </section>
 
-        <RankingAlerts
-          role="VENDEDOR"
-          empresaId={empresaId}
-          skVendedor={skVendedor}
-        />
+        <div className={activeView === "jornada" ? "space-y-10" : "hidden"} aria-hidden={activeView !== "jornada"}>
+          <RankingAlerts
+            role="VENDEDOR"
+            empresaId={empresaId}
+            skVendedor={skVendedor}
+          />
 
-        {/* META */}
-        <section className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(12,18,29,0.92))] p-8 shadow-[0_12px_32px_rgba(0,0,0,0.22)] transition-transform duration-300 hover:-translate-y-1">
+          {/* META */}
+          <div
+            ref={jornadaSectionRef}
+            key={`journey-meta-${journeyAnimationCycle}`}
+            className="transform-gpu will-change-transform"
+            style={getJourneyAnimationStyle(0)}
+          >
+            <section className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(12,18,29,0.92))] p-8 shadow-[0_12px_32px_rgba(0,0,0,0.22)] transition-transform duration-300 hover:-translate-y-1">
           <div className="flex justify-between items-end">
             <div>
               <p className="text-sm text-muted-foreground">Meta do mês</p>
@@ -676,10 +760,16 @@ export default function VendedorDashboard() {
               </div>
             </section>
 
-        </section>
+            </section>
+          </div>
 
           {/* MISSÃO DO DIA */}
-          <section className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.38),rgba(88,28,12,0.24),rgba(15,23,42,0.92))] p-6 shadow-[0_10px_28px_rgba(120,53,15,0.18)] transition-transform duration-300 hover:-translate-y-1">
+          <div
+            key={`journey-missao-${journeyAnimationCycle}`}
+            className="transform-gpu will-change-transform"
+            style={getJourneyAnimationStyle(100)}
+          >
+            <section className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.38),rgba(88,28,12,0.24),rgba(15,23,42,0.92))] p-6 shadow-[0_10px_28px_rgba(120,53,15,0.18)] transition-transform duration-300 hover:-translate-y-1">
             <div className="flex items-center gap-3">
               <Zap className="h-5 w-5 text-amber-300" />
               <h3 className="font-semibold text-amber-100">Missão do Dia</h3>
@@ -780,10 +870,16 @@ export default function VendedorDashboard() {
                 </div>
               </section>
 
-          </section>
+            </section>
+          </div>
           
           {/* DICAS - FAIXA AZUL */}
-          <section className="rounded-2xl border border-emerald-400/18 bg-[linear-gradient(135deg,rgba(8,31,20,0.62),rgba(15,23,42,0.9),rgba(34,197,94,0.08))] px-6 py-4 shadow-[0_8px_24px_rgba(16,185,129,0.14)] transition-transform duration-300 hover:-translate-y-1">
+          <div
+            key={`journey-janela-${journeyAnimationCycle}`}
+            className="transform-gpu will-change-transform"
+            style={getJourneyAnimationStyle(200)}
+          >
+            <section className="rounded-2xl border border-emerald-400/18 bg-[linear-gradient(135deg,rgba(8,31,20,0.62),rgba(15,23,42,0.9),rgba(34,197,94,0.08))] px-6 py-4 shadow-[0_8px_24px_rgba(16,185,129,0.14)] transition-transform duration-300 hover:-translate-y-1">
             <div className="flex items-start gap-3">
                
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/16">
@@ -815,12 +911,17 @@ export default function VendedorDashboard() {
               </div>
 
             </div>
-          </section>
+            </section>
+          </div>
 
 
-        {/* DINHEIRO EM JOGO */}
-                  
-        <section className="rounded-3xl border border-amber-400/20 bg-[linear-gradient(140deg,rgba(245,158,11,0.12),rgba(15,23,42,0.92),rgba(120,53,15,0.18))] p-8 shadow-[0_10px_30px_rgba(245,158,11,0.12)] transition-transform duration-300 hover:-translate-y-1">
+          {/* DINHEIRO EM JOGO */}
+          <div
+            key={`journey-dinheiro-${journeyAnimationCycle}`}
+            className="transform-gpu will-change-transform"
+            style={getJourneyAnimationStyle(300)}
+          >
+            <section className="rounded-3xl border border-amber-400/20 bg-[linear-gradient(140deg,rgba(245,158,11,0.12),rgba(15,23,42,0.92),rgba(120,53,15,0.18))] p-8 shadow-[0_10px_30px_rgba(245,158,11,0.12)] transition-transform duration-300 hover:-translate-y-1">
           <h3 className="font-bold text-xl mb-1">💰 Dinheiro em Jogo</h3>
           <p className="text-muted-foreground text-sm mb-6">
             Oportunidades abertas que podem virar venda
@@ -872,9 +973,15 @@ export default function VendedorDashboard() {
             </div>
           </div>
 
-        </section>
+            </section>
+          </div>
 
-        <section className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(11,18,32,0.94))] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
+          <div
+            key={`journey-tabela-${journeyAnimationCycle}`}
+            className="transform-gpu will-change-transform"
+            style={getJourneyAnimationStyle(400)}
+          >
+            <section className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(11,18,32,0.94))] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
           <button
             type="button"
             onClick={() => setIsTabelaOportunidadesOpen((prev) => !prev)}
@@ -1114,7 +1221,33 @@ export default function VendedorDashboard() {
               </div>
             </div>
           )}
-        </section>
+            </section>
+          </div>
+        </div>
+        <style jsx>{`
+          @keyframes journey-drop-in {
+            0% {
+              opacity: 0;
+              transform: translate3d(0, -42px, 0) scale(0.982);
+            }
+            58% {
+              opacity: 1;
+              transform: translate3d(0, 10px, 0) scale(1);
+            }
+            76% {
+              opacity: 1;
+              transform: translate3d(0, -3px, 0) scale(1);
+            }
+            90% {
+              opacity: 1;
+              transform: translate3d(0, 2px, 0) scale(1);
+            }
+            100% {
+              opacity: 1;
+              transform: translate3d(0, 0, 0) scale(1);
+            }
+          }
+        `}</style>
 
         {/* FOOTER */}
         <footer className="flex justify-between border-t border-white/10 pt-6 text-sm text-muted-foreground">
