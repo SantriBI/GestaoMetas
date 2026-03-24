@@ -265,6 +265,34 @@ copy .env.docker.example .env
 docker compose up --build
 ```
 
+#### Como trocar as portas
+
+Se quiser mudar as portas do ambiente Docker no futuro, ajuste o arquivo `.env` na raiz usando estas variaveis:
+
+```bash
+FRONTEND_PORT=3000
+FRONTEND_HOST_PORT=3000
+BACKEND_PORT=3001
+BACKEND_HOST_PORT=3001
+MYSQL_HOST_PORT=3306
+```
+
+Exemplo:
+
+```bash
+FRONTEND_PORT=4000
+FRONTEND_HOST_PORT=4000
+BACKEND_PORT=4001
+BACKEND_HOST_PORT=4001
+MYSQL_HOST_PORT=3307
+```
+
+Depois disso, suba novamente:
+
+```bash
+docker compose up --build
+```
+
 ## 🔐 Variaveis esperadas
 
 Pelo codigo atual e pelos arquivos de infraestrutura, o projeto espera ao menos:

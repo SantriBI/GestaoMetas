@@ -7,11 +7,12 @@ services:
       target: dev
     environment:
       # Dentro da rede do Compose o frontend deve falar com o servico backend.
-      NEXT_PUBLIC_API_URL: http://backend:3001
+      NEXT_PUBLIC_API_URL: http://backend:${BACKEND_PORT:-3001}
       NODE_ENV: development
+      PORT: ${FRONTEND_PORT:-3000}
       WATCHPACK_POLLING: "true"
     ports:
-      - "3000:3000"
+      - "${FRONTEND_HOST_PORT:-3000}:${FRONTEND_PORT:-3000}"
     volumes:
       # Bind mount do codigo para hot reload.
       - ./Front:/app
@@ -22,7 +23,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000)).then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -39,7 +40,7 @@ services:
       target: dev
     environment:
       NODE_ENV: development
-      PORT: 3001
+      PORT: ${BACKEND_PORT:-3001}
 
       # Placeholders de banco/integracoes para voce ajustar depois.
       DB_HOST: mysql
@@ -53,7 +54,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
       N8N_ATIVACAO_WEBHOOK: ${N8N_ATIVACAO_WEBHOOK:-}
     ports:
-      - "3001:3001"
+      - "${BACKEND_HOST_PORT:-3001}:${BACKEND_PORT:-3001}"
     volumes:
       - ./Back:/app
       - backend_node_modules:/app/node_modules
@@ -61,7 +62,7 @@ services:
       mysql:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3001) + '/api/health').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -80,7 +81,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
     ports:
-      - "3306:3306"
+      - "${MYSQL_HOST_PORT:-3306}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:

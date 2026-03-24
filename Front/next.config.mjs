@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
-const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001").replace(/\/$/, "")
+const backendPort = process.env.NEXT_PUBLIC_BACKEND_PORT || process.env.BACKEND_PORT || "3001"
+const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || `http://localhost:${backendPort}`).replace(/\/$/, "")
 
 const nextConfig = {
   output: "standalone",
