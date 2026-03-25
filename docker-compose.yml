@@ -42,7 +42,7 @@ services:
       NODE_ENV: development
       PORT: ${BACKEND_PORT:-3001}
 
-      # Placeholders de banco/integracoes para voce ajustar depois.
+      # Placeholders de banco/integracoes para ajustar depois.
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: ${DB_USER:-app_user}
@@ -75,7 +75,7 @@ services:
     container_name: gestao-metas-mysql
     image: mysql:8.4
     environment:
-      # Banco base para desenvolvimento local. Ajuste se quiser alinhar com producao.
+      # Banco base para desenvolvimento local. 
       MYSQL_DATABASE: ${MYSQL_DATABASE:-gestao_metas}
       MYSQL_USER: ${MYSQL_USER:-app_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me}
@@ -94,9 +94,6 @@ services:
     networks:
       - app_net
 
-    # Placeholder util para evolucao futura:
-    # quando voce quiser adicionar um servico Oracle, Redis, fila ou observabilidade,
-    # mantenha a mesma separacao por responsabilidade usada aqui.
 
 networks:
   app_net:
