@@ -69,7 +69,7 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
   }
 
   return (
-    <div className="mt-8">
+    <div className="mt-8 h-auto overflow-visible">
       <div className="mb-6 flex flex-col items-center gap-3 text-center sm:mb-8">
         <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">
           <Flag className="h-3.5 w-3.5" />
@@ -80,7 +80,7 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
         </div>
       </div>
 
-      <div className="mb-5 overflow-hidden rounded-2xl border border-white/8 bg-[linear-gradient(90deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01))] p-3">
+      <div className="mb-5 overflow-visible rounded-2xl border border-white/8 bg-[linear-gradient(90deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01))] p-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-white/45">Ritmo de corrida</p>

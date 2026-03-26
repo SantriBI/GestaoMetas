@@ -70,6 +70,10 @@ interface InvestigacaoClienteData {
   ultimas_compras: UltimaCompraItem[]
 }
 
+interface SessionUser {
+  role?: string | null
+}
+
 function formatarData(value?: string | Date | number | null) {
   if (!value) return "-"
 
@@ -163,6 +167,12 @@ function obterIconeRfv(classificacao?: string | null) {
   return <Sparkles className="h-6 w-6" />
 }
 
+function getHomeRoute(user: SessionUser | null) {
+  if (user?.role === "GERENTE") return "/dashboard"
+  if (user?.role === "VENDEDOR") return "/vendedor"
+  return "/login"
+}
+
 export default function InvestigarClientePage() {
   const router = useRouter()
   const [busca, setBusca] = useState("")
@@ -171,6 +181,8 @@ export default function InvestigarClientePage() {
   const [dados, setDados] = useState<InvestigacaoClienteData | null>(null)
   const tonalidadeRfv = obterTonalidadeRfv(dados?.rfv.classificacao)
   const iconeRfv = obterIconeRfv(dados?.rfv.classificacao)
+  const userStr = typeof window !== "undefined" ? sessionStorage.getItem("user") : null
+  const user = userStr ? (JSON.parse(userStr) as SessionUser) : null
 
   function normalizarDocumento(valor: string) {
     return valor.replace(/\D/g, "").slice(0, 14)
@@ -260,7 +272,7 @@ export default function InvestigarClientePage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => router.push("/vendedor")}
+              onClick={() => router.push(getHomeRoute(user))}
               className="theme-shell-panel inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm theme-shell-muted transition-colors hover:bg-[var(--shell-panel-strong)] hover:text-[var(--shell-text)]"
             >
               <ArrowLeft className="h-4 w-4" />
