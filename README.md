@@ -209,6 +209,51 @@ Existe uma configuracao antiga em `Front/styles/globals.css` priorizando `Geist`
 
 ## ▶️ Como rodar localmente
 
+## Pre-requisitos
+
+Antes de subir o projeto, garanta estes itens:
+
+- `Node.js 22` e `npm`
+- Acesso a uma base `Oracle`, que hoje e a dependencia principal do sistema
+- Variaveis de ambiente configuradas para backend e frontend
+- Portas `3000` e `3001` livres para o modo padrao
+
+### Pre-requisitos principais
+
+- `Node.js 22`: referencia mais segura para desenvolvimento local
+- `npm`: usado para instalar dependencias e rodar frontend e backend
+- `Oracle` acessivel: o backend depende dele para autenticacao, ranking, vendedor, carteira e outras leituras de negocio
+
+### Variaveis de ambiente mais importantes
+
+As variaveis abaixo sao as principais para o ambiente funcionar sem surpresas:
+
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_CONNECT_STRING`
+- `ADMIN_RESET_TOKEN`
+- `NEXT_PUBLIC_API_URL`
+
+### Variaveis adicionais por funcionalidade
+
+Dependendo dos modulos usados, estas tambem podem ser necessarias:
+
+- `DB_NAME`
+- `DB_HOST`
+- `DB_PORT`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `MYSQL_DATABASE`
+- `MYSQL_USER`
+- `MYSQL_PASSWORD`
+- `MYSQL_ROOT_PASSWORD`
+
+### Observacoes praticas
+
+- Sem acesso ao `Oracle`, boa parte das telas e APIs nao vai responder com os dados esperados
+- O `MySQL` aparece como apoio de infraestrutura local, mas o `Oracle` segue como a dependencia mais critica
+- No modo padrao, o frontend roda em `http://localhost:3000` e o backend em `http://localhost:3001`
+
 ### Opcao 1: manual
 
 #### Backend
