@@ -24,8 +24,8 @@
           <p className="mt-1 text-sm text-white/58">
             {lastCampaignId
               ? `Rascunho #${lastCampaignId} salvo.`
-              : "VocÃª pode guardar o rascunho ou seguir para os envios agora."}
-            {lastSendStatus ? ` Ãšltima aÃ§Ã£o: ${lastSendStatus}.` : ""}
+               : "Você pode guardar o rascunho ou seguir para os envios agora."}
+            {lastSendStatus ? ` Última ação: ${lastSendStatus}.` : ""}
           </p>
         </div>
 

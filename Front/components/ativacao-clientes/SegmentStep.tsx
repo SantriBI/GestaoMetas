@@ -29,9 +29,9 @@ type SegmentVisual = {
 
 const SEGMENT_VISUALS: Record<string, SegmentVisual> = {
   campeoes: {
-    title: "CampeÃµes",
+    title: "Campeões",
     description: "Clientes de alto valor que compram frequentemente",
-    eyebrow: "Alta recorrÃªncia",
+    eyebrow: "Alta recorrência",
     icon: Trophy,
     accent: "#d4a63c",
     accentSoft: "rgba(212,166,60,0.14)",
@@ -40,8 +40,8 @@ const SEGMENT_VISUALS: Record<string, SegmentVisual> = {
     defaults: { total: 72, withPhone: 72, withoutPhone: 0 },
   },
   fieis: {
-    title: "Clientes FiÃ©is",
-    description: "Clientes leais com bom histÃ³rico de compras",
+    title: "Clientes Fiéis",
+    description: "Clientes leais com bom histórico de compras",
     eyebrow: "Relacionamento forte",
     icon: Users,
     accent: "#22c55e",
@@ -53,7 +53,7 @@ const SEGMENT_VISUALS: Record<string, SegmentVisual> = {
   promissores: {
     title: "Promissores",
     description: "Novos clientes com potencial de crescimento",
-    eyebrow: "Potencial em expansÃ£o",
+    eyebrow: "Potencial em expansão",
     icon: TrendingUp,
     accent: "#f59e0b",
     accentSoft: "rgba(245,158,11,0.14)",
@@ -63,8 +63,8 @@ const SEGMENT_VISUALS: Record<string, SegmentVisual> = {
   },
   em_risco: {
     title: "Em Risco",
-    description: "Clientes que diminuÃ­ram a frequÃªncia de compras",
-    eyebrow: "RecuperaÃ§Ã£o urgente",
+    description: "Clientes que diminuíram a frequência de compras",
+    eyebrow: "Recuperação urgente",
     icon: AlertTriangle,
     accent: "#f97316",
     accentSoft: "rgba(249,115,22,0.14)",
@@ -74,7 +74,7 @@ const SEGMENT_VISUALS: Record<string, SegmentVisual> = {
   },
   hibernando: {
     title: "Hibernando",
-    description: "Clientes inativos hÃ¡ muito tempo",
+    description: "Clientes inativos há muito tempo",
     eyebrow: "Carteira adormecida",
     icon: MoonStar,
     accent: "#64748b",
@@ -84,8 +84,8 @@ const SEGMENT_VISUALS: Record<string, SegmentVisual> = {
     defaults: { total: 0, withPhone: 0, withoutPhone: 0 },
   },
   orcamento: {
-    title: "OrÃ§amento em Aberto",
-    description: "Clientes com orÃ§amentos nos Ãºltimos 30 dias",
+    title: "Orçamento em Aberto",
+    description: "Clientes com orçamentos nos últimos 30 dias",
     eyebrow: "Janela comercial quente",
     icon: ClipboardList,
     accent: "#14b8a6",
@@ -101,7 +101,7 @@ function resolveSegmentVisual(segment: ActivationSegment): SegmentVisual {
     SEGMENT_VISUALS[segment.id] ?? {
       title: segment.titulo,
       description: segment.descricao,
-      eyebrow: segment.audienceType === "orcamento" ? "Oportunidade" : "Segmento estratÃ©gico",
+      eyebrow: segment.audienceType === "orcamento" ? "Oportunidade" : "Segmento estratégico",
       icon: Users,
       accent: "#22c55e",
       accentSoft: "rgba(34,197,94,0.16)",
@@ -115,6 +115,10 @@ function resolveSegmentVisual(segment: ActivationSegment): SegmentVisual {
 function statValue(value: number | undefined, fallback: number, isLoading: boolean) {
   if (typeof value === "number") return value
   return isLoading ? "..." : fallback
+}
+
+function formatStat(value: number | string) {
+  return typeof value === "number" ? value.toLocaleString("pt-BR") : value
 }
 
 export function SegmentStep({
@@ -154,29 +158,41 @@ export function SegmentStep({
               Selecione o Segmento
             </h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[#9d9d9d] md:text-base">
-              Escolha o grupo de clientes que deseja ativar via WhatsApp. A recomendaÃ§Ã£o visual ajuda a identificar
-              mais rÃ¡pido onde existe melhor oportunidade de resposta.
+              Escolha o grupo de clientes que deseja ativar via WhatsApp. A recomendação visual ajuda a identificar
+              mais rápido onde existe melhor oportunidade de resposta.
             </p>
           </div>
 
           <div className="rounded-[26px] border border-[#232323] bg-[linear-gradient(180deg,rgba(18,18,18,0.96),rgba(10,10,10,0.96))] p-5">
             <p className="text-[11px] uppercase tracking-[0.2em] text-[#8fb4ff]">Segmento atual</p>
-            <p className="mt-3 text-xl font-bold text-white">{selectedMeta?.title ?? "Escolha um pÃºblico"}</p>
+            <p className="mt-3 text-xl font-bold text-white">{selectedMeta?.title ?? "Escolha um público"}</p>
             <p className="mt-2 text-sm leading-6 text-[#919191]">
-              {selectedMeta?.description ?? "Ao selecionar um card, mostramos um resumo rÃ¡pido e liberamos o prÃ³ximo passo."}
+              {selectedMeta?.description ?? "Ao selecionar um card, mostramos um resumo rápido e liberamos o próximo passo."}
             </p>
             <div className="mt-4 grid grid-cols-3 gap-2">
               <div className="rounded-2xl border border-[#222] bg-[#141414] p-3">
                 <p className="text-[10px] uppercase tracking-[0.16em] text-[#7f7f7f]">Total</p>
-                <p className="mt-2 text-xl font-black text-white">{selectedSummary?.total_clientes ?? "--"}</p>
+                <p className="mt-2 text-xl font-black text-white">
+                  {typeof selectedSummary?.total_clientes === "number"
+                    ? selectedSummary.total_clientes.toLocaleString("pt-BR")
+                    : "--"}
+                </p>
               </div>
               <div className="rounded-2xl border border-[#22335a] bg-[#0d1526] p-3">
                 <p className="text-[10px] uppercase tracking-[0.16em] text-[#8fb4ff]">Com Tel.</p>
-                <p className="mt-2 text-xl font-black text-[#8fb4ff]">{selectedSummary?.total_com_telefone ?? "--"}</p>
+                <p className="mt-2 text-xl font-black text-[#8fb4ff]">
+                  {typeof selectedSummary?.total_com_telefone === "number"
+                    ? selectedSummary.total_com_telefone.toLocaleString("pt-BR")
+                    : "--"}
+                </p>
               </div>
               <div className="rounded-2xl border border-[#3b2a10] bg-[#21180d] p-3">
                 <p className="text-[10px] uppercase tracking-[0.16em] text-[#f59e0b]">Sem Tel.</p>
-                <p className="mt-2 text-xl font-black text-[#f59e0b]">{selectedSummary?.total_sem_telefone ?? "--"}</p>
+                <p className="mt-2 text-xl font-black text-[#f59e0b]">
+                  {typeof selectedSummary?.total_sem_telefone === "number"
+                    ? selectedSummary.total_sem_telefone.toLocaleString("pt-BR")
+                    : "--"}
+                </p>
               </div>
             </div>
           </div>
@@ -245,25 +261,25 @@ export function SegmentStep({
                     <p className="mt-2 min-h-[3rem] text-sm leading-6 text-[#a3a3a3]">{visual.description}</p>
                   </div>
 
-                  <div className="relative mt-6 grid grid-cols-3 gap-3 border-t border-[#242424] pt-4">
+                  <div className="relative mt-6 grid grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,0.82fr)] gap-4 border-t border-[#242424] pt-4">
                     <div className="rounded-2xl border border-[#222222] bg-[#181818] px-3 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a5a5a5]">Total</p>
-                      <p className="mt-2 text-[2rem] font-black leading-none text-white">
-                        {statValue(summary?.total_clientes, visual.defaults.total, isLoading)}
+                      <p className="mt-2 text-[1.8rem] font-black leading-none tabular-nums text-white">
+                        {formatStat(statValue(summary?.total_clientes, visual.defaults.total, isLoading))}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl bg-transparent px-1 py-3">
+                    <div className="min-w-0 rounded-2xl bg-transparent px-1 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8fb4ff]">Com Tel.</p>
-                      <p className="mt-2 text-[2rem] font-black leading-none text-[#8fb4ff]">
-                        {statValue(summary?.total_com_telefone, visual.defaults.withPhone, isLoading)}
+                      <p className="mt-2 text-[1.8rem] font-black leading-none tabular-nums text-[#8fb4ff]">
+                        {formatStat(statValue(summary?.total_com_telefone, visual.defaults.withPhone, isLoading))}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl bg-transparent px-1 py-3">
+                    <div className="min-w-0 rounded-2xl bg-transparent px-1 py-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#f59e0b]">Sem Tel.</p>
-                      <p className="mt-2 text-[2rem] font-black leading-none text-[#f59e0b]">
-                        {statValue(summary?.total_sem_telefone, visual.defaults.withoutPhone, isLoading)}
+                      <p className="mt-2 text-[1.8rem] font-black leading-none tabular-nums text-[#f59e0b]">
+                        {formatStat(statValue(summary?.total_sem_telefone, visual.defaults.withoutPhone, isLoading))}
                       </p>
                     </div>
                   </div>
@@ -284,13 +300,13 @@ export function SegmentStep({
           </div>
 
           <aside className="rounded-[28px] border border-[#232323] bg-[linear-gradient(180deg,rgba(18,18,18,0.98),rgba(10,10,10,0.98))] p-5">
-            <p className="text-[11px] uppercase tracking-[0.2em] text-[#8fb4ff]">Guia rÃ¡pido</p>
+            <p className="text-[11px] uppercase tracking-[0.2em] text-[#8fb4ff]">Guia rápido</p>
             <h3 className="mt-3 text-xl font-bold text-white">Como escolher melhor</h3>
             <div className="mt-5 space-y-4">
               <div className="rounded-2xl border border-[#202020] bg-[#121212] p-4">
-                <p className="text-sm font-semibold text-white">1. Priorize intenÃ§Ã£o</p>
+                <p className="text-sm font-semibold text-white">1. Priorize intenção</p>
                 <p className="mt-2 text-sm leading-6 text-[#929292]">
-                  Segmentos com histÃ³rico recente ou orÃ§amento aberto tendem a responder mais rÃ¡pido.
+                  Segmentos com histórico recente ou orçamento aberto tendem a responder mais rápido.
                 </p>
               </div>
               <div className="rounded-2xl border border-[#202020] bg-[#121212] p-4">
@@ -300,9 +316,9 @@ export function SegmentStep({
                 </p>
               </div>
               <div className="rounded-2xl border border-[#202020] bg-[#121212] p-4">
-                <p className="text-sm font-semibold text-white">3. Avance com confianÃ§a</p>
+                <p className="text-sm font-semibold text-white">3. Avance com confiança</p>
                 <p className="mt-2 text-sm leading-6 text-[#929292]">
-                  No prÃ³ximo passo vocÃª poderÃ¡ personalizar a mensagem antes de revisar os contatos.
+                  No próximo passo você poderá personalizar a mensagem antes de revisar os contatos.
                 </p>
               </div>
             </div>
@@ -312,8 +328,8 @@ export function SegmentStep({
               <p className="mt-2 text-base font-bold text-white">{selectedMeta?.title ?? "Escolha um segmento"}</p>
               <p className="mt-2 text-sm leading-6 text-[#d6e5ff]">
                 {selectedMeta
-                  ? `Esse pÃºblico tem ${selectedSummary?.total_com_telefone ?? 0} clientes prontos para contato via WhatsApp.`
-                  : "Ao selecionar um segmento, mostramos aqui um resumo comercial rÃ¡pido para orientar sua decisÃ£o."}
+                  ? `Esse público tem ${(selectedSummary?.total_com_telefone ?? 0).toLocaleString("pt-BR")} clientes prontos para contato via WhatsApp.`
+                  : "Ao selecionar um segmento, mostramos aqui um resumo comercial rápido para orientar sua decisão."}
               </p>
             </div>
           </aside>
@@ -326,7 +342,7 @@ export function SegmentStep({
           onClick={onBack}
           className="rounded-full border border-[#2a2a2a] bg-transparent px-5 py-3 text-sm font-semibold text-[#d4d4d4] transition-colors hover:border-[#3a3a3a] hover:bg-[#141414]"
         >
-          â† Voltar
+          ← Voltar
         </button>
 
         <button
@@ -335,7 +351,7 @@ export function SegmentStep({
           disabled={!selectedSegment}
           className="rounded-full bg-[linear-gradient(135deg,#0b3b2e,#22c55e)] px-6 py-3 text-sm font-bold text-white transition-all hover:translate-y-[-1px] hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Continuar â†’
+          Continuar →
         </button>
       </div>
     </section>

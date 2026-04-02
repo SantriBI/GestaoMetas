@@ -88,7 +88,7 @@ export function MessageStep({
           </div>
 
           <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-white/45">VariÃ¡veis rÃ¡pidas</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-white/45">Variáveis rápidas</p>
             <div className="mt-3 flex flex-wrap gap-3">
               {VARIABLES.map((token) => (
                 <button
@@ -109,9 +109,9 @@ export function MessageStep({
           <div className="mt-5 rounded-[28px] border border-white/10 bg-[#0e1726] p-4 shadow-inner shadow-black/20">
             <div className="rounded-[24px] bg-[#111b21] p-4">
               <div className="rounded-[22px] rounded-tl-md bg-[linear-gradient(135deg,#16305f,#16a34a)] px-4 py-3 text-sm leading-7 text-white shadow-[0_16px_40px_rgba(0,0,0,0.18)]">
-                <p className="font-semibold text-emerald-50">{sampleClient?.nome_cliente ?? "JoÃ£o Silva"}</p>
+                <p className="font-semibold text-emerald-50">{sampleClient?.nome_cliente ?? "João Silva"}</p>
                 <p className="mt-3 whitespace-pre-wrap">
-                  {preview || "A mensagem aparecerÃ¡ aqui assim que vocÃª comeÃ§ar a escrever."}
+                  {preview || "A mensagem aparecerá aqui assim que você começar a escrever."}
                 </p>
               </div>
             </div>

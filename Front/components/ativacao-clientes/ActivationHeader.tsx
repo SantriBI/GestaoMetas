@@ -1,7 +1,7 @@
 ﻿import { BarChart3, MessageSquareShare, Send, UsersRound } from "lucide-react"
 
 const STEPS = [
-  { id: "audiencia", label: "Escolher pÃºblico", icon: UsersRound },
+  { id: "audiencia", label: "Escolher público", icon: UsersRound },
   { id: "mensagem", label: "Criar mensagem", icon: MessageSquareShare },
   { id: "preview", label: "Revisar", icon: BarChart3 },
   { id: "envio", label: "Enviar", icon: Send },
@@ -19,13 +19,13 @@ export function ActivationHeader({
       <div className="flex flex-col gap-8 xl:flex-row xl:items-end xl:justify-between">
         <div className="max-w-3xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-200">
-            Central de AtivaÃ§Ã£o
+            Central de Ativação
           </div>
           <h1 className="mt-5 text-4xl font-black tracking-tight text-white md:text-6xl">
             Reative clientes com campanhas mais vivas e comerciais
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-white/64">
-            Escolha o pÃºblico certo, ajuste sua abordagem e saia com uma campanha pronta para
+            Escolha o público certo, ajuste sua abordagem e saia com uma campanha pronta para
             contato pelo WhatsApp em poucos minutos.
           </p>
         </div>

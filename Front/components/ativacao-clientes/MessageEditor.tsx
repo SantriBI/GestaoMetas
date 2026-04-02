@@ -18,7 +18,7 @@ export function MessageEditor({
         <p className="text-xs uppercase tracking-[0.24em] text-white/42">2. Mensagem</p>
         <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Editor comercial</h2>
         <p className="mt-2 text-sm text-white/60">
-          Ajuste o texto no seu tom. A prÃ©via ao lado mostra como a abordagem vai chegar para o cliente.
+          Ajuste o texto no seu tom. A prévia ao lado mostra como a abordagem vai chegar para o cliente.
         </p>
       </div>
 
@@ -39,13 +39,13 @@ export function MessageEditor({
             {sampleClient?.nome_cliente ?? "Selecione um cliente"}
           </h3>
           <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-white/74">
-            {preview || "A mensagem aparecerÃ¡ aqui assim que vocÃª comeÃ§ar a editar."}
+            {preview || "A mensagem aparecerá aqui assim que você começar a editar."}
           </p>
 
           <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-white/45">Dica de conversÃ£o</p>
+            <p className="text-xs uppercase tracking-[0.16em] text-white/45">Dica de conversão</p>
             <p className="mt-2 text-sm leading-6 text-white/66">
-              Mensagens curtas, pessoais e com uma aÃ§Ã£o clara tendem a performar melhor no WhatsApp.
+              Mensagens curtas, pessoais e com uma ação clara tendem a performar melhor no WhatsApp.
             </p>
           </div>
         </div>

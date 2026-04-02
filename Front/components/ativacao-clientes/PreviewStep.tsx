@@ -43,7 +43,7 @@ export function PreviewStep({
           <p className="text-xs uppercase tracking-[0.24em] text-white/42">3. Preview</p>
           <h2 className="text-3xl font-black tracking-tight text-white">Revise quem vai entrar na campanha</h2>
           <p className="text-sm text-white/60">
-            Ajuste a seleÃ§Ã£o final antes de gerar os links do WhatsApp.
+            Ajuste a seleção final antes de gerar os links do WhatsApp.
           </p>
         </div>
 
@@ -68,7 +68,7 @@ export function PreviewStep({
 
       <div className="mt-6 grid gap-4 md:grid-cols-4">
         <PreviewCard label="Total de clientes" value={summary?.total_clientes ?? 0} />
-        <PreviewCard label="Com telefone vÃ¡lido" value={summary?.total_com_telefone ?? 0} tone="blue" />
+        <PreviewCard label="Com telefone válido" value={summary?.total_com_telefone ?? 0} tone="blue" />
         <PreviewCard label="Sem telefone" value={summary?.total_sem_telefone ?? 0} tone="amber" />
         <PreviewCard label="Prontos para envio" value={selectedIds.length} tone="sky" />
       </div>
@@ -78,7 +78,7 @@ export function PreviewStep({
           <div>
             <p className="text-sm font-semibold text-white">Lista de clientes</p>
             <p className="mt-1 text-sm text-white/58">
-              {clients.length} clientes carregados. Em listas maiores, vocÃª pode abrir sÃ³ quando precisar.
+              {clients.length} clientes carregados. Em listas maiores, você pode abrir só quando precisar.
             </p>
           </div>
 
@@ -92,7 +92,7 @@ export function PreviewStep({
 
             <label className="flex items-center gap-3 text-sm text-white/70">
               <input type="checkbox" checked={allSelected} onChange={(event) => onToggleAll(event.target.checked)} />
-              Selecionar todos vÃ¡lidos
+              Selecionar todos válidos
             </label>
 
             <button
@@ -116,9 +116,9 @@ export function PreviewStep({
                   <th className="px-4 py-4">Selecionar</th>
                   <th className="px-4 py-4">Cliente</th>
                   <th className="px-4 py-4">Telefone</th>
-                  <th className="px-4 py-4">Ãšltima compra</th>
+                  <th className="px-4 py-4">Última compra</th>
                   <th className="px-4 py-4">Total compras</th>
-                  <th className="px-4 py-4">AÃ§Ã£o</th>
+                  <th className="px-4 py-4">Ação</th>
                 </tr>
               </thead>
               <tbody>
@@ -144,7 +144,7 @@ export function PreviewStep({
                       <td className="px-4 py-4 text-white">
                         <p className="font-semibold">{client.nome_cliente ?? "-"}</p>
                         <p className="mt-1 text-xs text-white/45">
-                          {disabled ? "Sem telefone vÃ¡lido" : "Pronto para contato"}
+                          {disabled ? "Sem telefone válido" : "Pronto para contato"}
                         </p>
                       </td>
                       <td className="px-4 py-4 text-white/72">{client.telefone ?? "Sem telefone"}</td>

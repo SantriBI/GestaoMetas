@@ -34,14 +34,14 @@ export function ActivationStepper({
         <div className="max-w-2xl">
           <div className="inline-flex items-center gap-2 rounded-full border border-[#22335a] bg-[#0d1526] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-[#8fb4ff]">
             <Sparkles className="h-3.5 w-3.5" />
-            Campanha de reativaÃ§Ã£o
+            Campanha de reativação
           </div>
           <h1 className="mt-4 text-3xl font-black tracking-tight text-white md:text-4xl">
             Ative clientes pelo WhatsApp com uma jornada simples e elegante
           </h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-[#a1a1a1] md:text-base">
             Escolha um segmento, personalize a mensagem e revise tudo antes do envio. O fluxo foi desenhado para
-            ser rÃ¡pido, claro e comercial.
+            ser rápido, claro e comercial.
           </p>
         </div>
 

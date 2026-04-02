@@ -78,12 +78,12 @@ export function SendStep({
               <p><span className="text-white">Segmento:</span> {segmentLabel}</p>
               <p><span className="text-white">Clientes selecionados:</span> {selectedCount}</p>
               <p><span className="text-white">Caracteres da mensagem:</span> {message.length}</p>
-              <p><span className="text-white">Campanha:</span> {lastCampaignId ? `#${lastCampaignId}` : "Ainda nÃ£o confirmada"}</p>
+              <p><span className="text-white">Campanha:</span> {lastCampaignId ? `#${lastCampaignId}` : "Ainda não confirmada"}</p>
             </div>
           </div>
 
           <div className="rounded-[24px] border border-amber-400/15 bg-amber-400/8 p-5 text-sm text-amber-50">
-            MÃ©todo de envio atual: os links do WhatsApp serÃ£o abertos manualmente em nova aba.
+            Método de envio atual: os links do WhatsApp serão abertos manualmente em nova aba.
           </div>
 
           <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
@@ -97,7 +97,7 @@ export function SendStep({
             <div>
               <p className="text-xs uppercase tracking-[0.16em] text-white/45">Links para teste</p>
               <p className="mt-1 text-sm text-white/60">
-                {clients.length} clientes prontos. Abra a lista sÃ³ quando precisar revisar.
+                {clients.length} clientes prontos. Abra a lista só quando precisar revisar.
               </p>
             </div>
 
@@ -121,7 +121,7 @@ export function SendStep({
                   <div>
                     <p className="font-semibold text-white">{client.nome_cliente ?? "-"}</p>
                     <p className="mt-1 text-sm text-white/60">
-                      {client.telefone ?? "Sem telefone"} â€¢ Ãšltima compra {formatActivationDate(client.ultima_compra)}
+                      {client.telefone ?? "Sem telefone"} • Última compra {formatActivationDate(client.ultima_compra)}
                     </p>
                   </div>
                   <button

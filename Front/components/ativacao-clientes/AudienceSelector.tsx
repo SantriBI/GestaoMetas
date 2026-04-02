@@ -12,10 +12,10 @@ export function AudienceSelector({
   return (
     <section className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.1),transparent_28%),linear-gradient(180deg,rgba(9,14,25,0.96),rgba(9,12,21,0.9))] p-6 shadow-[0_24px_80px_rgba(2,6,23,0.34)]">
       <div className="mb-5">
-        <p className="text-xs uppercase tracking-[0.24em] text-white/42">1. PÃºblico</p>
-        <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Quem vocÃª quer ativar agora?</h2>
+        <p className="text-xs uppercase tracking-[0.24em] text-white/42">1. Público</p>
+        <h2 className="mt-2 text-2xl font-black tracking-tight text-white">Quem você quer ativar agora?</h2>
         <p className="mt-2 text-sm text-white/62">
-          Cada grupo jÃ¡ vem com um contexto comercial pensado para facilitar sua abordagem.
+          Cada grupo já vem com um contexto comercial pensado para facilitar sua abordagem.
         </p>
       </div>
 
