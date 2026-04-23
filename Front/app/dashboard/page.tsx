@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation"
 import {
   Activity,
   AlertTriangle,
-  ArrowRight,
   Calendar,
   CalendarDays,
-  ChevronDown,
   LineChart,
+  MessageCircle,
   Search,
   Sparkles,
+  Swords,
   Trophy,
 } from "lucide-react"
 import { Vendedor, VendedorProcessado, processVendedor, formatCurrency } from "@/lib/types"
@@ -22,6 +22,7 @@ import { RankingTable } from "@/components/dashboard/ranking-table"
 import { Podium } from "@/components/dashboard/podium"
 import { ProgressTrail } from "@/components/dashboard/progress-trail"
 import { SidebarHUD } from "@/components/dashboard/sidebar-hud"
+import { CardDashboard, dashboardCardThemes, type CardDashboardConfig } from "@/components/dashboard/CardDashboard"
 import { DashboardSkeleton } from "@/components/dashboard/loading-skeleton"
 import RankingAlerts from "@/components/RankingAlerts"
 import { gerarResumoDiario } from "@/lib/diario"
@@ -218,25 +219,72 @@ export default function DashboardPage() {
 - ${vendedoresEmProgresso} seguem em progresso
 - ${vendedoresEmRisco} precisam de atencao
 - A equipe soma ${formatCurrency(totalReceita)} e esta em ${desempenhoEquipe}% da meta consolidada`
+  const frentesEmReacao = resumoDiario?.devendo ?? vendedoresEmRisco
+  const destaquePodio = Math.max(Math.min(vendedores.length, 3), 1)
+  const managerDashboardCards: CardDashboardConfig[] = [
+    {
+      title: "Minha Jornada",
+      description: "Veja o desempenho da equipe hoje e onde agir primeiro.",
+      icon: LineChart,
+      gradient: dashboardCardThemes.emerald,
+      actionLabel: activeView === "jornada" ? "Fechar painel" : "Abrir painel",
+      badge: desempenhoEquipe >= 100 ? "DESTAQUE" : "PRIORIDADE",
+      tag: "VISAO GERAL",
+      microcopy: `Meta consolidada: ${desempenhoEquipe}%`,
+      active: activeView === "jornada",
+      ariaExpanded: activeView === "jornada",
+      onClick: () => handleToggleView("jornada"),
+    },
+    {
+      title: "Grand Prix",
+      description: "Veja quem esta puxando o resultado e quem precisa de apoio.",
+      icon: Trophy,
+      gradient: dashboardCardThemes.violet,
+      actionLabel: activeView === "grandprix" ? "Fechar corrida" : "Abrir corrida",
+      badge: "DESTAQUE",
+      tag: "RITMO DO TIME",
+      microcopy: `Top ${destaquePodio} em destaque agora`,
+      active: activeView === "grandprix",
+      ariaExpanded: activeView === "grandprix",
+      onClick: () => handleToggleView("grandprix"),
+    },
+    {
+      title: "Desafios",
+      description: "Acompanhe campanhas e ganhos por performance do time.",
+      icon: Swords,
+      gradient: dashboardCardThemes.amber,
+      actionLabel: "Ver desafios",
+      badge: vendedoresEmRisco > 0 ? "PRIORIDADE" : undefined,
+      tag: "PERFORMANCE",
+      microcopy: `${vendedoresEmProgresso} em progresso e ${vendedoresEmRisco} em risco`,
+      onClick: () => router.push("/desafios"),
+    },
+    {
+      title: "Investigar Cliente",
+      description: "Descubra o historico e a proxima melhor oferta.",
+      icon: Search,
+      gradient: dashboardCardThemes.cyan,
+      actionLabel: "Buscar cliente",
+      tag: "ANALISE",
+      microcopy: `${vendedoresEmRisco} vendedor${vendedoresEmRisco === 1 ? "" : "es"} pedem atencao`,
+      onClick: () => router.push("/investigar-cliente"),
+    },
+    {
+      title: "Ativacao de Clientes",
+      description: "Recupere clientes e aumente as vendas do time hoje.",
+      icon: MessageCircle,
+      gradient: dashboardCardThemes.rose,
+      actionLabel: "Reativar clientes",
+      badge: "DESTAQUE",
+      highlight: true,
+      tag: "RETOMADA",
+      microcopy: `${frentesEmReacao} frente${frentesEmReacao === 1 ? "" : "s"} pedem reacao`,
+      onClick: () => router.push("/ativacao-clientes"),
+    },
+  ]
 
   function handleToggleView(nextView: ActiveView) {
     setActiveView((current) => (current === nextView ? null : nextView))
-  }
-
-  function getDecisionButtonClasses(isActive: boolean, accent: "emerald" | "violet" | "cyan") {
-    const accentClasses = {
-      emerald: isActive
-        ? "border-emerald-400/38 bg-[linear-gradient(145deg,rgba(16,51,37,0.96),rgba(10,27,20,0.95))] shadow-[0_24px_70px_rgba(34,197,94,0.22)]"
-        : "border-emerald-400/16 bg-[linear-gradient(145deg,rgba(10,24,18,0.92),rgba(9,17,14,0.88))] hover:border-emerald-300/34 hover:shadow-[0_20px_55px_rgba(34,197,94,0.16)]",
-      violet: isActive
-        ? "border-violet-400/38 bg-[linear-gradient(145deg,rgba(31,19,49,0.96),rgba(16,11,32,0.95))] shadow-[0_24px_70px_rgba(168,85,247,0.24)]"
-        : "border-violet-400/16 bg-[linear-gradient(145deg,rgba(20,14,35,0.92),rgba(12,10,24,0.88))] hover:border-violet-300/34 hover:shadow-[0_20px_55px_rgba(168,85,247,0.18)]",
-      cyan: isActive
-        ? "border-cyan-400/38 bg-[linear-gradient(145deg,rgba(15,43,53,0.96),rgba(10,23,31,0.95))] shadow-[0_24px_70px_rgba(34,211,238,0.22)]"
-        : "border-cyan-400/16 bg-[linear-gradient(145deg,rgba(10,23,30,0.92),rgba(9,17,22,0.88))] hover:border-cyan-300/34 hover:shadow-[0_20px_55px_rgba(34,211,238,0.18)]",
-    }
-
-    return accentClasses[accent]
   }
 
   return (
@@ -314,113 +362,24 @@ export default function DashboardPage() {
               </div>
 
               <div className="xl:col-span-2">
-                <div className="mt-2 grid grid-cols-1 gap-6 md:grid-cols-3 xl:mt-0">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleView("jornada")}
-                    aria-expanded={activeView === "jornada"}
-                    className={`group relative min-h-[228px] overflow-hidden rounded-[28px] border p-6 text-left transition-all duration-300 active:scale-[0.98] hover:-translate-y-1 hover:scale-[1.02] sm:min-h-[240px] sm:p-7 ${getDecisionButtonClasses(activeView === "jornada", "emerald")}`}
-                  >
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(74,222,128,0.16),transparent_38%)] opacity-90" />
-                    <div className="relative flex h-full flex-col justify-between gap-6">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="rounded-[20px] border border-emerald-300/15 bg-emerald-500/14 p-3 text-emerald-200 shadow-[0_0_24px_rgba(34,197,94,0.12)]">
-                            <LineChart className="h-5 w-5" />
-                          </div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-100/70">
-                            MÓDULO PRINCIPAL
-                          </p>
-                        </div>
-                        <ChevronDown className={`h-5 w-5 text-emerald-200/80 transition-transform duration-300 ${activeView === "jornada" ? "rotate-180" : ""}`} />
-                      </div>
-
-                      <div className="space-y-3">
-                        <h3 className="text-[1.65rem] font-semibold tracking-tight text-white sm:text-[1.85rem]">Minha Jornada</h3>
-                        <p className="text-base leading-7 text-[#d0ddd6]">
-                          Abra sua visao completa de performance e prioridades do dia.
-                        </p>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-medium text-emerald-100">
-                          Abrir modulo
-                          <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleToggleView("grandprix")}
-                    aria-expanded={activeView === "grandprix"}
-                    className={`group relative min-h-[228px] overflow-hidden rounded-[28px] border p-6 text-left transition-all duration-300 active:scale-[0.98] hover:-translate-y-1 hover:scale-[1.02] sm:min-h-[240px] sm:p-7 ${getDecisionButtonClasses(activeView === "grandprix", "violet")}`}
-                  >
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(196,181,253,0.2),transparent_36%)] opacity-90" />
-                    <div className="relative flex h-full flex-col justify-between gap-6">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="rounded-[20px] border border-violet-300/15 bg-violet-500/12 p-3 text-violet-200 shadow-[0_0_28px_rgba(168,85,247,0.2)]">
-                            <Trophy className="h-5 w-5" />
-                          </div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-violet-100/70">
-                            COMPETIÇÃO
-                          </p>
-                        </div>
-                        <ChevronDown className={`h-5 w-5 text-violet-200/80 transition-transform duration-300 ${activeView === "grandprix" ? "rotate-180" : ""}`} />
-                      </div>
-
-                      <div className="space-y-3">
-                        <h3 className="text-[1.65rem] font-semibold tracking-tight text-white sm:text-[1.85rem]">Grand Prix</h3>
-                        <p className="text-base leading-7 text-[#ddd2ef]">
-                          Descubra quem esta puxando a equipe e quem acelera no fechamento.
-                        </p>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-medium text-violet-100">
-                          Entrar na corrida
-                          <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => router.push("/investigar-cliente")}
-                    className={`group relative min-h-[228px] overflow-hidden rounded-[28px] border p-6 text-left transition-all duration-300 active:scale-[0.98] hover:-translate-y-1 hover:scale-[1.02] sm:min-h-[240px] sm:p-7 ${getDecisionButtonClasses(false, "cyan")}`}
-                  >
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(103,232,249,0.16),transparent_36%)] opacity-90" />
-                    <div className="relative flex h-full flex-col justify-between gap-6">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="rounded-[20px] border border-cyan-300/15 bg-cyan-500/12 p-3 text-cyan-200 shadow-[0_0_24px_rgba(34,211,238,0.14)]">
-                            <Search className="h-5 w-5" />
-                          </div>
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-100/70">
-                            Analise de cliente
-                          </p>
-                        </div>
-                        <ArrowRight className="h-5 w-5 text-cyan-200/80 transition-transform duration-300 group-hover:translate-x-1" />
-                      </div>
-
-                      <div className="space-y-3">
-                        <h3 className="text-[1.65rem] font-semibold tracking-tight text-white sm:text-[1.85rem]">Investigar Cliente</h3>
-                        <p className="text-base leading-7 text-[#d1e2e8]">
-                          Pesquise qualquer cliente e descubra o que faz sentido ofertar.
-                        </p>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-medium text-cyan-100">
-                          Ir para analise
-                          <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
-                        </div>
-                      </div>
-                    </div>
-                  </button>
+                <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 xl:mt-0">
+                  {managerDashboardCards.map((card) => (
+                    <CardDashboard
+                      key={card.title}
+                      title={card.title}
+                      description={card.description}
+                      icon={card.icon}
+                      gradient={card.gradient}
+                      actionLabel={card.actionLabel}
+                      badge={card.badge}
+                      highlight={card.highlight}
+                      tag={card.tag}
+                      microcopy={card.microcopy}
+                      active={card.active}
+                      ariaExpanded={card.ariaExpanded}
+                      onClick={card.onClick}
+                    />
+                  ))}
                 </div>
               </div>
             </div>

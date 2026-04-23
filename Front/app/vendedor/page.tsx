@@ -1,6 +1,6 @@
 ﻿"use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import {
@@ -21,13 +21,24 @@ import {
   ArrowUpDown,
   Snowflake,
   MessageCircle,
-  Crosshair,
   Swords,
   Search,
+  X,
 } from "lucide-react"
 import { formatCurrency } from "@/lib/types"
 import RankingAlerts from "@/components/RankingAlerts"
+import { ChallengeNotificationBanner } from "@/components/challenges/ChallengeNotificationBanner"
+import { CardDashboard, dashboardCardThemes, type CardDashboardConfig } from "@/components/dashboard/CardDashboard"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MotivationSpotlight } from "@/components/layout/MotivationSpotlight"
+import { useNotifications } from "@/components/notifications/NotificationContext"
+import { useSellerChallengeAlert, useSellerChallenges } from "@/hooks/useChallenges"
+import {
+  type Challenge,
+  type SellerChallengeAlertItem,
+} from "@/lib/challenges"
+import { fetchSellerLifeGoal, type LifeGoalResponse } from "@/lib/life-goal"
+import { buildMotivationMessage } from "@/lib/motivation"
 import { AuthUser, setStoredUser } from "@/lib/user-session"
 
 interface VendedorData {
@@ -47,8 +58,8 @@ interface VendedorData {
   metaDia: number
   percentualDia: number
   statusDia: string
-  data_referencia?: string | Date
-  dataReferencia?: string | Date
+  data_referencia?: string | Date | null
+  dataReferencia?: string | Date | null
   clientesDia?: number
   ticketMedioDia?: number
   clientesMes?: number
@@ -74,7 +85,50 @@ interface OportunidadesData {
   }>
 }
 
-type ActiveView = "jornada" | "ataque" | "cliente" | null
+type ActiveView = "jornada" | null
+const STARTUP_NOTIFICATION_DURATION_MS = 10000
+const EMPTY_CHALLENGES: Challenge[] = []
+const EMPTY_ALERT_CAMPAIGNS: SellerChallengeAlertItem[] = []
+
+type DashboardCampaignBannerItem = {
+  id: number | string
+  titulo: string | null
+  descricao?: string | null
+  dataInicio?: string | Date | null
+  dataFim?: string | Date | null
+  brandNames?: string[]
+  exigeAceite?: boolean
+  status?: string | null
+  participantStatus?: string | null
+  participant?: {
+    statusParticipacao?: string | null
+  }
+}
+
+function createFallbackVendedor(user?: AuthUser | null): VendedorData {
+  return {
+    nome: String(user?.nome ?? "Vendedor").trim() || "Vendedor",
+    receita: 0,
+    meta: 0,
+    percentual: 0,
+    posicao: 0,
+    totalVendedores: 0,
+    variacaoPosicao: 0,
+    diasRestantes: 0,
+    vendasHoje: 0,
+    ticketMedio: 0,
+    clientesAtendidos: 0,
+    metaDia: 0,
+    percentualDia: 0,
+    statusDia: "OK",
+    dataReferencia: null,
+    clientesDia: 0,
+    ticketMedioDia: 0,
+    clientesMes: 0,
+    ticketMedioMes: 0,
+    metaHerdada: 0,
+  }
+}
 
 function formatDateBR(dateString: string | Date) {
   const d = new Date(dateString)
@@ -135,9 +189,35 @@ function isToday(dateString: string | Date) {
   )
 }
 
+function getDashboardParticipantStatus(challenge: DashboardCampaignBannerItem) {
+  return String(challenge.participant?.statusParticipacao ?? challenge.participantStatus ?? "").toUpperCase()
+}
+
+function shouldShowDashboardCampaignBanner(challenge: DashboardCampaignBannerItem) {
+  const status = String(challenge.status ?? "").toUpperCase()
+  const participantStatus = getDashboardParticipantStatus(challenge)
+
+  return (!status || ["ATIVO", "AGENDADO"].includes(status)) && participantStatus !== "RECUSADO"
+}
+
+function isDashboardCampaignAvailable(challenge: DashboardCampaignBannerItem) {
+  const participantStatus = getDashboardParticipantStatus(challenge)
+  return challenge.exigeAceite !== false && (!participantStatus || ["DISPONIVEL", "CONVIDADO"].includes(participantStatus))
+}
+
+function getDashboardCampaignKind(challenge: DashboardCampaignBannerItem) {
+  return challenge.exigeAceite === false ? "BONUS" : "DESAFIO"
+}
+
+function getDashboardCampaignId(challenge: Pick<DashboardCampaignBannerItem, "id">) {
+  return String(challenge.id)
+}
+
 export default function VendedorDashboard() {
   const router = useRouter()
+  const { addNotification } = useNotifications()
   const [vendedor, setVendedor] = useState<VendedorData | null>(null)
+  const [vendedorLoadError, setVendedorLoadError] = useState<string | null>(null)
   const [oportunidades, setOportunidades] = useState<OportunidadesData | null>(null)
   const [isLoadingOportunidades, setIsLoadingOportunidades] = useState(true)
   const [isTabelaOportunidadesOpen, setIsTabelaOportunidadesOpen] = useState(false)
@@ -149,13 +229,37 @@ export default function VendedorDashboard() {
   const [empresaId, setEmpresaId] = useState<string | number | null>(null)
   const [skVendedor, setSkVendedor] = useState<string | number | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [lifeGoal, setLifeGoal] = useState<LifeGoalResponse | null>(null)
+  const [isLoadingLifeGoal, setIsLoadingLifeGoal] = useState(false)
+  const [isLifeGoalNoticeDismissed, setIsLifeGoalNoticeDismissed] = useState(false)
+  const [isMotivationClosed, setIsMotivationClosed] = useState(false)
+  const [dismissedCampaignBannerIds, setDismissedCampaignBannerIds] = useState<Set<string>>(() => new Set())
   const [activeView, setActiveView] = useState<ActiveView>(null)
   const [journeyAnimationCycle, setJourneyAnimationCycle] = useState(0)
-  const [isJourneyButtonPressed, setIsJourneyButtonPressed] = useState(false)
   const [confettiActive, setConfettiActive] = useState(false)
   const confettiCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const jornadaSectionRef = useRef<HTMLDivElement | null>(null)
   const hasPlayedConfettiRef = useRef(false)
+  const startupNotificationIdsRef = useRef<Set<string>>(new Set())
+  const { alert: desafioAlert } = useSellerChallengeAlert(skVendedor)
+  const {
+    data: sellerChallengesData,
+    acting: isActingSellerCampaign,
+    acceptChallenge: acceptSellerCampaign,
+    dismissChallenge: dismissSellerCampaign,
+  } = useSellerChallenges(skVendedor)
+  const sellerCampaignItems = sellerChallengesData?.items ?? EMPTY_CHALLENGES
+  const alertCampaignItems = useMemo<DashboardCampaignBannerItem[]>(() => {
+    if (desafioAlert?.items?.length) return desafioAlert.items
+    return desafioAlert?.challenge ? [desafioAlert.challenge] : EMPTY_ALERT_CAMPAIGNS
+  }, [desafioAlert])
+  const dashboardCampaignSourceItems: DashboardCampaignBannerItem[] = sellerCampaignItems.length
+    ? sellerCampaignItems
+    : alertCampaignItems
+  const dashboardCampaignIds = dashboardCampaignSourceItems
+    .filter(shouldShowDashboardCampaignBanner)
+    .map(getDashboardCampaignId)
+  const dashboardCampaignIdsKey = dashboardCampaignIds.join("|")
 
   useEffect(() => {
     const userStr = sessionStorage.getItem("user")
@@ -181,21 +285,38 @@ export default function VendedorDashboard() {
     setStoredUser(normalizedUser)
     setEmpresaId(user.empresa_id ?? user.sk_empresa ?? null)
     setSkVendedor(user.sk_vendedor ?? null)
+    setVendedor(createFallbackVendedor(normalizedUser))
 
     async function fetchVendedor() {
+      if (!user.sk_vendedor) {
+        setVendedor(createFallbackVendedor(normalizedUser))
+        setVendedorLoadError("Seu cadastro de vendedor ainda nao esta vinculado para carregar o dashboard completo.")
+        return
+      }
+
       try {
         const response = await fetch(
-          `/api/vendedor/${user.sk_vendedor}`
+          `/api/vendedor/${user.sk_vendedor}`,
+          { cache: "no-store" }
         )
 
         if (!response.ok) {
-          throw new Error("Erro ao carregar dados do vendedor")
+          const payload = await response.json().catch(() => null)
+          setVendedor(createFallbackVendedor(normalizedUser))
+          setVendedorLoadError(payload?.error ?? "Nao foi possivel carregar todos os dados do vendedor agora.")
+          return
         }
 
         const data = await response.json()
-        setVendedor(data)
+        setVendedor({
+          ...createFallbackVendedor(normalizedUser),
+          ...data,
+          nome: String(data?.nome ?? normalizedUser.nome ?? "Vendedor").trim() || "Vendedor",
+        })
+        setVendedorLoadError(null)
       } catch (err) {
-        console.error("Erro ao buscar vendedor:", err)
+        setVendedor(createFallbackVendedor(normalizedUser))
+        setVendedorLoadError(err instanceof Error ? err.message : "Nao foi possivel carregar os dados do vendedor.")
       }
     }
 
@@ -224,12 +345,32 @@ export default function VendedorDashboard() {
       }
     }
 
+    async function fetchLifeGoal(skVendedorParam: string | number | null) {
+      if (!skVendedorParam) {
+        setLifeGoal(null)
+        setIsLoadingLifeGoal(false)
+        return
+      }
+
+      try {
+        setIsLoadingLifeGoal(true)
+        const data = await fetchSellerLifeGoal(skVendedorParam)
+        setLifeGoal(data)
+      } catch (err) {
+        console.warn("Meta de Vida indisponivel no dashboard:", err)
+        setLifeGoal(null)
+      } finally {
+        setIsLoadingLifeGoal(false)
+      }
+    }
+
     fetchVendedor()
     fetchOportunidades(user.sk_vendedor ?? null)
+    fetchLifeGoal(user.sk_vendedor ?? null)
   }, [router])
 
   useEffect(() => {
-    if (!vendedor || hasPlayedConfettiRef.current || vendedor.posicao > 3) {
+    if (!vendedor || hasPlayedConfettiRef.current || vendedor.posicao < 1 || vendedor.posicao > 3) {
       return
     }
 
@@ -238,7 +379,7 @@ export default function VendedorDashboard() {
   }, [vendedor])
 
   useEffect(() => {
-    if (!confettiActive || !vendedor || vendedor.posicao > 3) {
+    if (!confettiActive || !vendedor || vendedor.posicao < 1 || vendedor.posicao > 3) {
       return
     }
 
@@ -376,6 +517,155 @@ export default function VendedorDashboard() {
     return () => window.clearTimeout(scrollTimeout)
   }, [activeView])
 
+  useEffect(() => {
+    const challenges = dashboardCampaignSourceItems.filter(shouldShowDashboardCampaignBanner)
+
+    if (!challenges.length) return
+
+    challenges.forEach((challenge) => {
+      const isBonus = getDashboardCampaignKind(challenge) === "BONUS"
+      const notificationId = isBonus
+        ? `seller-bonus-${skVendedor ?? "vendedor"}-${challenge.id}`
+        : `seller-challenge-${skVendedor ?? "vendedor"}-${challenge.id}`
+      if (startupNotificationIdsRef.current.has(notificationId)) return
+
+      startupNotificationIdsRef.current.add(notificationId)
+      addNotification({
+        id: notificationId,
+        title: challenge.titulo ?? (isBonus ? "Bonus mensal disponivel" : "Nova campanha disponivel"),
+        message: challenge.descricao ?? (isBonus ? "Um bonus mensal foi criado para acompanhar seu resultado." : "Uma nova campanha entrou no ar para acelerar seu resultado."),
+        type: isBonus ? "success" : "warning",
+        actionHref: `/vendedor/desafios?highlight=${challenge.id}`,
+        groupKey: notificationId,
+        showToast: false,
+      })
+    })
+  }, [addNotification, dashboardCampaignIdsKey, dashboardCampaignSourceItems, skVendedor])
+
+  useEffect(() => {
+    if (!dashboardCampaignIds.length) return
+
+    const timeout = window.setTimeout(() => {
+      setDismissedCampaignBannerIds((current) => {
+        const next = new Set(current)
+        dashboardCampaignIds.forEach((id) => next.add(id))
+        return next
+      })
+    }, STARTUP_NOTIFICATION_DURATION_MS)
+
+    return () => window.clearTimeout(timeout)
+    // The key tracks the concrete campaigns currently visible to the seller.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboardCampaignIdsKey])
+
+  useEffect(() => {
+    if (isLoadingLifeGoal || !lifeGoal || !authUser?.sk_vendedor) return
+
+    const objectiveCount = lifeGoal.summary.quantidadeObjetivos ?? 0
+    if (objectiveCount <= 0) return
+
+    const notificationId = `seller-life-goal-${authUser.sk_vendedor}`
+    const conquistado = lifeGoal.summary.ganhoTotal ?? 0
+    const restante = Math.max(lifeGoal.summary.faltaTotal ?? 0, 0)
+    const prazo =
+      lifeGoal.tracking.closestDeadlineAt && !Number.isNaN(new Date(lifeGoal.tracking.closestDeadlineAt).getTime())
+        ? formatDateBR(lifeGoal.tracking.closestDeadlineAt)
+        : null
+    const headline =
+      lifeGoal.status === "CONQUISTADA"
+        ? "Seu painel pessoal ja esta coberto."
+        : `Faltam ${formatCurrency(restante)} para seus objetivos.`
+    const subline =
+      lifeGoal.status === "CONQUISTADA"
+        ? `Voce transformou ${formatCurrency(conquistado)} em conquista pessoal.`
+        : `Voce ja acumulou ${formatCurrency(conquistado)} para ${objectiveCount} objetivo${objectiveCount > 1 ? "s" : ""}${prazo ? ` e tem ate ${prazo}` : ""}.`
+
+    if (!startupNotificationIdsRef.current.has(notificationId)) {
+      startupNotificationIdsRef.current.add(notificationId)
+      addNotification({
+        id: notificationId,
+        title: "Meta de Vida",
+        message: `${headline} ${subline}`,
+        type: "success",
+        actionHref: "/vendedor/minha-meta-de-vida",
+        groupKey: notificationId,
+      })
+    }
+
+    if (isLifeGoalNoticeDismissed) return
+
+    const timeout = window.setTimeout(() => {
+      setIsLifeGoalNoticeDismissed(true)
+    }, STARTUP_NOTIFICATION_DURATION_MS)
+
+    return () => window.clearTimeout(timeout)
+  }, [addNotification, authUser?.sk_vendedor, isLifeGoalNoticeDismissed, isLoadingLifeGoal, lifeGoal])
+
+  useEffect(() => {
+    if (!vendedor || !authUser?.sk_vendedor) return
+
+    const metaDiaAtual = vendedor.metaDia || 0
+    const vendasHojeAtual = vendedor.vendasHoje || 0
+    const faltaHojeAtual = Math.max(metaDiaAtual - vendasHojeAtual, 0)
+    const message = buildMotivationMessage(authUser, lifeGoal, {
+      context: "dashboard",
+      dailyGap: faltaHojeAtual,
+      averageTicket: Number(vendedor.ticketMedioDia ?? vendedor.ticketMedio ?? 0),
+    })
+    const notificationId = `seller-motivation-dashboard-${authUser.sk_vendedor}`
+
+    if (!startupNotificationIdsRef.current.has(notificationId)) {
+      startupNotificationIdsRef.current.add(notificationId)
+      addNotification({
+        id: notificationId,
+        title: message.eyebrow,
+        message: `${message.headline} ${message.body}`,
+        type: message.tone === "amber" ? "warning" : "info",
+        actionHref: message.ctaHref ?? undefined,
+        groupKey: notificationId,
+        showToast: false,
+      })
+    }
+
+    if (isMotivationClosed) return
+
+    const timeout = window.setTimeout(() => {
+      setIsMotivationClosed(true)
+    }, STARTUP_NOTIFICATION_DURATION_MS)
+
+    return () => window.clearTimeout(timeout)
+  }, [addNotification, authUser, isMotivationClosed, lifeGoal, vendedor])
+
+  function handleDismissLifeGoalNotice() {
+    setIsLifeGoalNoticeDismissed(true)
+  }
+
+  function handleCloseMotivation() {
+    setIsMotivationClosed(true)
+  }
+
+  function dismissCampaignBanner(id: number | string) {
+    setDismissedCampaignBannerIds((current) => {
+      const next = new Set(current)
+      next.add(String(id))
+      return next
+    })
+  }
+
+  async function handleAcceptCampaignBanner(challenge: DashboardCampaignBannerItem) {
+    const accepted = await acceptSellerCampaign(challenge.id)
+    if (accepted) {
+      dismissCampaignBanner(challenge.id)
+    }
+  }
+
+  async function handleDismissCampaignBanner(challenge: DashboardCampaignBannerItem) {
+    const dismissed = await dismissSellerCampaign(challenge.id)
+    if (dismissed) {
+      dismissCampaignBanner(challenge.id)
+    }
+  }
+
 
   if (!vendedor) {
     return (
@@ -454,31 +744,30 @@ export default function VendedorDashboard() {
   const metaHerdada = Number(
     vendedor.metaHerdada ?? vendedor.meta_herdada ?? vendedor.META_HERDADA ?? 0
   )
+  const lifeGoalHasObjectives = (lifeGoal?.summary.quantidadeObjetivos ?? 0) > 0
+  const lifeGoalPercentual = Math.min(lifeGoal?.summary.percentualTotal ?? 0, 100)
+  const lifeGoalConquistado = lifeGoal?.summary.ganhoTotal ?? 0
+  const lifeGoalRestante = Math.max(lifeGoal?.summary.faltaTotal ?? 0, 0)
+  const lifeGoalPrazo =
+    lifeGoal?.tracking.closestDeadlineAt && !Number.isNaN(new Date(lifeGoal.tracking.closestDeadlineAt).getTime())
+      ? formatDateBR(lifeGoal.tracking.closestDeadlineAt)
+      : null
+  const lifeGoalHeadline =
+    lifeGoal?.status === "CONQUISTADA"
+      ? "Seu painel pessoal ja esta coberto."
+      : `Faltam ${formatCurrency(lifeGoalRestante)} para seus objetivos.`
+  const lifeGoalSubline =
+    lifeGoal?.status === "CONQUISTADA"
+      ? `Voce transformou ${formatCurrency(lifeGoalConquistado)} em conquista pessoal.`
+      : `Voce ja acumulou ${formatCurrency(lifeGoalConquistado)} para ${lifeGoal?.summary.quantidadeObjetivos ?? 0} objetivo${(lifeGoal?.summary.quantidadeObjetivos ?? 0) > 1 ? "s" : ""}${lifeGoalPrazo ? ` e tem ate ${lifeGoalPrazo}` : ""}.`
+  const dashboardCampaignBanners = dashboardCampaignSourceItems
+    .filter(shouldShowDashboardCampaignBanner)
+    .filter((campaign) => !dismissedCampaignBannerIds.has(getDashboardCampaignId(campaign)))
 
   const getPositionIcon = () => {
     if (variacaoPosicao > 0) return <ChevronUp className="w-5 h-5 text-emerald-300" />
     if (variacaoPosicao < 0) return <ChevronDown className="w-5 h-5 text-red-400" />
     return <Minus className="w-4 h-4 text-muted-foreground" />
-  }
-
-  const getRankingMessage = (posicao: number) => {
-    if (posicao === 1) {
-      return "Incrível! Você está liderando o ranking 🚀 Continue assim!"
-    }
-
-    if (posicao === 2) {
-      return "Excelente! Você está no Top 2 👏 Muito perto da liderança!"
-    }
-
-    if (posicao === 3) {
-      return "Parabéns! Você está no Top 3 🔥 Continue pressionando!"
-    }
-
-    if (posicao >= 4 && posicao <= 10) {
-      return "Você está muito perto do Top 3 💪 Foque nos próximos dias!"
-    }
-
-    return "Ainda dá tempo de subir no ranking 🚀 Vamos acelerar as vendas!"
   }
 
   const getJourneyAnimationStyle = (delayMs: number) =>
@@ -491,6 +780,105 @@ export default function VendedorDashboard() {
           animationDelay: `${delayMs}ms`,
         }
       : undefined
+  const dashboardMotivation = buildMotivationMessage(authUser, lifeGoal, {
+    context: "dashboard",
+    dailyGap: faltaHoje,
+    averageTicket: Number(vendedor.ticketMedioDia ?? vendedor.ticketMedio ?? 0),
+  })
+  const rankingMotivation = buildMotivationMessage(authUser, lifeGoal, {
+    context: "ranking",
+    rankPosition: vendedor.posicao,
+    totalRanked: vendedor.totalVendedores ?? 0,
+    dailyGap: faltaHoje,
+    averageTicket: Number(vendedor.ticketMedioDia ?? vendedor.ticketMedio ?? 0),
+  })
+  const clientesMesTotal = Number(vendedor.clientesMes ?? vendedor.clientesAtendidos ?? 0)
+  const ticketMedioDia = Number(vendedor.ticketMedioDia ?? 0)
+  const oportunidadesMicrocopy =
+    orcamentosAbertos > 0
+      ? `${orcamentosAbertos} oportunidade${orcamentosAbertos > 1 ? "s" : ""} te esperando`
+      : "Nenhuma oportunidade crítica agora"
+  const novosDesafiosCount = dashboardCampaignSourceItems.filter(shouldShowDashboardCampaignBanner).length
+    || desafioAlert?.items?.length
+    || (desafioAlert?.hasNewChallenge ? 1 : 0)
+  const sellerDashboardCards: CardDashboardConfig[] = [
+    {
+      title: "Minha Jornada",
+      description: "Veja seu desempenho hoje e o que precisa fazer para bater sua meta.",
+      icon: TrendingUp,
+      gradient: dashboardCardThemes.sky,
+      actionLabel: activeView === "jornada" ? "Fechar painel" : "Abrir painel",
+      badge: percentualDia >= 100 ? "DESTAQUE" : "PRIORIDADE",
+      tag: "ACAO PRINCIPAL",
+      microcopy: `Meta do dia: ${percentualDia.toFixed(0)}% concluida`,
+      active: activeView === "jornada",
+      ariaExpanded: activeView === "jornada",
+      onClick: () => {
+        setActiveView((prev) => {
+          if (prev === "jornada") {
+            return null
+          }
+          setJourneyAnimationCycle((cycle) => cycle + 1)
+          return "jornada"
+        })
+      },
+    },
+    {
+      title: "Area de Ataque",
+      description: "Clientes e oportunidades que voce precisa agir agora.",
+      icon: Swords,
+      gradient: dashboardCardThemes.emerald,
+      actionLabel: "Ver oportunidades",
+      badge: orcamentosAbertos > 0 ? "PRIORIDADE" : undefined,
+      tag: "ACAO IMEDIATA",
+      microcopy: oportunidadesMicrocopy,
+      onClick: () => router.push("/area-ataque"),
+    },
+    {
+      title: "Desafios",
+      description: "Acompanhe campanhas e ganhe bonus por performance.",
+      icon: Zap,
+      gradient: dashboardCardThemes.amber,
+      actionLabel: "Ver desafios",
+      badge: novosDesafiosCount > 0 ? "NOVO" : undefined,
+      tag: "PERFORMANCE",
+      microcopy:
+        novosDesafiosCount > 1
+          ? `${novosDesafiosCount} campanhas novas`
+          : novosDesafiosCount === 1
+            ? "Nova campanha liberada hoje"
+            : "Campanhas e bonus em andamento",
+      onClick: () => router.push("/vendedor/desafios"),
+    },
+    {
+      title: "Investigar Cliente",
+      description: "Descubra o historico e a proxima melhor oferta.",
+      icon: Search,
+      gradient: dashboardCardThemes.cyan,
+      actionLabel: "Buscar cliente",
+      tag: "ANALISE",
+      microcopy:
+        ticketMedioDia > 0
+          ? `Ticket do dia: ${formatCurrency(ticketMedioDia)}`
+          : `${Math.max(clientesMesTotal, 0)} clientes atendidos no mes`,
+      onClick: () => router.push("/investigar-cliente"),
+    },
+    {
+      title: "Ativacao de Clientes",
+      description: "Recupere clientes e aumente suas vendas hoje.",
+      icon: MessageCircle,
+      gradient: dashboardCardThemes.rose,
+      actionLabel: "Reativar clientes",
+      badge: "DESTAQUE",
+      highlight: true,
+      tag: "RETOMADA",
+      microcopy:
+        clientesMesTotal > 0
+          ? `${clientesMesTotal} clientes movimentados no mes`
+          : "Carteira pronta para reativar hoje",
+      onClick: () => router.push("/ativacao-clientes"),
+    },
+  ]
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_24%),radial-gradient(circle_at_78%_18%,rgba(245,158,11,0.08),transparent_22%),linear-gradient(135deg,rgba(8,16,29,1),rgba(9,14,24,1)_45%,rgba(13,22,36,1))]">
@@ -508,7 +896,128 @@ export default function VendedorDashboard() {
       {/* HEADER */}
       <AppShellNav user={authUser} />
 
-      <main className="relative z-10 max-w-5xl mx-auto px-4 py-10 space-y-10">
+      <main className="relative z-10 mx-auto w-full max-w-[1380px] space-y-10 px-4 py-10 sm:px-6 xl:px-8">
+        <div className="space-y-4">
+          {vendedorLoadError ? (
+            <div className="rounded-[22px] border border-amber-300/18 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+              {vendedorLoadError}
+            </div>
+          ) : null}
+
+          {isLoadingLifeGoal ? (
+            <section className="rounded-[22px] border border-emerald-300/14 bg-[linear-gradient(135deg,rgba(5,46,34,0.82),rgba(8,20,32,0.92))] px-4 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.16)] sm:px-5">
+              <div className="animate-pulse space-y-2.5">
+                <div className="h-2.5 w-20 rounded-full bg-white/12" />
+                <div className="h-3.5 w-64 max-w-full rounded-full bg-white/12" />
+                <div className="h-2 w-full rounded-full bg-white/10" />
+              </div>
+            </section>
+          ) : null}
+
+          {!isLoadingLifeGoal && lifeGoalHasObjectives && !isLifeGoalNoticeDismissed ? (
+            <section className="relative rounded-[22px] border border-emerald-300/14 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_26%),linear-gradient(135deg,rgba(5,46,34,0.82),rgba(8,20,32,0.94),rgba(7,24,18,0.88))] px-4 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.18)] sm:px-5">
+              <button
+                type="button"
+                onClick={handleDismissLifeGoalNotice}
+                className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/8 text-white/68 transition-colors hover:bg-white/14 hover:text-white"
+                aria-label="Fechar notificacao da Meta de Vida"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="min-w-0">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/16 bg-emerald-400/8 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100/84">
+                    <Target className="h-3 w-3" />
+                    Meta de Vida
+                  </div>
+
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                    <p className="text-[15px] font-bold text-white sm:text-base">
+                      {lifeGoalHeadline}
+                    </p>
+                    <span className="rounded-full border border-white/10 bg-white/8 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100/72">
+                      {lifeGoalPercentual.toFixed(1)}% conquistado
+                    </span>
+                  </div>
+
+                  <p className="mt-1.5 text-[13px] leading-5 text-white/64">
+                    {lifeGoalSubline}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3 sm:min-w-[220px]">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1.5 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                      <span>Progresso</span>
+                      <span>{formatCurrency(lifeGoalConquistado)}</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                      <div
+                        className="h-full rounded-full bg-[linear-gradient(90deg,#10b981,#34d399,#f59e0b)] transition-[width] duration-700 ease-out"
+                        style={{ width: `${lifeGoalPercentual}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => router.push("/vendedor/minha-meta-de-vida")}
+                    className="shrink-0 rounded-full border border-emerald-300/16 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-50 transition-colors hover:bg-emerald-400/16"
+                  >
+                    Ver painel
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {dashboardCampaignBanners.length ? (
+            <div className="space-y-4">
+              {dashboardCampaignBanners.map((campaign) => {
+                const kind = getDashboardCampaignKind(campaign)
+                const isAvailable = isDashboardCampaignAvailable(campaign)
+
+                return (
+                  <ChallengeNotificationBanner
+                    key={campaign.id}
+                    title={campaign.titulo ?? (kind === "BONUS" ? "Bonus mensal criado" : "Desafio criado")}
+                    description={
+                      campaign.descricao ??
+                      (kind === "BONUS"
+                        ? "Um bonus mensal foi criado para acompanhar seu resultado e recompensar sua performance."
+                        : "Uma campanha foi criada para acelerar seu resultado comercial.")
+                    }
+                    dataInicio={campaign.dataInicio}
+                    dataFim={campaign.dataFim}
+                    href={`/vendedor/desafios?highlight=${campaign.id}`}
+                    onAccept={isAvailable ? () => handleAcceptCampaignBanner(campaign) : undefined}
+                    onDismiss={isAvailable ? () => handleDismissCampaignBanner(campaign) : undefined}
+                    onClose={() => dismissCampaignBanner(campaign.id)}
+                    loading={isActingSellerCampaign}
+                    compact
+                    eyebrow={kind === "BONUS" ? "Bonus mensal" : "Desafio publicado"}
+                    supportingLabel={
+                      kind === "BONUS"
+                        ? "Bonus criado para acompanhar seu mes"
+                        : "Campanha pronta para entrar em acao"
+                    }
+                  />
+                )
+              })}
+            </div>
+          ) : null}
+
+          {!isMotivationClosed ? (
+            <MotivationSpotlight
+              message={dashboardMotivation}
+              compact
+              onClose={handleCloseMotivation}
+              closeLabel="Fechar banner de motivacao do vendedor"
+            />
+          ) : null}
+        </div>
+
         {metaHerdada === 1 && (
           <div className="flex items-start gap-3 p-4 mb-6 rounded-xl border border-amber-600/50 bg-amber-900/40 text-amber-200">
             <AlertTriangle className="w-5 h-5 mt-0.5 shrink-0" />
@@ -556,128 +1065,42 @@ export default function VendedorDashboard() {
                         Ranking atual
                       </p>
                       <p className="text-2xl font-black text-white">
-                        {vendedor.posicao}{" "}
+                        {vendedor.posicao > 0 ? vendedor.posicao : "--"}{" "}
                         <span className="text-sm font-semibold text-white/55">
-                          / {vendedor.totalVendedores}
+                          / {vendedor.totalVendedores && vendedor.totalVendedores > 0 ? vendedor.totalVendedores : "--"}
                         </span>
                       </p>
                     </div>
                   </div>
                 </div>
-                <div className="mt-3 flex items-center gap-2 text-sm text-emerald-100/85">
-                  {getPositionIcon()}
-                  <span>{getRankingMessage(vendedor.posicao)}</span>
+                <div className="mt-3 flex items-start gap-3 text-sm text-emerald-100/85">
+                  <div className="mt-0.5">{getPositionIcon()}</div>
+                  <div>
+                    <p className="font-semibold text-white/92">{rankingMotivation.headline}</p>
+                    <p className="mt-1 text-sm text-emerald-100/72">{rankingMotivation.body}</p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div className="grid w-full max-w-4xl gap-3 lg:grid-cols-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsJourneyButtonPressed(true)
-                  setActiveView((prev) => {
-                    if (prev === "jornada") {
-                      return null
-                    }
-                    setJourneyAnimationCycle((cycle) => cycle + 1)
-                    return "jornada"
-                  })
-                  window.setTimeout(() => setIsJourneyButtonPressed(false), 180)
-                }}
-                className={`group block w-full overflow-hidden rounded-[26px] border text-left transition-all duration-300 hover:-translate-y-0.5 ${
-                  activeView === "jornada"
-                    ? "border-sky-300/35 bg-[linear-gradient(135deg,rgba(14,165,233,0.16),rgba(59,130,246,0.1),rgba(15,23,42,0.2))] shadow-[0_16px_38px_rgba(37,99,235,0.2)]"
-                    : "border-white/10 bg-[linear-gradient(135deg,rgba(37,99,235,0.12),rgba(56,189,248,0.06),rgba(15,23,42,0.18))] shadow-[0_14px_34px_rgba(37,99,235,0.12)] hover:border-sky-300/24 hover:shadow-[0_18px_42px_rgba(37,99,235,0.18)]"
-                } ${isJourneyButtonPressed ? "scale-[0.985] shadow-[0_0_0_1px_rgba(125,211,252,0.28),0_0_36px_rgba(56,189,248,0.22)]" : "scale-100"}`}
-              >
-                <div className="flex items-start gap-3 px-4 py-3.5">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400/28 via-blue-400/18 to-cyan-300/16 text-sky-50 transition-transform duration-300 group-hover:scale-105">
-                    <TrendingUp className="h-5.5 w-5.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Target className="h-3.5 w-3.5 text-sky-300" />
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-sky-100/70">
-                        Ação principal
-                      </span>
-                    </div>
-                    <p className="mt-1.5 text-lg font-black tracking-tight text-white">
-                      Minha Jornada
-                    </p>
-                    <p className="mt-1 text-sm leading-snug text-white/78">
-                      Abra sua visão completa de performance e prioridades do dia.
-                    </p>
-                    <p className="mt-2 text-[11px] leading-snug text-sky-200/85">
-                      Meta, missão, oportunidades e carteira em um só fluxo.
-                    </p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveView("ataque")
-                  router.push("/area-ataque")
-                }}
-                className="group block w-full overflow-hidden rounded-[26px] border border-white/10 bg-[linear-gradient(135deg,rgba(34,197,94,0.14),rgba(74,222,128,0.07),rgba(15,23,42,0.18))] text-left shadow-[0_14px_34px_rgba(34,197,94,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-300/22 hover:shadow-[0_18px_42px_rgba(34,197,94,0.16)]"
-              >
-                <div className="flex items-start gap-3 px-4 py-3.5">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/22 via-emerald-400/14 to-lime-500/16 text-emerald-100 transition-transform duration-300 group-hover:scale-105">
-                    <Swords className="h-5.5 w-5.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Crosshair className="h-3.5 w-3.5 text-emerald-300" />
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/50">
-                        Funcionalidade principal
-                      </span>
-                    </div>
-                    <p className="mt-1.5 text-lg font-black tracking-tight text-white">
-                      Área de Ataque
-                    </p>
-                    <p className="mt-1 text-sm leading-snug text-white/72">
-                      Descubra onde agir agora para vender mais.
-                    </p>
-                    <p className="mt-2 text-[11px] leading-snug text-emerald-200/80">
-                      Veja onde estão suas melhores oportunidades de venda.
-                    </p>
-                  </div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveView("cliente")
-                  router.push("/investigar-cliente")
-                }}
-                className="group block w-full overflow-hidden rounded-[26px] border border-white/10 bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(34,197,94,0.08),rgba(15,23,42,0.18))] text-left shadow-[0_14px_34px_rgba(16,185,129,0.12)] transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-300/20 hover:shadow-[0_18px_42px_rgba(16,185,129,0.18)]"
-              >
-                <div className="flex items-start gap-3 px-4 py-3.5">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/22 via-teal-400/16 to-lime-500/16 text-emerald-100 transition-transform duration-300 group-hover:scale-105">
-                    <Search className="h-5.5 w-5.5" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <Search className="h-3.5 w-3.5 text-emerald-300" />
-                      <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/50">
-                        Análise de cliente
-                      </span>
-                    </div>
-                    <p className="mt-1.5 text-lg font-black tracking-tight text-white">
-                      Investigar Cliente
-                    </p>
-                    <p className="mt-1 text-sm leading-snug text-white/72">
-                      Pesquise qualquer cliente e descubra o que faz sentido ofertar.
-                    </p>
-                    <p className="mt-2 text-[11px] leading-snug text-emerald-200/78">
-                      Entenda RFV, histórico, produtos preferidos e comportamento de compra.
-                    </p>
-                  </div>
-                </div>
-              </button>
+            <div className="grid w-full gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {sellerDashboardCards.map((card) => (
+                <CardDashboard
+                  key={card.title}
+                  title={card.title}
+                  description={card.description}
+                  icon={card.icon}
+                  gradient={card.gradient}
+                  actionLabel={card.actionLabel}
+                  badge={card.badge}
+                  highlight={card.highlight}
+                  tag={card.tag}
+                  microcopy={card.microcopy}
+                  active={card.active}
+                  ariaExpanded={card.ariaExpanded}
+                  onClick={card.onClick}
+                />
+              ))}
             </div>
           </div>
         </section>

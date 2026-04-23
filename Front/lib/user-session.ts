@@ -1,6 +1,6 @@
 "use client"
 
-export type UserRole = "VENDEDOR" | "GERENTE"
+export type UserRole = "VENDEDOR" | "GERENTE" | "INDUSTRIA"
 
 export interface AuthUser {
   id_usuario: number | string
@@ -11,6 +11,7 @@ export interface AuthUser {
   empresa_id?: number | string | null
   sk_empresa?: number | string | null
   sk_vendedor?: number | string | null
+  marca?: string | null
   foto_url?: string | null
   senha_temporaria?: string | null
 }
@@ -60,7 +61,9 @@ export function onStoredUserChange(callback: () => void) {
 }
 
 export function getDashboardRoute(role?: string | null) {
-  return role === "VENDEDOR" ? "/vendedor" : "/dashboard"
+  if (role === "VENDEDOR") return "/vendedor"
+  if (role === "INDUSTRIA") return "/industria"
+  return "/dashboard"
 }
 
 export function getUserInitials(nome?: string | null) {

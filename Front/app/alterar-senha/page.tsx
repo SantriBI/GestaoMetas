@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 
 
-export default function AlterarSenhaPage() {
+function AlterarSenhaContent() {
   const router = useRouter()
   const [login, setLogin] = useState("")
   const [senhaAtual, setSenhaAtual] = useState("")
@@ -99,5 +99,21 @@ export default function AlterarSenhaPage() {
         </button>
       </form>
     </div>
+  )
+}
+
+export default function AlterarSenhaPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="w-full max-w-md p-8 rounded-xl border text-sm text-muted-foreground">
+            Carregando recuperacao de senha...
+          </div>
+        </div>
+      }
+    >
+      <AlterarSenhaContent />
+    </Suspense>
   )
 }

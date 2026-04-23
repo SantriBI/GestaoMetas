@@ -47,69 +47,93 @@ async function resolverVendedorId(sk_vendedor) {
   )
 }
 
+async function carregarUsuarioFallback(sk_vendedor) {
+  const rows = await query(
+    `
+    SELECT nome, empresa_id, sk_vendedor
+    FROM usuarios_app
+    WHERE sk_vendedor = :sk_vendedor
+    FETCH FIRST 1 ROWS ONLY
+    `,
+    { sk_vendedor }
+  )
+
+  return rows[0] ? normalizeRow(rows[0]) : null
+}
+
 router.get("/vendedor/:sk_vendedor", async (req, res) => {
   try {
     const { sk_vendedor } = req.params
 
-    const mensalRows = await query(
-      `
-      SELECT *
-      FROM (
-        SELECT
-          nome_vendedor,
-          receita_mes,
-          meta_mes,
-          meta_herdada,
-          perc_atingimento,
-          ranking_atingimento,
-          clientes_mes
+    const [mensalRows, diarioRows, totalVendedoresRows, usuarioFallback] = await Promise.all([
+      query(
+        `
+        SELECT *
+        FROM (
+          SELECT
+            nome_vendedor,
+            receita_mes,
+            meta_mes,
+            meta_herdada,
+            perc_atingimento,
+            ranking_atingimento,
+            clientes_mes
+          FROM DM_VENDAS.VW_RANKING_VENDEDORES
+          WHERE sk_vendedor = :sk_vendedor
+        )
+        WHERE ROWNUM = 1
+        `,
+        { sk_vendedor }
+      ),
+      query(
+        `
+        SELECT *
+        FROM (
+          SELECT
+            data_referencia,
+            receita_dia,
+            clientes_dia,
+            ticket_medio_dia,
+            meta_diaria_necessaria,
+            dias_restantes,
+            status_dia,
+            perc_performance_dia
+          FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+          WHERE sk_vendedor = :sk_vendedor
+        )
+        WHERE ROWNUM = 1
+        `,
+        { sk_vendedor }
+      ),
+      query(
+        `
+        SELECT COUNT(*) AS total_vendedores
         FROM DM_VENDAS.VW_RANKING_VENDEDORES
-        WHERE sk_vendedor = :sk_vendedor
-      )
-      WHERE ROWNUM = 1
-      `,
-      { sk_vendedor }
-    )
+        `
+      ),
+      carregarUsuarioFallback(sk_vendedor),
+    ])
 
-    const diarioRows = await query(
-      `
-      SELECT *
-      FROM (
-        SELECT
-          data_referencia,
-          receita_dia,
-          clientes_dia,
-          ticket_medio_dia,
-          meta_diaria_necessaria,
-          dias_restantes,
-          status_dia,
-          perc_performance_dia
-        FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
-        WHERE sk_vendedor = :sk_vendedor
-      )
-      WHERE ROWNUM = 1
-      `,
-      { sk_vendedor }
-    )
-
-    if (!mensalRows.length) {
+    if (!mensalRows.length && !diarioRows.length && !usuarioFallback) {
       return res.status(404).json({ error: "Vendedor não encontrado" })
     }
 
-    const mensalData = normalizeRow(mensalRows[0])
+    const mensalData = mensalRows[0] ? normalizeRow(mensalRows[0]) : {}
     const diarioData = diarioRows[0] ? normalizeRow(diarioRows[0]) : {}
+    const totalVendedoresData = totalVendedoresRows[0] ? normalizeRow(totalVendedoresRows[0]) : {}
 
     res.json({
-      nome: mensalData.nome_vendedor ?? null,
+      nome: mensalData.nome_vendedor ?? usuarioFallback?.nome ?? `Vendedor ${sk_vendedor}`,
       receita: mensalData.receita_mes ?? 0,
       meta: mensalData.meta_mes ?? 0,
       metaHerdada: Number(mensalData.meta_herdada),
       percentual: mensalData.perc_atingimento ?? 0,
-      posicao: mensalData.ranking_atingimento ?? null,
+      posicao: mensalData.ranking_atingimento ?? 0,
+      totalVendedores: numero(totalVendedoresData.total_vendedores),
       clientesMes: mensalData.clientes_mes ?? 0,
       ticketMedioMes:
-        mensalData.clientes_mes > 0
-          ? mensalData.receita_mes / mensalData.clientes_mes
+        numero(mensalData.clientes_mes) > 0
+          ? numero(mensalData.receita_mes) / numero(mensalData.clientes_mes)
           : 0,
       dataReferencia: diarioData.data_referencia ?? null,
       vendasHoje: diarioData.receita_dia ?? 0,

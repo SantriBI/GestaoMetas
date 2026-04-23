@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Home, LayoutDashboard, LogOut, MessageSquareMore, UserRound } from "lucide-react"
+import { Home, LayoutDashboard, LogOut, MessageSquareMore, PiggyBank, UserRound } from "lucide-react"
 import Image from "next/image"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { NotificationBell } from "@/components/notifications/NotificationBell"
 import { ensureFeedLastSeenAt, getFeedLastSeenAt, onFeedSeenChange } from "@/lib/feed-activity"
 import { cn } from "@/lib/utils"
 import {
@@ -38,9 +39,11 @@ export function AppShellNav({ user }: AppShellNavProps) {
     avatarRing: "border-[#21402c]",
   }
 
+  const lifeGoalHref = "/vendedor/minha-meta-de-vida"
   const navItems = [
     { href: dashboardHref, label: "Home", icon: Home },
     { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
+    ...(user?.role === "VENDEDOR" ? [{ href: lifeGoalHref, label: "Meta de Vida", icon: PiggyBank }] : []),
     { href: "/feed", label: "Feed", icon: MessageSquareMore },
     { href: "/perfil", label: "Perfil", icon: UserRound },
   ]
@@ -134,10 +137,14 @@ export function AppShellNav({ user }: AppShellNavProps) {
               const isActive =
                 item.label === "Perfil"
                   ? pathname === "/perfil"
+                  : item.label === "Meta de Vida"
+                    ? pathname.startsWith("/vendedor/minha-meta-de-vida")
                   : item.label === "Feed"
                     ? pathname.startsWith("/feed")
                   : item.label === "Dashboard"
-                    ? pathname !== "/perfil"
+                    ? !pathname.startsWith("/perfil")
+                      && !pathname.startsWith("/vendedor/minha-meta-de-vida")
+                      && !pathname.startsWith("/feed")
                     : false
 
               return (
@@ -163,6 +170,8 @@ export function AppShellNav({ user }: AppShellNavProps) {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:justify-end">
+          {user?.role === "VENDEDOR" ? <NotificationBell /> : null}
+
           <button
             type="button"
             onClick={() => router.push("/perfil")}

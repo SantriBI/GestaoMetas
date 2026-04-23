@@ -10,6 +10,7 @@ import {
   Swords,
 } from "lucide-react"
 import { formatCurrency } from "@/lib/types"
+import { MotivationSpotlight } from "@/components/layout/MotivationSpotlight"
 import {
   CardClientesRFV,
   CardProdutosAlta,
@@ -20,6 +21,8 @@ import {
   type ProdutoAtaque,
   type RecommendationContact,
 } from "@/components/area-ataque/cards"
+import { useSellerMotivation } from "@/hooks/useSellerMotivation"
+import { getStoredUser, setStoredUser, type AuthUser } from "@/lib/user-session"
 
 interface AreaAtaqueData {
   resumo: {
@@ -106,6 +109,7 @@ function SkeletonCard() {
 
 export default function AreaAtaquePage() {
   const router = useRouter()
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [dados, setDados] = useState<AreaAtaqueData>(estadoInicial)
   const [carregando, setCarregando] = useState(true)
   const [carregandoInsights, setCarregandoInsights] = useState(true)
@@ -113,6 +117,7 @@ export default function AreaAtaquePage() {
   const [origemInsights, setOrigemInsights] = useState<string | null>(null)
   const [contatosInsights, setContatosInsights] = useState<RecommendationContact[]>([])
   const [erro, setErro] = useState<string | null>(null)
+  const { getMessage } = useSellerMotivation(authUser)
 
   function formatarPeriodo(inicio?: string | Date | null, fim?: string | Date | null) {
     if (!inicio && !fim) return "Período histórico da carteira priorizada"
@@ -161,26 +166,28 @@ export default function AreaAtaquePage() {
   }
 
   useEffect(() => {
-    const userStr = sessionStorage.getItem("user")
+    const user = getStoredUser()
 
-    if (!userStr) {
+    if (!user) {
       router.push("/login")
       return
     }
-
-    const user = JSON.parse(userStr)
 
     if (user.role !== "VENDEDOR") {
       router.push("/login")
       return
     }
 
+    setStoredUser(user)
+    setAuthUser(user)
+    const legacySellerId = (user as AuthUser & { vendedor_id?: number | string | null }).vendedor_id ?? null
+    const identificador = legacySellerId ?? user.sk_vendedor ?? null
+
     async function carregarAreaAtaque() {
       try {
         setCarregando(true)
         setErro(null)
 
-        const identificador = user.vendedor_id ?? user.sk_vendedor
         const response = await fetch(`/api/area-ataque/${identificador}`, {
           cache: "no-store",
         })
@@ -216,7 +223,6 @@ export default function AreaAtaquePage() {
         setCarregandoInsights(true)
         setOrigemInsights(null)
 
-        const identificador = user.vendedor_id ?? user.sk_vendedor
         const response = await fetch("/api/assistente-vendas", {
           method: "POST",
           headers: {
@@ -270,6 +276,16 @@ export default function AreaAtaquePage() {
     ? insightsIa
     : normalizarInsights(dados.recomendacoes)
   const prioridades = recomendacoesAtivas.slice(0, 3)
+  const totalOrcamentosEmAberto =
+    dados.resumo.orcamentosAbertosCampeoes +
+    dados.resumo.orcamentosAbertosFieis +
+    dados.resumo.orcamentosAbertosRisco
+  const valorCarteiraCampeoes = dados.campeoes.reduce((total, cliente) => total + Number(cliente.valor ?? 0), 0)
+  const attackMotivation = getMessage({
+    context: "attack",
+    openQuotes: totalOrcamentosEmAberto,
+    championValue: valorCarteiraCampeoes,
+  })
 
   return (
     <div className="theme-shell min-h-screen">
@@ -366,6 +382,10 @@ export default function AreaAtaquePage() {
               cor="violet"
             />
           </div>
+        </section>
+
+        <section className="mt-8">
+          <MotivationSpotlight message={attackMotivation} compact />
         </section>
 
         {erro ? (

@@ -13,6 +13,10 @@ import usuariosRoutes from './src/routes/usuarios.js';
 import assistenteVendasRoutes from './src/routes/assistenteVendas.js';
 import ativacaoClientesRoutes from './src/routes/ativacaoClientes.js';
 import feedRoutes from './src/routes/feed.js';
+import desafiosRoutes from './src/routes/desafios.js';
+import objetivoVendedorRoutes from './src/routes/objetivoVendedor.js';
+import perfilVendedorRoutes from './src/routes/perfilVendedor.js';
+import industriaRoutes from './src/routes/industria.js';
 
 
 
@@ -32,6 +36,10 @@ app.use('/api', usuariosRoutes);
 app.use('/api', assistenteVendasRoutes);
 app.use('/api', ativacaoClientesRoutes);
 app.use('/api', feedRoutes);
+app.use('/api', desafiosRoutes);
+app.use('/api', objetivoVendedorRoutes);
+app.use('/api', perfilVendedorRoutes);
+app.use('/api', industriaRoutes);
 
 
 // ============================

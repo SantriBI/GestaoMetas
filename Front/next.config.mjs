@@ -4,6 +4,7 @@ const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || `http://localhost:${backe
 
 const nextConfig = {
   output: "standalone",
+  devIndicators: false,
   typescript: {
     ignoreBuildErrors: true,
   },

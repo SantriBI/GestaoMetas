@@ -26,6 +26,11 @@ export default function AtivacaoClientesPage() {
       return
     }
 
+    if (user.role === "INDUSTRIA") {
+      router.push("/industria")
+      return
+    }
+
     setStoredUser(user)
     setAuthUser(user)
   }, [router])
@@ -33,6 +38,7 @@ export default function AtivacaoClientesPage() {
   const scope = useMemo(
     () =>
       authUser
+        && authUser.role !== "INDUSTRIA"
         ? {
             role: authUser.role,
             sk_vendedor: authUser.sk_vendedor ?? null,
@@ -62,6 +68,11 @@ export default function AtivacaoClientesPage() {
   function handleSegmentBack() {
     if (window.history.length > 1) {
       router.back()
+      return
+    }
+
+    if (authUser?.role === "VENDEDOR") {
+      router.push("/vendedor")
       return
     }
 
