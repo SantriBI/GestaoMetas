@@ -8,6 +8,7 @@ import { ChallengeDetailsPanel } from "@/components/challenges/ChallengeDetailsP
 import { ChallengeExpandableCard } from "@/components/challenges/ChallengeExpandableCard"
 import { AppShellNav } from "@/components/layout/AppShellNav"
 import { MotivationSpotlight } from "@/components/layout/MotivationSpotlight"
+import { useNotifications } from "@/components/notifications/NotificationContext"
 import { ChallengeEmptyState } from "@/components/challenges/ChallengeEmptyState"
 import { ChallengeHero } from "@/components/challenges/ChallengeHero"
 import { ChallengeNotificationBanner } from "@/components/challenges/ChallengeNotificationBanner"
@@ -18,9 +19,12 @@ import {
   formatCurrencyBRL,
   getChallengeCampaignKind,
   getChallengeCampaignKindLabel,
+  getSellerCampaignNotificationId,
+  getSellerCampaignNotificationPrefixes,
   isSellerBonus,
   isSellerChallengeAccepted,
   isSellerChallengeAvailable,
+  shouldShowSellerCampaignBanner,
   type Challenge,
   type SellerChallengeAlertItem,
 } from "@/lib/challenges"
@@ -32,6 +36,7 @@ function VendedorDesafiosContent() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { notifications, removeNotifications } = useNotifications()
   const processedHighlightRef = useRef<string | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
@@ -51,6 +56,7 @@ function VendedorDesafiosContent() {
   } = useSellerChallenges(authUser?.sk_vendedor ?? null)
   const {
     alert,
+    loading: alertLoading,
     acting: alertActing,
     refresh: refreshAlert,
     acceptAlert,
@@ -81,6 +87,21 @@ function VendedorDesafiosContent() {
     if (alert?.items?.length) return alert.items
     return alert?.challenge ? [alert.challenge] : []
   }, [alert])
+  const sellerCampaignNotificationIds = useMemo(() => {
+    if (!authUser?.sk_vendedor) return []
+
+    const seen = new Set<string>()
+
+    return [...allItems, ...alertItems]
+      .filter(shouldShowSellerCampaignBanner)
+      .map((challenge) => getSellerCampaignNotificationId(challenge, authUser.sk_vendedor))
+      .filter((id) => {
+        if (seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+  }, [alertItems, allItems, authUser?.sk_vendedor])
+  const sellerCampaignNotificationIdsKey = sellerCampaignNotificationIds.join("|")
   const featuredChallengeIds = useMemo(() => new Set(alertItems.map((item) => String(item.id))), [alertItems])
 
   const acceptedChallenges = useMemo(
@@ -136,20 +157,45 @@ function VendedorDesafiosContent() {
 
     processedHighlightRef.current = highlight
 
+    const params = new URLSearchParams(searchParamsString)
+    params.delete("highlight")
+    const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname
+
     void openDetails(highlight).then((detail) => {
-      if (!detail) return
+      if (detail) {
+        setSelectedChallenge(detail)
+        setActiveTab(getChallengeCampaignKind(detail) === "BONUS" ? "bonus" : "desafios")
+        focusChallengeCard(detail.id)
+      }
 
-      setSelectedChallenge(detail)
-      setActiveTab(getChallengeCampaignKind(detail) === "BONUS" ? "bonus" : "desafios")
-      focusChallengeCard(detail.id)
       void refreshAlert()
-
-      const params = new URLSearchParams(searchParamsString)
-      params.delete("highlight")
-      const nextUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname
       router.replace(nextUrl, { scroll: false })
     })
   }, [authUser?.sk_vendedor, highlight, openDetails, pathname, refreshAlert, router, searchParamsString, setSelectedChallenge])
+
+  useEffect(() => {
+    if (!authUser?.sk_vendedor || loading || alertLoading) return
+
+    const validIds = new Set(sellerCampaignNotificationIds)
+    const prefixes = getSellerCampaignNotificationPrefixes(authUser.sk_vendedor)
+    const staleIds = notifications
+      .filter(
+        (notification) =>
+          prefixes.some((prefix) => notification.id.startsWith(prefix)) && !validIds.has(notification.id)
+      )
+      .map((notification) => notification.id)
+
+    if (!staleIds.length) return
+
+    removeNotifications(staleIds)
+  }, [
+    alertLoading,
+    authUser?.sk_vendedor,
+    loading,
+    notifications,
+    removeNotifications,
+    sellerCampaignNotificationIdsKey,
+  ])
 
   useEffect(() => {
     if (loading || selectedChallenge || acceptedChallenges.length || availableChallengesRaw.length || activeTab === "bonus") return
@@ -173,7 +219,10 @@ function VendedorDesafiosContent() {
       setOpeningChallengeId((current) => (current === String(challenge.id) ? null : current))
     }
 
-    if (!detail) return
+    if (!detail) {
+      await refreshAlert()
+      return
+    }
 
     setSelectedChallenge(detail)
     setActiveTab(getChallengeCampaignKind(detail) === "BONUS" ? "bonus" : "desafios")

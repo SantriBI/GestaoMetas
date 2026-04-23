@@ -62,6 +62,16 @@ export interface SellerChallengeAlertResponse {
   mock?: boolean
 }
 
+type SellerCampaignSurfaceItem = {
+  id: number | string
+  exigeAceite?: boolean | null
+  status?: string | null
+  participantStatus?: ParticipantStatus | string | null
+  participant?: {
+    statusParticipacao?: ParticipantStatus | string | null
+  } | null
+}
+
 export interface ChallengeImpactPreviewResponse {
   impact: ChallengeImpactMetrics
   participantsPreview: {
@@ -322,8 +332,8 @@ export function hasChallengeMetaTarget(meta: Pick<ChallengeMeta, "tipoMeta" | "c
   return Boolean(getChallengeMetaFocusLabel(meta))
 }
 
-export function getChallengeCampaignKind(challenge: Pick<Challenge, "exigeAceite">): ChallengeCampaignKind {
-  return challenge.exigeAceite ? "DESAFIO" : "BONUS"
+export function getChallengeCampaignKind(challenge: { exigeAceite?: boolean | null }): ChallengeCampaignKind {
+  return challenge.exigeAceite === false ? "BONUS" : "DESAFIO"
 }
 
 export function getChallengeCampaignKindLabel(kind: ChallengeCampaignKind) {
@@ -375,6 +385,31 @@ export function isSellerChallengeAccepted(challenge: Pick<Challenge, "exigeAceit
 
 export function isSellerBonus(challenge: Pick<Challenge, "exigeAceite">) {
   return getChallengeCampaignKind(challenge) === "BONUS"
+}
+
+export function getSellerCampaignParticipantStatus(challenge: Pick<SellerCampaignSurfaceItem, "participantStatus" | "participant">) {
+  return String(challenge.participant?.statusParticipacao ?? challenge.participantStatus ?? "").toUpperCase()
+}
+
+export function shouldShowSellerCampaignBanner(challenge: Pick<SellerCampaignSurfaceItem, "status" | "participantStatus" | "participant">) {
+  const status = String(challenge.status ?? "").toUpperCase()
+  const participantStatus = getSellerCampaignParticipantStatus(challenge)
+
+  return (!status || ["ATIVO", "AGENDADO"].includes(status)) && participantStatus !== "RECUSADO"
+}
+
+export function getSellerCampaignNotificationId(
+  challenge: Pick<SellerCampaignSurfaceItem, "id" | "exigeAceite">,
+  skVendedor?: number | string | null
+) {
+  const sellerKey = String(skVendedor ?? "vendedor")
+  const prefix = getChallengeCampaignKind(challenge) === "BONUS" ? "seller-bonus" : "seller-challenge"
+  return `${prefix}-${sellerKey}-${challenge.id}`
+}
+
+export function getSellerCampaignNotificationPrefixes(skVendedor?: number | string | null) {
+  const sellerKey = String(skVendedor ?? "vendedor")
+  return [`seller-challenge-${sellerKey}-`, `seller-bonus-${sellerKey}-`] as const
 }
 
 export function getTotalReward(challenge: Pick<Challenge, "metas">) {

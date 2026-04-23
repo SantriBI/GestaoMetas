@@ -185,6 +185,9 @@ export function useSellerChallenges(skVendedor?: number | string | null) {
     try {
       const allChallenges = await fetchSellerChallenges(skVendedor, "all")
       setData(allChallenges)
+      setSelectedChallenge((current) =>
+        current && !allChallenges.items.some((challenge) => String(challenge.id) === String(current.id)) ? null : current
+      )
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar desafios.")
@@ -195,10 +198,29 @@ export function useSellerChallenges(skVendedor?: number | string | null) {
 
   const openDetails = useCallback(async (id: number | string) => {
     if (!skVendedor) return null
-    const detail = await fetchSellerChallengeDetail(skVendedor, id)
-    setSelectedChallenge(detail)
-    return detail
-  }, [skVendedor])
+    try {
+      const detail = await fetchSellerChallengeDetail(skVendedor, id)
+      setSelectedChallenge(detail)
+      setError(null)
+      return detail
+    } catch (err) {
+      const isMissingChallenge = err instanceof ChallengeApiError && err.status === 404
+
+      if (isMissingChallenge) {
+        await refresh()
+      }
+
+      setSelectedChallenge((current) => (current && String(current.id) === String(id) ? null : current))
+      setError(
+        isMissingChallenge
+          ? "Esse desafio nao esta mais disponivel. Atualizamos a lista para remover o atalho antigo."
+          : err instanceof Error
+            ? err.message
+            : "Erro ao carregar detalhes do desafio."
+      )
+      return null
+    }
+  }, [refresh, skVendedor])
 
   const acceptChallenge = useCallback(async (id: number | string) => {
     if (!skVendedor) return null

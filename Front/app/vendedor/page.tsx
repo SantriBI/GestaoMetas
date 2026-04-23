@@ -34,6 +34,10 @@ import { MotivationSpotlight } from "@/components/layout/MotivationSpotlight"
 import { useNotifications } from "@/components/notifications/NotificationContext"
 import { useSellerChallengeAlert, useSellerChallenges } from "@/hooks/useChallenges"
 import {
+  getChallengeCampaignKind,
+  getSellerCampaignNotificationId,
+  getSellerCampaignNotificationPrefixes,
+  shouldShowSellerCampaignBanner,
   type Challenge,
   type SellerChallengeAlertItem,
 } from "@/lib/challenges"
@@ -189,33 +193,14 @@ function isToday(dateString: string | Date) {
   )
 }
 
-function getDashboardParticipantStatus(challenge: DashboardCampaignBannerItem) {
-  return String(challenge.participant?.statusParticipacao ?? challenge.participantStatus ?? "").toUpperCase()
-}
-
-function shouldShowDashboardCampaignBanner(challenge: DashboardCampaignBannerItem) {
-  const status = String(challenge.status ?? "").toUpperCase()
-  const participantStatus = getDashboardParticipantStatus(challenge)
-
-  return (!status || ["ATIVO", "AGENDADO"].includes(status)) && participantStatus !== "RECUSADO"
-}
-
 function isDashboardCampaignAvailable(challenge: DashboardCampaignBannerItem) {
-  const participantStatus = getDashboardParticipantStatus(challenge)
+  const participantStatus = String(challenge.participant?.statusParticipacao ?? challenge.participantStatus ?? "").toUpperCase()
   return challenge.exigeAceite !== false && (!participantStatus || ["DISPONIVEL", "CONVIDADO"].includes(participantStatus))
-}
-
-function getDashboardCampaignKind(challenge: DashboardCampaignBannerItem) {
-  return challenge.exigeAceite === false ? "BONUS" : "DESAFIO"
-}
-
-function getDashboardCampaignId(challenge: Pick<DashboardCampaignBannerItem, "id">) {
-  return String(challenge.id)
 }
 
 export default function VendedorDashboard() {
   const router = useRouter()
-  const { addNotification } = useNotifications()
+  const { addNotification, notifications, removeNotifications } = useNotifications()
   const [vendedor, setVendedor] = useState<VendedorData | null>(null)
   const [vendedorLoadError, setVendedorLoadError] = useState<string | null>(null)
   const [oportunidades, setOportunidades] = useState<OportunidadesData | null>(null)
@@ -241,9 +226,10 @@ export default function VendedorDashboard() {
   const jornadaSectionRef = useRef<HTMLDivElement | null>(null)
   const hasPlayedConfettiRef = useRef(false)
   const startupNotificationIdsRef = useRef<Set<string>>(new Set())
-  const { alert: desafioAlert } = useSellerChallengeAlert(skVendedor)
+  const { alert: desafioAlert, loading: isLoadingChallengeAlert } = useSellerChallengeAlert(skVendedor)
   const {
     data: sellerChallengesData,
+    loading: isLoadingSellerChallenges,
     acting: isActingSellerCampaign,
     acceptChallenge: acceptSellerCampaign,
     dismissChallenge: dismissSellerCampaign,
@@ -257,9 +243,24 @@ export default function VendedorDashboard() {
     ? sellerCampaignItems
     : alertCampaignItems
   const dashboardCampaignIds = dashboardCampaignSourceItems
-    .filter(shouldShowDashboardCampaignBanner)
-    .map(getDashboardCampaignId)
+    .filter(shouldShowSellerCampaignBanner)
+    .map((challenge) => String(challenge.id))
   const dashboardCampaignIdsKey = dashboardCampaignIds.join("|")
+  const dashboardCampaignNotificationIds = useMemo(() => {
+    if (!skVendedor) return []
+
+    const seen = new Set<string>()
+
+    return [...sellerCampaignItems, ...alertCampaignItems]
+      .filter(shouldShowSellerCampaignBanner)
+      .map((challenge) => getSellerCampaignNotificationId(challenge, skVendedor))
+      .filter((id) => {
+        if (seen.has(id)) return false
+        seen.add(id)
+        return true
+      })
+  }, [alertCampaignItems, sellerCampaignItems, skVendedor])
+  const dashboardCampaignNotificationIdsKey = dashboardCampaignNotificationIds.join("|")
 
   useEffect(() => {
     const userStr = sessionStorage.getItem("user")
@@ -518,15 +519,13 @@ export default function VendedorDashboard() {
   }, [activeView])
 
   useEffect(() => {
-    const challenges = dashboardCampaignSourceItems.filter(shouldShowDashboardCampaignBanner)
+    const challenges = dashboardCampaignSourceItems.filter(shouldShowSellerCampaignBanner)
 
     if (!challenges.length) return
 
     challenges.forEach((challenge) => {
-      const isBonus = getDashboardCampaignKind(challenge) === "BONUS"
-      const notificationId = isBonus
-        ? `seller-bonus-${skVendedor ?? "vendedor"}-${challenge.id}`
-        : `seller-challenge-${skVendedor ?? "vendedor"}-${challenge.id}`
+      const isBonus = getChallengeCampaignKind(challenge) === "BONUS"
+      const notificationId = getSellerCampaignNotificationId(challenge, skVendedor)
       if (startupNotificationIdsRef.current.has(notificationId)) return
 
       startupNotificationIdsRef.current.add(notificationId)
@@ -541,6 +540,30 @@ export default function VendedorDashboard() {
       })
     })
   }, [addNotification, dashboardCampaignIdsKey, dashboardCampaignSourceItems, skVendedor])
+
+  useEffect(() => {
+    if (!skVendedor || isLoadingSellerChallenges || isLoadingChallengeAlert) return
+
+    const validIds = new Set(dashboardCampaignNotificationIds)
+    const prefixes = getSellerCampaignNotificationPrefixes(skVendedor)
+    const staleIds = notifications
+      .filter(
+        (notification) =>
+          prefixes.some((prefix) => notification.id.startsWith(prefix)) && !validIds.has(notification.id)
+      )
+      .map((notification) => notification.id)
+
+    if (!staleIds.length) return
+
+    removeNotifications(staleIds)
+  }, [
+    dashboardCampaignNotificationIdsKey,
+    isLoadingChallengeAlert,
+    isLoadingSellerChallenges,
+    notifications,
+    removeNotifications,
+    skVendedor,
+  ])
 
   useEffect(() => {
     if (!dashboardCampaignIds.length) return
@@ -761,8 +784,8 @@ export default function VendedorDashboard() {
       ? `Voce transformou ${formatCurrency(lifeGoalConquistado)} em conquista pessoal.`
       : `Voce ja acumulou ${formatCurrency(lifeGoalConquistado)} para ${lifeGoal?.summary.quantidadeObjetivos ?? 0} objetivo${(lifeGoal?.summary.quantidadeObjetivos ?? 0) > 1 ? "s" : ""}${lifeGoalPrazo ? ` e tem ate ${lifeGoalPrazo}` : ""}.`
   const dashboardCampaignBanners = dashboardCampaignSourceItems
-    .filter(shouldShowDashboardCampaignBanner)
-    .filter((campaign) => !dismissedCampaignBannerIds.has(getDashboardCampaignId(campaign)))
+    .filter(shouldShowSellerCampaignBanner)
+    .filter((campaign) => !dismissedCampaignBannerIds.has(String(campaign.id)))
 
   const getPositionIcon = () => {
     if (variacaoPosicao > 0) return <ChevronUp className="w-5 h-5 text-emerald-300" />
@@ -798,7 +821,7 @@ export default function VendedorDashboard() {
     orcamentosAbertos > 0
       ? `${orcamentosAbertos} oportunidade${orcamentosAbertos > 1 ? "s" : ""} te esperando`
       : "Nenhuma oportunidade crítica agora"
-  const novosDesafiosCount = dashboardCampaignSourceItems.filter(shouldShowDashboardCampaignBanner).length
+  const novosDesafiosCount = dashboardCampaignSourceItems.filter(shouldShowSellerCampaignBanner).length
     || desafioAlert?.items?.length
     || (desafioAlert?.hasNewChallenge ? 1 : 0)
   const sellerDashboardCards: CardDashboardConfig[] = [
@@ -975,7 +998,7 @@ export default function VendedorDashboard() {
           {dashboardCampaignBanners.length ? (
             <div className="space-y-4">
               {dashboardCampaignBanners.map((campaign) => {
-                const kind = getDashboardCampaignKind(campaign)
+                const kind = getChallengeCampaignKind(campaign)
                 const isAvailable = isDashboardCampaignAvailable(campaign)
 
                 return (

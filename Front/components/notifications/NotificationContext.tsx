@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
+import { getStoredUser, onStoredUserChange, type AuthUser } from "@/lib/user-session"
 
 export type NotificationType = "info" | "success" | "warning" | "error"
 
@@ -44,9 +45,11 @@ type NotificationContextValue = {
   dismissToast: (id: string) => void
   markAsRead: (id: string) => void
   markAllAsRead: () => void
+  removeNotifications: (ids: string[]) => void
 }
 
-const STORAGE_KEY = "sip-notifications-v1"
+const LEGACY_STORAGE_KEY = "sip-notifications-v1"
+const STORAGE_KEY_PREFIX = "sip-notifications-v2"
 const MAX_NOTIFICATIONS = 60
 const MAX_VISIBLE_TOASTS = 8
 
@@ -74,11 +77,23 @@ function normalizeNotification(input: AddNotificationInput): AppNotification {
   }
 }
 
-function readStoredNotifications() {
+function getNotificationStorageKey(user?: AuthUser | null) {
+  if (!user) return null
+
+  const role = String(user.role ?? "usuario").toLowerCase()
+  const userId = String(user.id_usuario ?? "anon")
+  const companyId = String(user.empresa_id ?? user.sk_empresa ?? "sem-empresa")
+  const sellerId = String(user.sk_vendedor ?? "sem-vendedor")
+
+  return `${STORAGE_KEY_PREFIX}:${role}:${userId}:${companyId}:${sellerId}`
+}
+
+function readStoredNotifications(storageKey?: string | null) {
   if (typeof window === "undefined") return []
+  if (!storageKey) return []
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(storageKey)
     if (!raw) return []
 
     const parsed = JSON.parse(raw)
@@ -100,44 +115,50 @@ function readStoredNotifications() {
   }
 }
 
-function mergeNotifications(primary: AppNotification[], secondary: AppNotification[]) {
-  const seen = new Set<string>()
-  return [...primary, ...secondary]
-    .filter((notification) => {
-      if (seen.has(notification.id)) return false
-      seen.add(notification.id)
-      return true
-    })
-    .slice(0, MAX_NOTIFICATIONS)
-}
-
 export function NotificationProvider({ children }: { children: ReactNode }) {
-  const [notifications, setNotifications] = useState<AppNotification[]>([])
+  const [storageKey, setStorageKey] = useState<string | null>(() => getNotificationStorageKey(getStoredUser()))
+  const [notifications, setNotifications] = useState<AppNotification[]>(() =>
+    readStoredNotifications(getNotificationStorageKey(getStoredUser()))
+  )
   const [toastIds, setToastIds] = useState<string[]>([])
-  const hasHydratedRef = useRef(false)
-  const notificationsRef = useRef<AppNotification[]>([])
+  const storageKeyRef = useRef<string | null>(storageKey)
+  const notificationsRef = useRef<AppNotification[]>(notifications)
 
   useEffect(() => {
-    const stored = readStoredNotifications()
-    setNotifications((current) => {
-      const next = current.length ? mergeNotifications(current, stored) : stored
-      notificationsRef.current = next
-      return next
-    })
-    hasHydratedRef.current = true
+    function syncScope() {
+      const nextStorageKey = getNotificationStorageKey(getStoredUser())
+      if (nextStorageKey === storageKeyRef.current) return
+
+      const nextNotifications = readStoredNotifications(nextStorageKey)
+      storageKeyRef.current = nextStorageKey
+      notificationsRef.current = nextNotifications
+      setStorageKey(nextStorageKey)
+      setNotifications(nextNotifications)
+      setToastIds([])
+    }
+
+    try {
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY)
+    } catch {
+      // Ignore storage cleanup failures; scoped notifications still work in memory.
+    }
+
+    syncScope()
+    return onStoredUserChange(syncScope)
   }, [])
 
   useEffect(() => {
+    storageKeyRef.current = storageKey
     notificationsRef.current = notifications
 
-    if (!hasHydratedRef.current || typeof window === "undefined") return
+    if (typeof window === "undefined" || !storageKey) return
 
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications.slice(0, MAX_NOTIFICATIONS)))
+      window.localStorage.setItem(storageKey, JSON.stringify(notifications.slice(0, MAX_NOTIFICATIONS)))
     } catch {
       // Storage is a convenience; the in-memory queue still works without it.
     }
-  }, [notifications])
+  }, [notifications, storageKey])
 
   const enqueueToast = useCallback((id: string) => {
     setToastIds((current) => {
@@ -237,6 +258,19 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setNotifications(next)
   }, [])
 
+  const removeNotifications = useCallback((ids: string[]) => {
+    if (!ids.length) return
+
+    const idsSet = new Set(ids)
+    const next = notificationsRef.current.filter((notification) => !idsSet.has(notification.id))
+
+    if (next.length === notificationsRef.current.length) return
+
+    notificationsRef.current = next
+    setNotifications(next)
+    setToastIds((current) => current.filter((id) => !idsSet.has(id)))
+  }, [])
+
   const toastNotifications = useMemo(() => {
     return toastIds
       .map((id) => notifications.find((notification) => notification.id === id))
@@ -256,8 +290,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       dismissToast,
       markAsRead,
       markAllAsRead,
+      removeNotifications,
     }),
-    [addNotification, dismissToast, markAllAsRead, markAsRead, notifications, toastNotifications, unreadCount]
+    [addNotification, dismissToast, markAllAsRead, markAsRead, notifications, removeNotifications, toastNotifications, unreadCount]
   )
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>
