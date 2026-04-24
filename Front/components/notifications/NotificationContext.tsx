@@ -24,6 +24,7 @@ export interface AppNotification {
   actionHref?: string
   groupKey?: string
   count?: number
+  scopeKey?: string
 }
 
 type AddNotificationInput = {
@@ -63,7 +64,7 @@ function createNotificationId() {
   return `notification-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-function normalizeNotification(input: AddNotificationInput): AppNotification {
+function normalizeNotification(input: AddNotificationInput, scopeKey?: string | null): AppNotification {
   return {
     id: input.id ?? createNotificationId(),
     title: input.title,
@@ -74,6 +75,7 @@ function normalizeNotification(input: AddNotificationInput): AppNotification {
     actionHref: input.actionHref,
     groupKey: input.groupKey,
     count: 1,
+    scopeKey: scopeKey ?? undefined,
   }
 }
 
@@ -106,7 +108,8 @@ function readStoredNotifications(storageKey?: string | null) {
           typeof item.id === "string" &&
           typeof item.title === "string" &&
           typeof item.message === "string" &&
-          typeof item.createdAt === "string"
+          typeof item.createdAt === "string" &&
+          item.scopeKey === storageKey
         )
       })
       .slice(0, MAX_NOTIFICATIONS)
@@ -169,7 +172,8 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   const addNotification = useCallback(
     (input: AddNotificationInput) => {
-      const nextNotification = normalizeNotification(input)
+      const activeScopeKey = storageKeyRef.current
+      const nextNotification = normalizeNotification(input, activeScopeKey)
       const current = notificationsRef.current
       const existingById = current.find((notification) => notification.id === nextNotification.id)
 
@@ -184,6 +188,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           createdAt: nextNotification.createdAt,
           actionHref: nextNotification.actionHref ?? existingById.actionHref,
           groupKey: nextNotification.groupKey ?? existingById.groupKey,
+          scopeKey: nextNotification.scopeKey ?? existingById.scopeKey,
           read: shouldShowToast ? false : existingById.read,
         }
         const next = [updated, ...current.filter((_, index) => index !== existingIndex)].slice(0, MAX_NOTIFICATIONS)

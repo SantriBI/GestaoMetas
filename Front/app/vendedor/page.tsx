@@ -263,6 +263,15 @@ export default function VendedorDashboard() {
   const dashboardCampaignNotificationIdsKey = dashboardCampaignNotificationIds.join("|")
 
   useEffect(() => {
+    if (!authUser?.sk_vendedor) return
+
+    startupNotificationIdsRef.current = new Set()
+    setIsLifeGoalNoticeDismissed(false)
+    setIsMotivationClosed(false)
+    setDismissedCampaignBannerIds(new Set())
+  }, [authUser?.sk_vendedor])
+
+  useEffect(() => {
     const userStr = sessionStorage.getItem("user")
 
     if (!userStr) {
@@ -517,6 +526,36 @@ export default function VendedorDashboard() {
 
     return () => window.clearTimeout(scrollTimeout)
   }, [activeView])
+
+  useEffect(() => {
+    if (!authUser?.sk_vendedor) return
+
+    const sellerKey = String(authUser.sk_vendedor)
+    const currentLifeGoalNotificationId = `seller-life-goal-${sellerKey}`
+    const currentMotivationNotificationId = `seller-motivation-dashboard-${sellerKey}`
+    const currentCampaignPrefixes = getSellerCampaignNotificationPrefixes(sellerKey)
+    const staleIds = notifications
+      .filter((notification) => {
+        if (notification.id.startsWith("seller-life-goal-")) {
+          return notification.id !== currentLifeGoalNotificationId
+        }
+
+        if (notification.id.startsWith("seller-motivation-dashboard-")) {
+          return notification.id !== currentMotivationNotificationId
+        }
+
+        if (notification.id.startsWith("seller-challenge-") || notification.id.startsWith("seller-bonus-")) {
+          return !currentCampaignPrefixes.some((prefix) => notification.id.startsWith(prefix))
+        }
+
+        return false
+      })
+      .map((notification) => notification.id)
+
+    if (!staleIds.length) return
+
+    removeNotifications(staleIds)
+  }, [authUser?.sk_vendedor, notifications, removeNotifications])
 
   useEffect(() => {
     const challenges = dashboardCampaignSourceItems.filter(shouldShowSellerCampaignBanner)
@@ -925,16 +964,6 @@ export default function VendedorDashboard() {
             <div className="rounded-[22px] border border-amber-300/18 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
               {vendedorLoadError}
             </div>
-          ) : null}
-
-          {isLoadingLifeGoal ? (
-            <section className="rounded-[22px] border border-emerald-300/14 bg-[linear-gradient(135deg,rgba(5,46,34,0.82),rgba(8,20,32,0.92))] px-4 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.16)] sm:px-5">
-              <div className="animate-pulse space-y-2.5">
-                <div className="h-2.5 w-20 rounded-full bg-white/12" />
-                <div className="h-3.5 w-64 max-w-full rounded-full bg-white/12" />
-                <div className="h-2 w-full rounded-full bg-white/10" />
-              </div>
-            </section>
           ) : null}
 
           {!isLoadingLifeGoal && lifeGoalHasObjectives && !isLifeGoalNoticeDismissed ? (
