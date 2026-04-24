@@ -71,7 +71,7 @@ export interface LifeGoalResponse {
   ganhos: {
     faturamentoConsiderado: number
     comissao: number
-    comissaoOrigem?: "mysql" | "estimada" | string
+    comissaoOrigem?: "oracle" | "estimada" | string
     bonus: number
     desafios: number
     totalConquistado: number
