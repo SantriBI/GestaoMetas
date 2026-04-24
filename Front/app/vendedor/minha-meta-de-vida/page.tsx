@@ -656,10 +656,10 @@ export default function MinhaMetaDeVidaPage() {
             title="Comissao"
             value={formatCurrency(lifeGoal?.ganhos.comissao ?? 0)}
             description={
-              lifeGoal?.ganhos.comissaoOrigem === "mysql"
+              lifeGoal?.ganhos.comissaoOrigem === "oracle"
                 ? `Valor real da sua comissao a pagar, com base em ${formatCurrency(lifeGoal?.ganhos.faturamentoConsiderado ?? 0)} de receita acumulada.`
                 : lifeGoal?.ganhos.comissaoOrigem === "indisponivel"
-                  ? "Comissao real indisponivel no momento. Configure o acesso ao MySQL para exibir o valor correto."
+                  ? "Comissao real indisponivel no momento. Configure o acesso ao Oracle para exibir o valor correto."
                   : `Estimativa baseada em ${formatCurrency(lifeGoal?.ganhos.faturamentoConsiderado ?? 0)} de faturamento considerado.`
             }
             accent="from-cyan-400/22 via-cyan-400/10 to-transparent"
