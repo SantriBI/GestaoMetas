@@ -184,19 +184,21 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
         `
         WITH base AS (
           SELECT
-            orcamento_id,
-            sk_dt_fechamento,
+            cockpit.orcamento_id,
+            -- No cockpit, SK_DATA representa a data operacional de recebimento
+            -- usada no ranking diario. Evitamos usar data de fechamento aqui.
+            cockpit.sk_data AS sk_dt_recebimento,
             CASE
-              WHEN tipo = 'DEV' THEN NVL(valor_liquido_item, 0) * -1
-              ELSE NVL(valor_liquido_item, 0)
+              WHEN tipo_orcamento.tipo_sintetico = 'dev' THEN NVL(cockpit.valor_liquido_item, 0) * -1
+              ELSE NVL(cockpit.valor_liquido_item, 0)
             END AS valor_item
-          FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE
-          WHERE sk_vendedor = :sk_vendedor
+          FROM DM_VENDAS.FATO_COCKPIT cockpit
+          LEFT JOIN DM_VENDAS.DIM_TIPO_ORCAMENTO tipo_orcamento
+            ON tipo_orcamento.sk_tipo_orcamento = cockpit.sk_tipo_orcamento
+          WHERE cockpit.sk_vendedor = :sk_vendedor
         )
         SELECT
           COUNT(DISTINCT orcamento_id) AS quantidade_vendas,
-          COUNT(DISTINCT CASE WHEN valor_item > 0 THEN orcamento_id END) AS vendas_positivas,
-          COUNT(DISTINCT CASE WHEN valor_item > 0 THEN sk_dt_fechamento END) AS dias_com_venda,
           ROUND(NVL(SUM(valor_item), 0), 2) AS receita_total,
           ROUND(
             CASE
@@ -205,7 +207,7 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
             END,
             2
           ) AS ticket_medio,
-          MAX(sk_dt_fechamento) AS ultima_venda
+          MAX(sk_dt_recebimento) AS ultima_venda
         FROM base
         `,
         { sk_vendedor }
@@ -299,24 +301,27 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
           qtd_produtos
         FROM (
           SELECT
+            cockpit.orcamento_id,
             c.nome_cliente,
-            f.sk_dt_recebimento AS data,
+            cockpit.sk_data AS data,
             ROUND(
               SUM(
                 CASE
-                  WHEN f.tipo = 'DEV' THEN NVL(f.valor_liquido_item, 0) * -1
-                  ELSE NVL(f.valor_liquido_item, 0)
+                  WHEN tipo_orcamento.tipo_sintetico = 'dev' THEN NVL(cockpit.valor_liquido_item, 0) * -1
+                  ELSE NVL(cockpit.valor_liquido_item, 0)
                 END
               ),
               2
             ) AS valor_total,
-            COUNT(DISTINCT f.sk_produto) AS qtd_produtos
-          FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE f
+            COUNT(DISTINCT cockpit.sk_produto) AS qtd_produtos
+          FROM DM_VENDAS.FATO_COCKPIT cockpit
           JOIN DM_VENDAS.DIM_CLIENTE c
-            ON c.sk_cliente = f.sk_cliente
-          WHERE f.sk_vendedor = :sk_vendedor
-          GROUP BY c.nome_cliente, f.sk_dt_recebimento
-          ORDER BY data DESC
+            ON c.sk_cliente = cockpit.sk_cliente
+          LEFT JOIN DM_VENDAS.DIM_TIPO_ORCAMENTO tipo_orcamento
+            ON tipo_orcamento.sk_tipo_orcamento = cockpit.sk_tipo_orcamento
+          WHERE cockpit.sk_vendedor = :sk_vendedor
+          GROUP BY cockpit.orcamento_id, c.nome_cliente, cockpit.sk_data
+          ORDER BY cockpit.sk_data DESC, cockpit.orcamento_id DESC
         )
         WHERE ROWNUM <= 5
         `,
