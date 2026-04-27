@@ -1,7 +1,9 @@
 "use client"
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
+import { toast } from "sonner"
 import {
+  ActivationCampaignResponse,
   ActivationPreviewResponse,
   ActivationScope,
   ActivationSegment,
@@ -17,6 +19,9 @@ import {
   replaceActivationVariables,
   sendActivationCampaign,
 } from "@/lib/activation-service"
+
+const ACTIVATION_CAMPAIGN_DB_WARNING =
+  "A campanha foi gerada, mas ainda não foi salva no banco. Execute o script Back/sql/campanhas_ativacao.sql para habilitar a persistência."
 
 export function useActivationCampaign(scope: ActivationScope | null) {
   const [segments, setSegments] = useState<ActivationSegment[]>([])
@@ -261,8 +266,16 @@ export function useActivationCampaign(scope: ActivationScope | null) {
         role: scope.role,
         sk_vendedor: scope.sk_vendedor ?? null,
         empresa_id: scope.empresa_id ?? null,
+        id_usuario: scope.id_usuario ?? null,
+        nome_usuario: scope.nome_usuario ?? null,
         clientes: selectedClients,
       })
+
+      if (response.persisted === false || response.campanha.id === null || response.campanha.id === undefined) {
+        setLastCampaignId(null)
+        setError(ACTIVATION_CAMPAIGN_DB_WARNING)
+        return null
+      }
 
       setLastCampaignId(response.campanha.id)
       return response
@@ -277,21 +290,36 @@ export function useActivationCampaign(scope: ActivationScope | null) {
   async function triggerSend() {
     if (!scope || !selectedSegment || !message.trim()) return null
 
+    let createdResponse: ActivationCampaignResponse | null = null
+
     try {
       setIsPersisting(true)
       setError(null)
 
-      const persistedCampaign =
-        lastCampaignId ??
-        (await createActivationCampaign({
+      let persistedCampaign = lastCampaignId
+
+      if (!persistedCampaign) {
+        createdResponse = await createActivationCampaign({
           segmento: selectedSegment,
           template_id: selectedTemplateId || null,
           mensagem_base: message,
           role: scope.role,
           sk_vendedor: scope.sk_vendedor ?? null,
           empresa_id: scope.empresa_id ?? null,
+          id_usuario: scope.id_usuario ?? null,
+          nome_usuario: scope.nome_usuario ?? null,
           clientes: selectedClients,
-        })).campanha.id
+        })
+
+        persistedCampaign = createdResponse.campanha.id
+      }
+
+      if (persistedCampaign === null || persistedCampaign === undefined) {
+        setLastCampaignId(null)
+        setError(ACTIVATION_CAMPAIGN_DB_WARNING)
+        toast.error(ACTIVATION_CAMPAIGN_DB_WARNING)
+        return null
+      }
 
       setLastCampaignId(persistedCampaign)
 
@@ -301,13 +329,35 @@ export function useActivationCampaign(scope: ActivationScope | null) {
         role: scope.role,
         sk_vendedor: scope.sk_vendedor ?? null,
         empresa_id: scope.empresa_id ?? null,
+        id_usuario: scope.id_usuario ?? null,
+        nome_usuario: scope.nome_usuario ?? null,
         clientes: selectedClients,
       })
 
       setLastSendStatus(response.webhook_status)
+      toast.success("Campanha criada com sucesso 🚀", {
+        description: createdResponse?.downloaded
+          ? `Download iniciado: ${createdResponse.file_name ?? "campanha.xlsx"}.`
+          : "Campanha salva e pronta para ativação.",
+      })
       return response
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao confirmar campanha.")
+      const messageError = err instanceof Error ? err.message : "Erro ao confirmar campanha."
+      const campaignWasSaved = Boolean(lastCampaignId ?? createdResponse?.campanha.id ?? createdResponse?.downloaded)
+
+      if (campaignWasSaved) {
+        const partialMessage = `Campanha salva, mas houve falha ao concluir a etapa de envio: ${messageError}`
+        setError(partialMessage)
+        toast.success("Campanha criada com sucesso 🚀", {
+          description: createdResponse?.downloaded
+            ? "O XLSX foi baixado automaticamente, mas a etapa final de envio falhou."
+            : "A campanha foi salva, mas a etapa final de envio falhou.",
+        })
+      } else {
+        setError(messageError)
+        toast.error(messageError)
+      }
+
       return null
     } finally {
       setIsPersisting(false)

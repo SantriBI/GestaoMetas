@@ -3,6 +3,8 @@ import {
   criarCampanha,
   criarTemplate,
   enviarCampanha,
+  gerarExcelCampanha,
+  gerarNomeArquivo,
   listarSegmentos,
   listarTemplates,
   obterPreviewCampanha,
@@ -15,6 +17,8 @@ function getScopeFromRequest(req) {
     role: source.role,
     sk_vendedor: source.sk_vendedor ?? source.vendedor_id ?? null,
     empresa_id: source.empresa_id ?? null,
+    id_usuario: source.id_usuario ?? source.usuario_id ?? null,
+    nome_usuario: source.nome_usuario ?? source.usuario_nome ?? null,
   }
 }
 
@@ -61,7 +65,34 @@ export async function getPreview(req, res) {
 export async function postCampanha(req, res) {
   try {
     const payload = { ...req.body, ...getScopeFromRequest(req) }
-    res.status(201).json(await criarCampanha(payload))
+    const result = await criarCampanha(payload)
+
+    console.log("Campanha criada:", result.campanha.id)
+    console.log("Clientes:", result.campanha.clientes.length)
+
+    try {
+      const clientes = result.campanha.clientes ?? []
+      const buffer = await gerarExcelCampanha(clientes, result.campanha)
+      const fileName = gerarNomeArquivo(result.campanha.segmento)
+
+      res.setHeader(
+        "Access-Control-Expose-Headers",
+        "Content-Disposition, X-Campaign-Id, X-Campaign-Persisted, X-Campaign-Segmento"
+      )
+      res.setHeader("X-Campaign-Id", String(result.campanha.id ?? ""))
+      res.setHeader("X-Campaign-Persisted", String(Boolean(result.persisted)))
+      res.setHeader("X-Campaign-Segmento", String(result.campanha.segmento ?? ""))
+      res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`)
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      )
+
+      return res.status(201).send(buffer)
+    } catch (error) {
+      console.error("Erro ao gerar excel da campanha:", error)
+      return res.status(201).json(result)
+    }
   } catch (error) {
     console.error("Erro ao criar campanha de ativação:", error)
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro ao criar campanha." })

@@ -1,3 +1,4 @@
+import ExcelJS from "exceljs"
 import { query } from "../db/oracle.js"
 
 const DEFAULT_TEMPLATES = [
@@ -120,6 +121,8 @@ const SEGMENTS = [
   },
 ]
 
+let cachedCampanhaAtivacaoConfirmationSupport = null
+
 function normalizarLinha(row) {
   return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key.toLowerCase(), value]))
 }
@@ -127,6 +130,14 @@ function normalizarLinha(row) {
 function numero(value) {
   const parsed = Number(value ?? 0)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+function numeroOuNull(value) {
+  if (value === null || value === undefined) return null
+  if (typeof value === "string" && !value.trim()) return null
+
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function texto(value) {
@@ -250,6 +261,50 @@ async function nextTableId(tableName) {
   return numero(rows[0]?.NEXT_ID ?? rows[0]?.next_id)
 }
 
+async function tableHasColumns(tableName, columnNames) {
+  if (!columnNames.length) {
+    return true
+  }
+
+  const normalizedColumns = columnNames.map((columnName) => `'${String(columnName).toUpperCase()}'`).join(", ")
+  const rows = await query(
+    `
+    SELECT COUNT(*) AS total
+    FROM USER_TAB_COLUMNS
+    WHERE TABLE_NAME = :table_name
+      AND COLUMN_NAME IN (${normalizedColumns})
+    `,
+    { table_name: String(tableName ?? "").toUpperCase() }
+  )
+  return numero(rows[0]?.TOTAL ?? rows[0]?.total) >= columnNames.length
+}
+
+async function campanhaAtivacaoSuportaConfirmacao() {
+  if (cachedCampanhaAtivacaoConfirmationSupport !== null) {
+    return cachedCampanhaAtivacaoConfirmationSupport
+  }
+
+  cachedCampanhaAtivacaoConfirmationSupport = await tableHasColumns("CAMPANHAS_ATIVACAO", [
+    "DATA_CONFIRMACAO",
+    "ID_USUARIO_CONFIRMACAO",
+    "NOME_USUARIO_CONFIRMACAO",
+  ])
+  return cachedCampanhaAtivacaoConfirmationSupport
+}
+
+function buildCampaignConfirmation(payload = {}) {
+  return {
+    data_confirmacao: parseOracleDate(payload.data_confirmacao) ?? new Date(),
+    id_usuario_confirmacao: numeroOuNull(payload.id_usuario ?? payload.usuario_id),
+    nome_usuario_confirmacao:
+      texto(payload.nome_usuario) || texto(payload.usuario_nome) || texto(payload.nomeUsuario) || null,
+  }
+}
+
+function normalizeCampaignTemplateId(templateId) {
+  return numeroOuNull(templateId)
+}
+
 function buildRfvSource(scope) {
   if (scope.isGerente) {
     return {
@@ -313,6 +368,7 @@ async function fetchClientesRfv(segmentConfig, scope) {
       telefone: texto(item.telefone),
       classificacao_rfv: texto(item.classificacao) || segmentConfig.titulo,
       ultima_compra: item.ultima_compra ?? null,
+      total_compras: null,
       valor_potencial: numero(item.valor_potencial),
       valor_orcamento: null,
       data_orcamento: null,
@@ -373,6 +429,7 @@ async function fetchClientesOrcamento(scope) {
       telefone: texto(item.telefone),
       classificacao_rfv: texto(item.classificacao) || "Orçamentos em aberto",
       ultima_compra: item.ultima_compra ?? null,
+      total_compras: null,
       valor_potencial: numero(item.valor_potencial),
       valor_orcamento: numero(item.valor_orcamento),
       data_orcamento: item.data_orcamento ?? null,
@@ -382,14 +439,31 @@ async function fetchClientesOrcamento(scope) {
   })
 }
 
+function normalizarClienteCampanha(cliente) {
+  return {
+    sk_cliente: cliente.sk_cliente ?? null,
+    nome_cliente: texto(cliente.nome_cliente),
+    telefone: texto(cliente.telefone),
+    classificacao_rfv: texto(cliente.classificacao_rfv),
+    ultima_compra: cliente.ultima_compra ?? null,
+    total_compras: numeroOuNull(cliente.total_compras),
+    valor_potencial: numero(cliente.valor_potencial),
+    valor_orcamento: numeroOuNull(cliente.valor_orcamento),
+    data_orcamento: cliente.data_orcamento ?? null,
+    origem: cliente.origem === "orcamento" ? "orcamento" : "rfv",
+  }
+}
+
 function decorateClientes(clientes, messageBase) {
   return clientes.map((cliente, index) => {
-    const mensagemFinal = substituirVariaveisMensagem(messageBase, cliente)
-    const telefone = telefoneValido(cliente.telefone)
+    const clienteNormalizado = normalizarClienteCampanha(cliente)
+    const mensagemFinal =
+      texto(cliente.mensagem_final) || substituirVariaveisMensagem(messageBase, clienteNormalizado)
+    const telefone = telefoneValido(clienteNormalizado.telefone)
 
     return {
-      id: `${cliente.sk_cliente ?? "sem-sk"}-${index}`,
-      ...cliente,
+      id: texto(cliente.id) || `${clienteNormalizado.sk_cliente ?? "sem-sk"}-${index}`,
+      ...clienteNormalizado,
       telefone,
       possui_telefone: Boolean(telefone),
       mensagem_final: mensagemFinal,
@@ -665,6 +739,8 @@ export async function atualizarTemplate(id, payload) {
 }
 
 export async function criarCampanha(payload) {
+  const confirmation = buildCampaignConfirmation(payload)
+  const templateId = normalizeCampaignTemplateId(payload.template_id)
   const clientes =
     payload.clientes?.length
       ? decorateClientes(payload.clientes, payload.mensagem_base)
@@ -686,8 +762,11 @@ export async function criarCampanha(payload) {
       campanha: {
         id: null,
         segmento: payload.segmento,
-        template_id: payload.template_id ?? null,
+        template_id: templateId,
         mensagem_base: payload.mensagem_base,
+        data_confirmacao: confirmation.data_confirmacao,
+        id_usuario_confirmacao: confirmation.id_usuario_confirmacao,
+        nome_usuario_confirmacao: confirmation.nome_usuario_confirmacao,
         ...resumo,
         clientes,
       },
@@ -695,44 +774,67 @@ export async function criarCampanha(payload) {
   }
 
   const campanhaId = await nextTableId("CAMPANHAS_ATIVACAO")
+  const suportaConfirmacao = await campanhaAtivacaoSuportaConfirmacao()
+
+  const insertColumns = [
+    "id",
+    "segmento",
+    "template_id",
+    "mensagem_base",
+    "total_clientes",
+    "total_com_telefone",
+    "total_sem_telefone",
+    "vendedor_id",
+    "empresa_id",
+    "data_criacao",
+  ]
+  const insertValues = [
+    ":id",
+    ":segmento",
+    ":template_id",
+    ":mensagem_base",
+    ":total_clientes",
+    ":total_com_telefone",
+    ":total_sem_telefone",
+    ":vendedor_id",
+    ":empresa_id",
+    "SYSDATE",
+  ]
+  const insertBinds = {
+    id: campanhaId,
+    segmento: payload.segmento,
+    template_id: templateId,
+    mensagem_base: payload.mensagem_base,
+    total_clientes: resumo.total_clientes,
+    total_com_telefone: resumo.total_com_telefone,
+    total_sem_telefone: resumo.total_sem_telefone,
+    vendedor_id: payload.sk_vendedor ?? null,
+    empresa_id: payload.empresa_id ?? null,
+  }
+
+  if (suportaConfirmacao) {
+    insertColumns.splice(insertColumns.length - 1, 0, "data_confirmacao")
+    insertValues.splice(insertValues.length - 1, 0, ":data_confirmacao")
+    insertBinds.data_confirmacao = confirmation.data_confirmacao
+
+    insertColumns.splice(insertColumns.length - 1, 0, "id_usuario_confirmacao")
+    insertValues.splice(insertValues.length - 1, 0, ":id_usuario_confirmacao")
+    insertBinds.id_usuario_confirmacao = confirmation.id_usuario_confirmacao
+
+    insertColumns.splice(insertColumns.length - 1, 0, "nome_usuario_confirmacao")
+    insertValues.splice(insertValues.length - 1, 0, ":nome_usuario_confirmacao")
+    insertBinds.nome_usuario_confirmacao = confirmation.nome_usuario_confirmacao
+  }
 
   await query(
     `
     INSERT INTO campanhas_ativacao (
-      id,
-      segmento,
-      template_id,
-      mensagem_base,
-      total_clientes,
-      total_com_telefone,
-      total_sem_telefone,
-      vendedor_id,
-      empresa_id,
-      data_criacao
+      ${insertColumns.join(",\n      ")}
     ) VALUES (
-      :id,
-      :segmento,
-      :template_id,
-      :mensagem_base,
-      :total_clientes,
-      :total_com_telefone,
-      :total_sem_telefone,
-      :vendedor_id,
-      :empresa_id,
-      SYSDATE
+      ${insertValues.join(",\n      ")}
     )
     `,
-    {
-      id: campanhaId,
-      segmento: payload.segmento,
-      template_id: payload.template_id ?? null,
-      mensagem_base: payload.mensagem_base,
-      total_clientes: resumo.total_clientes,
-      total_com_telefone: resumo.total_com_telefone,
-      total_sem_telefone: resumo.total_sem_telefone,
-      vendedor_id: payload.sk_vendedor ?? null,
-      empresa_id: payload.empresa_id ?? null,
-    }
+    insertBinds
   )
 
   for (const [index, cliente] of clientes.entries()) {
@@ -785,17 +887,88 @@ export async function criarCampanha(payload) {
     campanha: {
       id: campanhaId,
       segmento: payload.segmento,
-      template_id: payload.template_id ?? null,
+      template_id: templateId,
       mensagem_base: payload.mensagem_base,
+      data_confirmacao: confirmation.data_confirmacao,
+      id_usuario_confirmacao: confirmation.id_usuario_confirmacao,
+      nome_usuario_confirmacao: confirmation.nome_usuario_confirmacao,
       ...resumo,
       clientes,
     },
   }
 }
 
+function formatarDataExcel(value) {
+  const dataFormatada = formatarDataCurta(value)
+  return dataFormatada === "-" ? "" : dataFormatada
+}
+
+function slugArquivo(value) {
+  return (
+    String(value ?? "campanha")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[_\s]+/g, "-")
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "campanha"
+  )
+}
+
+export async function gerarExcelCampanha(clientes = [], campanha = {}) {
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = "SIP - Gestão de Metas"
+  workbook.created = new Date()
+
+  const worksheet = workbook.addWorksheet("Campanha")
+  const dataCampanha = formatarDataExcel(campanha.data_confirmacao)
+  const usuarioConfirmacao = texto(campanha.nome_usuario_confirmacao) ?? ""
+
+  worksheet.columns = [
+    { header: "Cliente", key: "nome_cliente", width: 30 },
+    { header: "Telefone", key: "telefone", width: 20 },
+    { header: "Última compra", key: "ultima_compra", width: 20 },
+    { header: "Classificação", key: "classificacao_rfv", width: 20 },
+    { header: "Data da campanha", key: "data_campanha", width: 20 },
+    { header: "Confirmado por", key: "usuario_confirmacao", width: 28 },
+    { header: "Mensagem", key: "mensagem_final", width: 50 },
+  ]
+
+  worksheet.getRow(1).font = { bold: true }
+  worksheet.views = [{ state: "frozen", ySplit: 1 }]
+
+  clientes.forEach((cliente) => {
+    const clienteNormalizado = normalizarClienteCampanha(cliente)
+
+    worksheet.addRow({
+      nome_cliente: clienteNormalizado.nome_cliente ?? "",
+      telefone: clienteNormalizado.telefone ?? "",
+      ultima_compra: formatarDataExcel(clienteNormalizado.ultima_compra),
+      classificacao_rfv: clienteNormalizado.classificacao_rfv ?? "",
+      data_campanha: dataCampanha,
+      usuario_confirmacao: usuarioConfirmacao,
+      mensagem_final: texto(cliente.mensagem_final) ?? "",
+    })
+  })
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  return Buffer.from(buffer)
+}
+
+export function gerarNomeArquivo(segmento) {
+  const hoje = new Date()
+  const dataFormatada = hoje.toLocaleDateString("pt-BR").replace(/\//g, "-")
+  const nomeSegmento =
+    SEGMENTS.find((item) => item.id === segmento)?.titulo ?? String(segmento ?? "campanha")
+
+  return `${slugArquivo(nomeSegmento)}-${dataFormatada}.xlsx`
+}
+
 export async function enviarCampanha(campanhaId, payload = {}) {
   let clientes = []
   let campanha = { id: campanhaId, segmento: payload.segmento ?? null }
+  const confirmation = buildCampaignConfirmation(payload)
 
   if (await tableExists("CAMPANHAS_ATIVACAO_CLIENTES")) {
     const rows = await query(
@@ -882,8 +1055,31 @@ export async function enviarCampanha(campanhaId, payload = {}) {
     )
   }
 
+  if ((await tableExists("CAMPANHAS_ATIVACAO")) && (await campanhaAtivacaoSuportaConfirmacao())) {
+    await query(
+      `
+      UPDATE campanhas_ativacao
+      SET data_confirmacao = :data_confirmacao,
+          id_usuario_confirmacao = :id_usuario_confirmacao,
+          nome_usuario_confirmacao = :nome_usuario_confirmacao
+      WHERE id = :id
+      `,
+      {
+        id: campanhaId,
+        data_confirmacao: confirmation.data_confirmacao,
+        id_usuario_confirmacao: confirmation.id_usuario_confirmacao,
+        nome_usuario_confirmacao: confirmation.nome_usuario_confirmacao,
+      }
+    )
+  }
+
   return {
-    campanha,
+    campanha: {
+      ...campanha,
+      data_confirmacao: confirmation.data_confirmacao,
+      id_usuario_confirmacao: confirmation.id_usuario_confirmacao,
+      nome_usuario_confirmacao: confirmation.nome_usuario_confirmacao,
+    },
     webhook_status: webhookStatus,
     clientes,
     payload_n8n: webhookPayload,

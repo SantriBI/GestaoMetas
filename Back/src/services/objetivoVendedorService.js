@@ -1,5 +1,4 @@
 import { query } from "../db/oracle.js"
-import mysqlPool, { hasMysqlConfig } from "../db/mysql.js"
 import { resolverEscopoVendedor } from "./vendedorScopeService.js"
 
 const OBJECTIVE_TABLE = "OBJETIVOS_VENDEDOR"
@@ -465,7 +464,7 @@ function normalizeCommissionRate(value) {
   return Number(rate.toFixed(4))
 }
 
-async function loadCommissionSnapshotFromMysql({ skVendedor, vendedorId }) {
+async function loadCommissionSnapshotFromOracle({ skVendedor, vendedorId }) {
   if (!skVendedor && !vendedorId) {
     return null
   }
@@ -477,27 +476,25 @@ async function loadCommissionSnapshotFromMysql({ skVendedor, vendedorId }) {
       com.vendas_liquidas AS receita_ate_ontem,
       com.percentual_comissao AS percentual_comissao,
       com.valor_comissao_a_pagar AS valor_comissao_a_pagar
-    FROM fato_comissao_parametrizada com
+    FROM ft_comissao_parametrizada com
     LEFT JOIN dim_vendedor vendedor
       ON vendedor.sk_vendedor = com.sk_vendedor
     LEFT JOIN dim_empresas emp
       ON emp.sk_empresas = com.sk_empresas
     WHERE com.sk_vendedor <> -1
       AND (
-        (? IS NOT NULL AND vendedor.sk_vendedor = ?)
-        OR (? IS NOT NULL AND vendedor.vendedor_id = ?)
+        (:sk_vendedor IS NOT NULL AND vendedor.sk_vendedor = :sk_vendedor)
+        OR (:vendedor_id IS NOT NULL AND vendedor.vendedor_id = :vendedor_id)
       )
-    LIMIT 1
+    FETCH FIRST 1 ROWS ONLY
   `
-  const params = [
-    skVendedor ?? null,
-    skVendedor ?? null,
-    vendedorId ?? null,
-    vendedorId ?? null,
-  ]
+  const binds = {
+    sk_vendedor: skVendedor ?? null,
+    vendedor_id: vendedorId ?? null,
+  }
 
   try {
-    const [rows] = await mysqlPool.query(sql, params)
+    const rows = await query(sql, binds)
     if (!Array.isArray(rows) || !rows.length) {
       return null
     }
@@ -507,28 +504,18 @@ async function loadCommissionSnapshotFromMysql({ skVendedor, vendedorId }) {
       salesRevenue: roundCurrency(item.receita_ate_ontem),
       commissionAmount: roundCurrency(item.valor_comissao_a_pagar),
       commissionRate: normalizeCommissionRate(item.percentual_comissao) ?? DEFAULT_COMMISSION_RATE,
-      source: "mysql",
+      source: "oracle",
     }
   } catch (error) {
-    console.warn("Nao foi possivel carregar a comissao no MySQL da Meta de Vida. Mantendo fallback estimado.", error)
+    console.warn("Nao foi possivel carregar a comissao no Oracle da Meta de Vida. Mantendo fallback estimado.", error)
     return null
   }
 }
 
 async function resolveCommissionSnapshot(seller, trackingStartDate) {
-  if (!hasMysqlConfig()) {
-    const salesRevenue = await calculateSalesRevenue(seller.skVendedor, trackingStartDate)
-    return {
-      salesRevenue,
-      commissionAmount: 0,
-      commissionRate: DEFAULT_COMMISSION_RATE,
-      source: "indisponivel",
-    }
-  }
-
-  const mysqlSnapshot = await loadCommissionSnapshotFromMysql(seller)
-  if (mysqlSnapshot) {
-    return mysqlSnapshot
+  const oracleSnapshot = await loadCommissionSnapshotFromOracle(seller)
+  if (oracleSnapshot) {
+    return oracleSnapshot
   }
 
   const salesRevenue = await calculateSalesRevenue(seller.skVendedor, trackingStartDate)
@@ -700,7 +687,7 @@ function buildSuggestions({
       seenIds,
       "tracao",
       "Seu motor deste mes",
-      commissionSource === "mysql"
+      commissionSource === "oracle"
         ? `Sua comissao a pagar no ciclo atual ja soma ${formatCurrencyBRL(commissionAmount)}.`
         : `Sua comissao estimada no ciclo atual ja soma ${formatCurrencyBRL(commissionAmount)}.`
     )

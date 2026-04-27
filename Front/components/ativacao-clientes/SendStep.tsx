@@ -39,7 +39,7 @@ export function SendStep({
           <p className="text-xs uppercase tracking-[0.24em] text-white/42">4. Enviar</p>
           <h2 className="text-3xl font-black tracking-tight text-white">Confirme a campanha</h2>
           <p className="text-sm text-white/60">
-            Revise o resumo final e gere os links de contato pelo WhatsApp.
+            Revise o resumo final, gere os links de contato pelo WhatsApp e baixe a planilha da campanha.
           </p>
         </div>
 
@@ -83,7 +83,7 @@ export function SendStep({
           </div>
 
           <div className="rounded-[24px] border border-amber-400/15 bg-amber-400/8 p-5 text-sm text-amber-50">
-            Método de envio atual: os links do WhatsApp serão abertos manualmente em nova aba.
+            Ao confirmar, a campanha será salva e o XLSX será baixado automaticamente. Os links do WhatsApp continuam disponíveis para abertura manual em nova aba.
           </div>
 
           <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
