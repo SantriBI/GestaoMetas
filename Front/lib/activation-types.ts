@@ -36,6 +36,7 @@ export interface ActivationClient {
   telefone: string | null
   classificacao_rfv: string | null
   ultima_compra: string | number | null
+  total_compras: number | null
   valor_potencial: number
   valor_orcamento: number | null
   data_orcamento: string | number | null
@@ -58,16 +59,23 @@ export interface ActivationCampaignPayload {
   role: ActivationUserRole
   sk_vendedor?: number | string | null
   empresa_id?: number | string | null
+  id_usuario?: number | string | null
+  nome_usuario?: string | null
   clientes: ActivationClient[]
 }
 
 export interface ActivationCampaignResponse {
   persisted?: boolean
+  downloaded?: boolean
+  file_name?: string | null
   campanha: {
     id: number | string | null
     segmento: string
     template_id?: number | string | null
     mensagem_base: string
+    data_confirmacao?: string | Date | null
+    id_usuario_confirmacao?: number | string | null
+    nome_usuario_confirmacao?: string | null
     total_clientes: number
     total_com_telefone: number
     total_sem_telefone: number
@@ -104,4 +112,6 @@ export interface ActivationScope {
   role: ActivationUserRole
   sk_vendedor?: number | string | null
   empresa_id?: number | string | null
+  id_usuario?: number | string | null
+  nome_usuario?: string | null
 }

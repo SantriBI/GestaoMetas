@@ -43,6 +43,8 @@ export default function AtivacaoClientesPage() {
             role: authUser.role,
             sk_vendedor: authUser.sk_vendedor ?? null,
             empresa_id: authUser.empresa_id ?? authUser.sk_empresa ?? null,
+            id_usuario: authUser.id_usuario ?? null,
+            nome_usuario: String(authUser.nome ?? authUser.NOME ?? "").trim() || null,
           }
         : null,
     [authUser]
