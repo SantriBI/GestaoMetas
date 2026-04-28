@@ -284,7 +284,7 @@ async function campanhaAtivacaoSuportaConfirmacao() {
     return cachedCampanhaAtivacaoConfirmationSupport
   }
 
-  cachedCampanhaAtivacaoConfirmationSupport = await tableHasColumns("CAMPANHAS_ATIVACAO", [
+  cachedCampanhaAtivacaoConfirmationSupport = await tableHasColumns("GM_TB_CAMPANHAS_ATIVACAO", [
     "DATA_CONFIRMACAO",
     "ID_USUARIO_CONFIRMACAO",
     "NOME_USUARIO_CONFIRMACAO",
@@ -603,7 +603,7 @@ export async function obterPreviewCampanha(params) {
 export async function listarTemplates({ role, sk_vendedor, empresa_id }) {
   const templates = [...DEFAULT_TEMPLATES]
 
-  if (!(await tableExists("TEMPLATES_MENSAGENS"))) {
+  if (!(await tableExists("GM_TB_TEMPLATES_MENSAGENS"))) {
     return templates
   }
 
@@ -619,7 +619,7 @@ export async function listarTemplates({ role, sk_vendedor, empresa_id }) {
       vendedor_id,
       empresa_id,
       data_criacao
-    FROM templates_mensagens
+    FROM GM_TB_TEMPLATES_MENSAGENS
     WHERE escopo = 'SISTEMA'
        OR (:empresa_id IS NOT NULL AND empresa_id = :empresa_id)
        OR (:role = 'VENDEDOR' AND vendedor_id = :sk_vendedor)
@@ -653,7 +653,7 @@ export async function listarTemplates({ role, sk_vendedor, empresa_id }) {
 }
 
 export async function criarTemplate(payload) {
-  if (!(await tableExists("TEMPLATES_MENSAGENS"))) {
+  if (!(await tableExists("GM_TB_TEMPLATES_MENSAGENS"))) {
     return {
       persisted: false,
       message: "Tabela TEMPLATES_MENSAGENS ainda não existe. Estrutura pronta para ativação.",
@@ -661,11 +661,11 @@ export async function criarTemplate(payload) {
     }
   }
 
-  const id = await nextTableId("TEMPLATES_MENSAGENS")
+  const id = await nextTableId("GM_TB_TEMPLATES_MENSAGENS")
 
   await query(
     `
-    INSERT INTO templates_mensagens (
+    INSERT INTO GM_TB_TEMPLATES_MENSAGENS (
       id,
       nome_template,
       tipo,
@@ -703,7 +703,7 @@ export async function criarTemplate(payload) {
 }
 
 export async function atualizarTemplate(id, payload) {
-  if (!(await tableExists("TEMPLATES_MENSAGENS"))) {
+  if (!(await tableExists("GM_TB_TEMPLATES_MENSAGENS"))) {
     return {
       persisted: false,
       message: "Tabela TEMPLATES_MENSAGENS ainda não existe. Estrutura pronta para ativação.",
@@ -713,7 +713,7 @@ export async function atualizarTemplate(id, payload) {
 
   await query(
     `
-    UPDATE templates_mensagens
+    UPDATE GM_TB_TEMPLATES_MENSAGENS
     SET nome_template = :nome_template,
         tipo = :tipo,
         classificacao_rfv = :classificacao_rfv,
@@ -754,8 +754,8 @@ export async function criarCampanha(payload) {
   const resumo = summarizeClientes(clientes)
 
   if (
-    !(await tableExists("CAMPANHAS_ATIVACAO")) ||
-    !(await tableExists("CAMPANHAS_ATIVACAO_CLIENTES"))
+    !(await tableExists("GM_TB_CAMPANHAS_ATIVACAO")) ||
+    !(await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES"))
   ) {
     return {
       persisted: false,
@@ -773,7 +773,7 @@ export async function criarCampanha(payload) {
     }
   }
 
-  const campanhaId = await nextTableId("CAMPANHAS_ATIVACAO")
+  const campanhaId = await nextTableId("GM_TB_CAMPANHAS_ATIVACAO")
   const suportaConfirmacao = await campanhaAtivacaoSuportaConfirmacao()
 
   const insertColumns = [
@@ -828,7 +828,7 @@ export async function criarCampanha(payload) {
 
   await query(
     `
-    INSERT INTO campanhas_ativacao (
+    INSERT INTO GM_TB_CAMPANHAS_ATIVACAO (
       ${insertColumns.join(",\n      ")}
     ) VALUES (
       ${insertValues.join(",\n      ")}
@@ -840,7 +840,7 @@ export async function criarCampanha(payload) {
   for (const [index, cliente] of clientes.entries()) {
     await query(
       `
-      INSERT INTO campanhas_ativacao_clientes (
+      INSERT INTO GM_TB_CAMPANHAS_ATIVACAO_CLIENTES (
         id,
         campanha_id,
         sk_cliente,
@@ -970,7 +970,7 @@ export async function enviarCampanha(campanhaId, payload = {}) {
   let campanha = { id: campanhaId, segmento: payload.segmento ?? null }
   const confirmation = buildCampaignConfirmation(payload)
 
-  if (await tableExists("CAMPANHAS_ATIVACAO_CLIENTES")) {
+  if (await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES")) {
     const rows = await query(
       `
       SELECT
@@ -983,7 +983,7 @@ export async function enviarCampanha(campanhaId, payload = {}) {
         valor_orcamento,
         data_orcamento,
         mensagem_final
-      FROM campanhas_ativacao_clientes
+      FROM GM_TB_CAMPANHAS_ATIVACAO_CLIENTES
       WHERE campanha_id = :campanha_id
       ORDER BY id
       `,
@@ -1040,11 +1040,11 @@ export async function enviarCampanha(campanhaId, payload = {}) {
     }
   }
 
-  if (await tableExists("CAMPANHAS_ATIVACAO_CLIENTES")) {
+  if (await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES")) {
     const status = webhookStatus === "enviado" ? "ENVIADO_WEBHOOK" : "LINK_GERADO"
     await query(
       `
-      UPDATE campanhas_ativacao_clientes
+      UPDATE GM_TB_CAMPANHAS_ATIVACAO_CLIENTES
       SET status_envio = :status_envio
       WHERE campanha_id = :campanha_id
       `,
@@ -1055,10 +1055,10 @@ export async function enviarCampanha(campanhaId, payload = {}) {
     )
   }
 
-  if ((await tableExists("CAMPANHAS_ATIVACAO")) && (await campanhaAtivacaoSuportaConfirmacao())) {
+  if ((await tableExists("GM_TB_CAMPANHAS_ATIVACAO")) && (await campanhaAtivacaoSuportaConfirmacao())) {
     await query(
       `
-      UPDATE campanhas_ativacao
+      UPDATE GM_TB_CAMPANHAS_ATIVACAO
       SET data_confirmacao = :data_confirmacao,
           id_usuario_confirmacao = :id_usuario_confirmacao,
           nome_usuario_confirmacao = :nome_usuario_confirmacao

@@ -78,11 +78,11 @@ async function resolverEscopoVendedor(codigoRecebido) {
     SELECT *
     FROM (
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
       UNION ALL
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
     )
     WHERE ROWNUM = 1
@@ -116,7 +116,7 @@ async function carregarDadosAssistente(vendedor) {
         receita_mes,
         meta_mes,
         perc_atingimento
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
       WHERE sk_vendedor = :sk_vendedor
       FETCH FIRST 1 ROWS ONLY
       `,
@@ -125,7 +125,7 @@ async function carregarDadosAssistente(vendedor) {
     query(
       `
       SELECT dias_restantes
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
       WHERE sk_vendedor = :sk_vendedor
       FETCH FIRST 1 ROWS ONLY
       `,
@@ -419,7 +419,7 @@ async function buscarCache(vendedorId) {
     const rows = await query(
       `
       SELECT insights_json, origem, atualizado_em
-      FROM INSIGHTS_VENDEDOR
+      FROM GM_TB_INSIGHTS_VENDEDOR
       WHERE vendedor_id = :vendedor_id
         AND TRUNC(data_referencia) = TRUNC(SYSDATE)
       ORDER BY atualizado_em DESC
@@ -459,7 +459,7 @@ async function salvarCache(vendedorId, insights, origem, payload) {
   try {
     await query(
       `
-      MERGE INTO INSIGHTS_VENDEDOR destino
+      MERGE INTO GM_TB_INSIGHTS_VENDEDOR destino
       USING (
         SELECT :vendedor_id AS vendedor_id, TRUNC(SYSDATE) AS data_referencia
         FROM dual
@@ -504,7 +504,7 @@ async function salvarCache(vendedorId, insights, origem, payload) {
     if (getOracleErrorCode(err) === ORACLE_UNIQUE_CONSTRAINT) {
       await query(
         `
-        UPDATE INSIGHTS_VENDEDOR
+        UPDATE GM_TB_INSIGHTS_VENDEDOR
         SET insights_json = :insights_json,
             origem = :origem,
             payload_json = :payload_json,

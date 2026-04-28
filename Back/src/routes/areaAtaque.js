@@ -47,11 +47,11 @@ async function resolverEscopoVendedor(codigoRecebido) {
     SELECT *
     FROM (
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
       UNION ALL
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
     )
     WHERE ROWNUM = 1

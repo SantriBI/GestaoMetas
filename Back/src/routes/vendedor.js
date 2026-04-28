@@ -28,11 +28,11 @@ async function resolverVendedorId(sk_vendedor) {
     SELECT vendedor_id
     FROM (
       SELECT vendedor_id
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
       WHERE sk_vendedor = :sk_vendedor
       UNION ALL
       SELECT vendedor_id
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
       WHERE sk_vendedor = :sk_vendedor
     )
     WHERE ROWNUM = 1
@@ -51,7 +51,7 @@ async function carregarUsuarioFallback(sk_vendedor) {
   const rows = await query(
     `
     SELECT nome, empresa_id, sk_vendedor
-    FROM usuarios_app
+    FROM GM_TB_USUARIOS_APP
     WHERE sk_vendedor = :sk_vendedor
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -78,7 +78,7 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
             perc_atingimento,
             ranking_atingimento,
             clientes_mes
-          FROM DM_VENDAS.VW_RANKING_VENDEDORES
+          FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
           WHERE sk_vendedor = :sk_vendedor
         )
         WHERE ROWNUM = 1
@@ -98,7 +98,7 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
             dias_restantes,
             status_dia,
             perc_performance_dia
-          FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+          FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
           WHERE sk_vendedor = :sk_vendedor
         )
         WHERE ROWNUM = 1
@@ -108,7 +108,7 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
       query(
         `
         SELECT COUNT(*) AS total_vendedores
-        FROM DM_VENDAS.VW_RANKING_VENDEDORES
+        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
         `
       ),
       carregarUsuarioFallback(sk_vendedor),
@@ -174,7 +174,7 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
           meta_mes,
           perc_atingimento,
           clientes_mes
-        FROM DM_VENDAS.VW_RANKING_VENDEDORES
+        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
         WHERE sk_vendedor = :sk_vendedor
         FETCH FIRST 1 ROWS ONLY
         `,

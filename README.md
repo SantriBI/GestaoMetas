@@ -154,8 +154,8 @@ Pelo codigo atual, as fontes mais importantes sao:
 
 ### Objetos Oracle mais relevantes
 
-- `DM_VENDAS.VW_RANKING_VENDEDORES`: ranking mensal
-- `DM_VENDAS.VW_RANKING_VENDEDORES_DIA`: ranking diario
+- `DM_VENDAS.GM_VW_RANKING_VENDEDORES`: ranking mensal
+- `DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA`: ranking diario
 - `DM_VENDAS.FATO_RFV_VENDEDOR`: RFV por vendedor
 - `DM_VENDAS.FATO_RFV_CLIENTE`: RFV por cliente
 - `DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE`: historico de vendas e analises

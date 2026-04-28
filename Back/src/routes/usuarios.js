@@ -68,7 +68,7 @@ async function hasFotoUrlColumn() {
     `
     SELECT COUNT(*) AS total
     FROM USER_TAB_COLUMNS
-    WHERE TABLE_NAME = 'USUARIOS_APP'
+    WHERE TABLE_NAME = 'GM_TB_USUARIOS_APP'
       AND COLUMN_NAME = 'FOTO_URL'
     `
   )
@@ -95,7 +95,7 @@ async function buscarUsuarioPorId(idUsuario) {
       senha_hash,
       senha_temporaria,
       ativo
-    FROM usuarios_app
+    FROM GM_TB_USUARIOS_APP
     WHERE id_usuario = :id_usuario
     `,
     { id_usuario: idUsuario }
@@ -139,7 +139,7 @@ async function alterarSenha(req, res) {
       ? await query(
           `
           SELECT id_usuario, senha_hash
-          FROM usuarios_app
+          FROM GM_TB_USUARIOS_APP
           WHERE id_usuario = :id_usuario
           `,
           { id_usuario }
@@ -149,7 +149,7 @@ async function alterarSenha(req, res) {
           SELECT *
           FROM (
             SELECT id_usuario, senha_hash
-            FROM usuarios_app
+            FROM GM_TB_USUARIOS_APP
             WHERE TRIM(login) = :loginDigitado
                OR (:loginNormalizado <> '' AND REGEXP_REPLACE(login, '[^0-9]', '') = :loginNormalizado)
           )
@@ -176,7 +176,7 @@ async function alterarSenha(req, res) {
 
     await query(
       `
-      UPDATE usuarios_app
+      UPDATE GM_TB_USUARIOS_APP
       SET senha_hash = :novaSenhaHash,
           senha_temporaria = 'N',
           atualizado_em = SYSDATE
@@ -274,7 +274,7 @@ router.post("/usuarios/upload-foto", async (req, res) => {
 
     await query(
       `
-      UPDATE usuarios_app
+      UPDATE GM_TB_USUARIOS_APP
       SET foto_url = :fotoUrl,
           atualizado_em = SYSDATE
       WHERE id_usuario = :id_usuario
@@ -318,7 +318,7 @@ router.put("/usuarios/atualizar-cpf", async (req, res) => {
     const duplicados = await query(
       `
       SELECT id_usuario
-      FROM usuarios_app
+      FROM GM_TB_USUARIOS_APP
       WHERE id_usuario <> :id_usuario
         AND REGEXP_REPLACE(login, '[^0-9]', '') = :cpf
       `,
@@ -336,7 +336,7 @@ router.put("/usuarios/atualizar-cpf", async (req, res) => {
 
     await query(
       `
-      UPDATE usuarios_app
+      UPDATE GM_TB_USUARIOS_APP
       SET login = :login,
           atualizado_em = SYSDATE
       WHERE id_usuario = :id_usuario

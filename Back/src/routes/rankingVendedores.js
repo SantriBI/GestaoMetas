@@ -28,13 +28,13 @@ router.get("/ranking-vendedores", async (req, res) => {
     if (modo === "diario") {
       sql = `
         SELECT *
-        FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
         ORDER BY ranking_dia
       `
     } else {
       sql = `
         SELECT *
-        FROM DM_VENDAS.VW_RANKING_VENDEDORES
+        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
         ORDER BY ranking_atingimento
       `
     }

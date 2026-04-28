@@ -1,4 +1,4 @@
-CREATE TABLE objetivos_vendedor (
+CREATE TABLE GM_TB_OBJETIVOS_VENDEDOR (
   id_objetivo NUMBER(18) PRIMARY KEY,
   empresa_id NUMBER(18) NOT NULL,
   vendedor_id NUMBER(18) NOT NULL,
@@ -13,13 +13,13 @@ CREATE TABLE objetivos_vendedor (
 );
 
 CREATE INDEX idx_objetivos_vendedor_lookup
-  ON objetivos_vendedor (empresa_id, vendedor_id, ativo, atualizado_em);
+  ON GM_TB_OBJETIVOS_VENDEDOR (empresa_id, vendedor_id, ativo, atualizado_em);
 
 CREATE INDEX idx_objetivos_vendedor_seller
-  ON objetivos_vendedor (sk_vendedor, vendedor_id, empresa_id, atualizado_em);
+  ON GM_TB_OBJETIVOS_VENDEDOR (sk_vendedor, vendedor_id, empresa_id, atualizado_em);
 
 CREATE SEQUENCE objetivos_vendedor_seq START WITH 1 INCREMENT BY 1 NOCACHE;
 
-COMMENT ON TABLE objetivos_vendedor IS 'Objetivos financeiros pessoais do vendedor.';
-COMMENT ON COLUMN objetivos_vendedor.valor_objetivo IS 'Valor total que o vendedor deseja conquistar.';
-COMMENT ON COLUMN objetivos_vendedor.data_limite IS 'Data alvo para concluir a conquista pessoal.';
+COMMENT ON TABLE GM_TB_OBJETIVOS_VENDEDOR IS 'Objetivos financeiros pessoais do vendedor.';
+COMMENT ON COLUMN GM_TB_OBJETIVOS_VENDEDOR.valor_objetivo IS 'Valor total que o vendedor deseja conquistar.';
+COMMENT ON COLUMN GM_TB_OBJETIVOS_VENDEDOR.data_limite IS 'Data alvo para concluir a conquista pessoal.';

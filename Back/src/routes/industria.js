@@ -4,7 +4,7 @@ import { query } from "../db/oracle.js"
 
 const router = express.Router()
 const ORACLE_TABLE_NOT_FOUND = 942
-const FORNECEDOR_TABLE = "FORNECEDORES_LOGIN"
+const FORNECEDOR_TABLE = "GM_TB_FORNECEDORES_LOGIN"
 const FORNECEDOR_SQL_PATH = "Back/sql/fornecedores_login.sql"
 
 function numberValue(value) {
@@ -202,8 +202,8 @@ async function loadBrandChallengeSummary(marca) {
         m.meta_valor,
         m.unidade_meta,
         m.config_json
-      FROM desafios_comerciais d
-      JOIN desafios_comerciais_metas m
+      FROM GM_TB_DESAFIOS_COMERCIAIS d
+      JOIN GM_TB_DESAFIOS_COMERCIAIS_METAS m
         ON m.id_desafio = d.id_desafio
       WHERE d.status <> 'CANCELADO'
         AND m.tipo_meta = 'PRODUTO_OU_MARCA'
@@ -227,7 +227,7 @@ async function loadBrandChallengeSummary(marca) {
       SELECT
         NVL(SUM(progresso_atual), 0) AS progresso_total,
         COUNT(DISTINCT sk_vendedor) AS vendedores_impactados
-      FROM desafios_comerciais_progresso
+      FROM GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO
       WHERE id_meta = :id_meta
       `,
       { id_meta: selected.idMeta }
@@ -703,7 +703,7 @@ router.post("/login-industria", async (req, res) => {
           senha_hash,
           marca,
           ativo
-        FROM fornecedores_login
+        FROM GM_TB_FORNECEDORES_LOGIN
         WHERE UPPER(TRIM(codigo)) = :codigo
       )
       WHERE ROWNUM = 1

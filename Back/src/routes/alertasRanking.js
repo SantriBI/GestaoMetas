@@ -48,7 +48,7 @@ async function loadHistorico(empresaId) {
     SELECT DATA_REF
     FROM (
       SELECT DISTINCT DATA_REF
-      FROM VW_RANKING_VENDEDORES_DIA_HIST
+      FROM GM_VW_RANKING_VENDEDORES_DIA_HIST
       WHERE 1 = 1
       ${filtroEmpresa}
       ORDER BY DATA_REF DESC
@@ -74,7 +74,7 @@ async function loadHistorico(empresaId) {
       NOME_VENDEDOR,
       RECEITA_DIA,
       RANKING_DIA
-    FROM VW_RANKING_VENDEDORES_DIA_HIST
+    FROM GM_VW_RANKING_VENDEDORES_DIA_HIST
     WHERE DATA_REF = :dataHoje
     ${filtroEmpresa}
     `,
@@ -91,7 +91,7 @@ async function loadHistorico(empresaId) {
           NOME_VENDEDOR,
           RECEITA_DIA,
           RANKING_DIA
-        FROM VW_RANKING_VENDEDORES_DIA_HIST
+        FROM GM_VW_RANKING_VENDEDORES_DIA_HIST
         WHERE DATA_REF = :dataOntem
         ${filtroEmpresa}
         `,
