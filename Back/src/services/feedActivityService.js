@@ -63,15 +63,15 @@ export async function getFeedActivityCount(input) {
     SELECT
       (
         SELECT COUNT(*)
-        FROM FEED_POSTS p
+        FROM GM_TB_FEED_POSTS p
         WHERE p.EMPRESA_ID = :empresaId
           AND p.DATA_POSTAGEM > :sinceDate
           AND p.USUARIO_ID <> :usuarioId
       ) +
       (
         SELECT COUNT(*)
-        FROM FEED_COMENTARIOS c
-        JOIN FEED_POSTS p
+        FROM GM_TB_FEED_COMENTARIOS c
+        JOIN GM_TB_FEED_POSTS p
           ON p.ID = c.POST_ID
         WHERE p.EMPRESA_ID = :empresaId
           AND c.DATA_COMENTARIO > :sinceDate
@@ -79,8 +79,8 @@ export async function getFeedActivityCount(input) {
       ) +
       (
         SELECT COUNT(*)
-        FROM FEED_CURTIDAS l
-        JOIN FEED_POSTS p
+        FROM GM_TB_FEED_CURTIDAS l
+        JOIN GM_TB_FEED_POSTS p
           ON p.ID = l.POST_ID
         WHERE p.EMPRESA_ID = :empresaId
           AND l.DATA_CURTIDA > :sinceDate

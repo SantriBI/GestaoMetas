@@ -1,7 +1,7 @@
 -- Modulo de desafios comerciais do SIP na versao multi-meta.
 -- Estrutura pensada para uma UX simples no front, mas robusta no backend.
 
-CREATE TABLE desafios_comerciais (
+CREATE TABLE GM_TB_DESAFIOS_COMERCIAIS (
   id_desafio NUMBER(18) PRIMARY KEY,
   empresa_id NUMBER(18),
   titulo VARCHAR2(160 CHAR) NOT NULL,
@@ -18,12 +18,12 @@ CREATE TABLE desafios_comerciais (
 );
 
 CREATE INDEX idx_desafios_status_periodo
-  ON desafios_comerciais (status, data_inicio, data_fim);
+  ON GM_TB_DESAFIOS_COMERCIAIS (status, data_inicio, data_fim);
 
 CREATE INDEX idx_desafios_empresa
-  ON desafios_comerciais (empresa_id, status);
+  ON GM_TB_DESAFIOS_COMERCIAIS (empresa_id, status);
 
-CREATE TABLE desafios_comerciais_metas (
+CREATE TABLE GM_TB_DESAFIOS_COMERCIAIS_METAS (
   id_meta NUMBER(18) PRIMARY KEY,
   id_desafio NUMBER(18) NOT NULL,
   tipo_meta VARCHAR2(40 CHAR) NOT NULL,
@@ -35,15 +35,15 @@ CREATE TABLE desafios_comerciais_metas (
   criado_em DATE DEFAULT SYSDATE NOT NULL,
   atualizado_em DATE DEFAULT SYSDATE NOT NULL,
   CONSTRAINT fk_desafios_meta_desafio
-    FOREIGN KEY (id_desafio) REFERENCES desafios_comerciais (id_desafio),
+    FOREIGN KEY (id_desafio) REFERENCES GM_TB_DESAFIOS_COMERCIAIS (id_desafio),
   CONSTRAINT ck_desafios_tipo_meta
     CHECK (tipo_meta IN ('FATURAMENTO', 'PEDIDOS_FECHADOS', 'CLIENTES_ATENDIDOS', 'RECUPERAR_CLIENTES', 'PRODUTO_OU_MARCA'))
 );
 
 CREATE INDEX idx_desafios_metas_desafio
-  ON desafios_comerciais_metas (id_desafio, ordem_exibicao);
+  ON GM_TB_DESAFIOS_COMERCIAIS_METAS (id_desafio, ordem_exibicao);
 
-CREATE TABLE desafios_comerciais_vendedores (
+CREATE TABLE GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES (
   id NUMBER(18) PRIMARY KEY,
   id_desafio NUMBER(18) NOT NULL,
   sk_vendedor NUMBER(18) NOT NULL,
@@ -55,16 +55,16 @@ CREATE TABLE desafios_comerciais_vendedores (
   concluido_em DATE,
   ultima_atualizacao DATE DEFAULT SYSDATE NOT NULL,
   CONSTRAINT fk_desafios_vendedor_desafio
-    FOREIGN KEY (id_desafio) REFERENCES desafios_comerciais (id_desafio),
+    FOREIGN KEY (id_desafio) REFERENCES GM_TB_DESAFIOS_COMERCIAIS (id_desafio),
   CONSTRAINT uk_desafio_vendedor UNIQUE (id_desafio, sk_vendedor),
   CONSTRAINT ck_desafios_status_participacao
     CHECK (status_participacao IN ('CONVIDADO', 'DISPONIVEL', 'ACEITO', 'EM_ANDAMENTO', 'CONCLUIDO', 'EXPIRADO', 'RECUSADO'))
 );
 
 CREATE INDEX idx_desafios_vendedores_lookup
-  ON desafios_comerciais_vendedores (sk_vendedor, status_participacao, visualizado_em);
+  ON GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES (sk_vendedor, status_participacao, visualizado_em);
 
-CREATE TABLE desafios_comerciais_progresso (
+CREATE TABLE GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO (
   id NUMBER(18) PRIMARY KEY,
   id_desafio NUMBER(18) NOT NULL,
   id_meta NUMBER(18) NOT NULL,
@@ -76,17 +76,17 @@ CREATE TABLE desafios_comerciais_progresso (
   premio_valor NUMBER(18, 2) DEFAULT 0 NOT NULL,
   ultima_atualizacao DATE DEFAULT SYSDATE NOT NULL,
   CONSTRAINT fk_desafios_progresso_desafio
-    FOREIGN KEY (id_desafio) REFERENCES desafios_comerciais (id_desafio),
+    FOREIGN KEY (id_desafio) REFERENCES GM_TB_DESAFIOS_COMERCIAIS (id_desafio),
   CONSTRAINT fk_desafios_progresso_meta
-    FOREIGN KEY (id_meta) REFERENCES desafios_comerciais_metas (id_meta),
+    FOREIGN KEY (id_meta) REFERENCES GM_TB_DESAFIOS_COMERCIAIS_METAS (id_meta),
   CONSTRAINT uk_desafios_progresso UNIQUE (id_meta, sk_vendedor),
   CONSTRAINT ck_desafios_premio_liberado CHECK (premio_liberado IN ('S', 'N'))
 );
 
 CREATE INDEX idx_desafios_progresso_lookup
-  ON desafios_comerciais_progresso (id_desafio, sk_vendedor, id_meta);
+  ON GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO (id_desafio, sk_vendedor, id_meta);
 
-CREATE TABLE desafios_comerciais_log (
+CREATE TABLE GM_TB_DESAFIOS_COMERCIAIS_LOG (
   id NUMBER(18) PRIMARY KEY,
   id_desafio NUMBER(18) NOT NULL,
   sk_vendedor NUMBER(18),
@@ -94,11 +94,11 @@ CREATE TABLE desafios_comerciais_log (
   descricao VARCHAR2(500 CHAR),
   data_evento DATE DEFAULT SYSDATE NOT NULL,
   CONSTRAINT fk_desafios_log_desafio
-    FOREIGN KEY (id_desafio) REFERENCES desafios_comerciais (id_desafio)
+    FOREIGN KEY (id_desafio) REFERENCES GM_TB_DESAFIOS_COMERCIAIS (id_desafio)
 );
 
 CREATE INDEX idx_desafios_log_desafio
-  ON desafios_comerciais_log (id_desafio, data_evento DESC);
+  ON GM_TB_DESAFIOS_COMERCIAIS_LOG (id_desafio, data_evento DESC);
 
 CREATE SEQUENCE desafios_comerciais_seq START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE desafios_comerciais_metas_seq START WITH 1 INCREMENT BY 1 NOCACHE;
@@ -106,9 +106,9 @@ CREATE SEQUENCE desafios_comerciais_vendedores_seq START WITH 1 INCREMENT BY 1 N
 CREATE SEQUENCE desafios_comerciais_progresso_seq START WITH 1 INCREMENT BY 1 NOCACHE;
 CREATE SEQUENCE desafios_comerciais_log_seq START WITH 1 INCREMENT BY 1 NOCACHE;
 
-COMMENT ON TABLE desafios_comerciais IS 'Cabecalho do desafio/campanha.';
-COMMENT ON TABLE desafios_comerciais_metas IS 'Metas internas do desafio. Um desafio pode ter uma ou varias metas.';
-COMMENT ON COLUMN desafios_comerciais_metas.config_json IS 'Configuracoes opcionais por meta, como marca, produto, categoria ou modo de medicao.';
-COMMENT ON TABLE desafios_comerciais_vendedores IS 'Participacao do vendedor no desafio, incluindo aceite e visualizacao.';
-COMMENT ON TABLE desafios_comerciais_progresso IS 'Progresso por meta e por vendedor.';
-COMMENT ON TABLE desafios_comerciais_log IS 'Historico dos eventos do desafio.';
+COMMENT ON TABLE GM_TB_DESAFIOS_COMERCIAIS IS 'Cabecalho do desafio/campanha.';
+COMMENT ON TABLE GM_TB_DESAFIOS_COMERCIAIS_METAS IS 'Metas internas do desafio. Um desafio pode ter uma ou varias metas.';
+COMMENT ON COLUMN GM_TB_DESAFIOS_COMERCIAIS_METAS.config_json IS 'Configuracoes opcionais por meta, como marca, produto, categoria ou modo de medicao.';
+COMMENT ON TABLE GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES IS 'Participacao do vendedor no desafio, incluindo aceite e visualizacao.';
+COMMENT ON TABLE GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO IS 'Progresso por meta e por vendedor.';
+COMMENT ON TABLE GM_TB_DESAFIOS_COMERCIAIS_LOG IS 'Historico dos eventos do desafio.';

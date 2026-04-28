@@ -1,4 +1,4 @@
-CREATE TABLE perfil_vendedor (
+CREATE TABLE GM_TB_PERFIL_VENDEDOR (
   id NUMBER(18) PRIMARY KEY,
   vendedor_id NUMBER(18) NOT NULL,
   empresa_id NUMBER(18) NOT NULL,
@@ -13,12 +13,12 @@ CREATE TABLE perfil_vendedor (
 );
 
 CREATE UNIQUE INDEX uk_perfil_vendedor_lookup
-  ON perfil_vendedor (empresa_id, vendedor_id);
+  ON GM_TB_PERFIL_VENDEDOR (empresa_id, vendedor_id);
 
 CREATE SEQUENCE perfil_vendedor_seq START WITH 1 INCREMENT BY 1 NOCACHE;
 
-COMMENT ON TABLE perfil_vendedor IS 'Perfil pessoal do vendedor para personalizacao do painel Minha Meta de Vida.';
-COMMENT ON COLUMN perfil_vendedor.renda_desejada IS 'Valor de renda que o vendedor deseja atingir no mes.';
-COMMENT ON COLUMN perfil_vendedor.salario_fixo IS 'Valor fixo mensal informado pelo vendedor.';
-COMMENT ON COLUMN perfil_vendedor.comissao_desejada IS 'Valor de comissao que o vendedor deseja conquistar para complementar o salario.';
-COMMENT ON COLUMN perfil_vendedor.preferencias_produto IS 'Categoria ou familia de produtos preferida pelo vendedor.';
+COMMENT ON TABLE GM_TB_PERFIL_VENDEDOR IS 'Perfil pessoal do vendedor para personalizacao do painel Minha Meta de Vida.';
+COMMENT ON COLUMN GM_TB_PERFIL_VENDEDOR.renda_desejada IS 'Valor de renda que o vendedor deseja atingir no mes.';
+COMMENT ON COLUMN GM_TB_PERFIL_VENDEDOR.salario_fixo IS 'Valor fixo mensal informado pelo vendedor.';
+COMMENT ON COLUMN GM_TB_PERFIL_VENDEDOR.comissao_desejada IS 'Valor de comissao que o vendedor deseja conquistar para complementar o salario.';
+COMMENT ON COLUMN GM_TB_PERFIL_VENDEDOR.preferencias_produto IS 'Categoria ou familia de produtos preferida pelo vendedor.';

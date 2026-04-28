@@ -121,16 +121,16 @@ function nvarchar(value) {
 async function refreshPostCounters(postId) {
   await query(
     `
-    UPDATE FEED_POSTS p
+    UPDATE GM_TB_FEED_POSTS p
     SET
       TOTAL_CURTIDAS = (
         SELECT COUNT(*)
-        FROM FEED_CURTIDAS c
+        FROM GM_TB_FEED_CURTIDAS c
         WHERE c.POST_ID = p.ID
       ),
       TOTAL_COMENTARIOS = (
         SELECT COUNT(*)
-        FROM FEED_COMENTARIOS fc
+        FROM GM_TB_FEED_COMENTARIOS fc
         WHERE fc.POST_ID = p.ID
       )
     WHERE p.ID = :postId
@@ -153,7 +153,7 @@ async function findPostRow(postId, empresaId) {
       TOTAL_CURTIDAS,
       TOTAL_COMENTARIOS,
       POST_DESTAQUE
-    FROM FEED_POSTS
+    FROM GM_TB_FEED_POSTS
     WHERE ID = :postId
       AND EMPRESA_ID = :empresaId
     FETCH FIRST 1 ROWS ONLY
@@ -180,13 +180,13 @@ async function findPostForActor(postId, actor) {
       CASE
         WHEN EXISTS (
           SELECT 1
-          FROM FEED_CURTIDAS c
+          FROM GM_TB_FEED_CURTIDAS c
           WHERE c.POST_ID = p.ID
             AND c.USUARIO_ID = :usuarioId
         ) THEN 1
         ELSE 0
       END AS CURTIDO_PELO_USUARIO
-    FROM FEED_POSTS p
+    FROM GM_TB_FEED_POSTS p
     WHERE p.ID = :postId
       AND p.EMPRESA_ID = :empresaId
     FETCH FIRST 1 ROWS ONLY
@@ -227,13 +227,13 @@ export async function listFeedPosts(input) {
       CASE
         WHEN EXISTS (
           SELECT 1
-          FROM FEED_CURTIDAS c
+          FROM GM_TB_FEED_CURTIDAS c
           WHERE c.POST_ID = p.ID
             AND c.USUARIO_ID = :usuarioId
         ) THEN 1
         ELSE 0
       END AS CURTIDO_PELO_USUARIO
-    FROM FEED_POSTS p
+    FROM GM_TB_FEED_POSTS p
     WHERE p.EMPRESA_ID = :empresaId
     ORDER BY p.POST_DESTAQUE DESC, p.DATA_POSTAGEM DESC, p.ID DESC
     OFFSET :offset ROWS FETCH NEXT :fetchRows ROWS ONLY
@@ -267,7 +267,7 @@ export async function createFeedPost(input) {
 
   await query(
     `
-    INSERT INTO FEED_POSTS (
+    INSERT INTO GM_TB_FEED_POSTS (
       ID,
       EMPRESA_ID,
       USUARIO_ID,
@@ -320,7 +320,7 @@ export async function updateFeedPost(postIdInput, input) {
 
   await query(
     `
-    UPDATE FEED_POSTS
+    UPDATE GM_TB_FEED_POSTS
     SET MENSAGEM = :mensagem
     WHERE ID = :postId
     `,
@@ -347,7 +347,7 @@ export async function deleteFeedPost(postIdInput, input) {
     throw new FeedError("Voce nao tem permissao para excluir este post.", 403)
   }
 
-  await query(`DELETE FROM FEED_POSTS WHERE ID = :postId`, { postId })
+  await query(`DELETE FROM GM_TB_FEED_POSTS WHERE ID = :postId`, { postId })
 
   return { success: true }
 }
@@ -365,7 +365,7 @@ export async function toggleFeedLike(postIdInput, input) {
   const existing = await query(
     `
     SELECT ID
-    FROM FEED_CURTIDAS
+    FROM GM_TB_FEED_CURTIDAS
     WHERE POST_ID = :postId
       AND USUARIO_ID = :usuarioId
     FETCH FIRST 1 ROWS ONLY
@@ -380,7 +380,7 @@ export async function toggleFeedLike(postIdInput, input) {
   if (existing.length) {
     await query(
       `
-      DELETE FROM FEED_CURTIDAS
+      DELETE FROM GM_TB_FEED_CURTIDAS
       WHERE POST_ID = :postId
         AND USUARIO_ID = :usuarioId
       `,
@@ -394,7 +394,7 @@ export async function toggleFeedLike(postIdInput, input) {
     const id = await getNextId("FEED_CURTIDAS_SEQ")
     await query(
       `
-      INSERT INTO FEED_CURTIDAS (
+      INSERT INTO GM_TB_FEED_CURTIDAS (
         ID,
         POST_ID,
         USUARIO_ID,
@@ -441,7 +441,7 @@ export async function listFeedComments(postIdInput, input) {
       NOME_USUARIO,
       COMENTARIO,
       DATA_COMENTARIO
-    FROM FEED_COMENTARIOS
+    FROM GM_TB_FEED_COMENTARIOS
     WHERE POST_ID = :postId
     ORDER BY DATA_COMENTARIO ASC, ID ASC
     `,
@@ -464,7 +464,7 @@ export async function createFeedComment(postIdInput, input) {
   const id = await getNextId("FEED_COMENTARIOS_SEQ")
   await query(
     `
-    INSERT INTO FEED_COMENTARIOS (
+    INSERT INTO GM_TB_FEED_COMENTARIOS (
       ID,
       POST_ID,
       USUARIO_ID,
@@ -500,7 +500,7 @@ export async function createFeedComment(postIdInput, input) {
       NOME_USUARIO,
       COMENTARIO,
       DATA_COMENTARIO
-    FROM FEED_COMENTARIOS
+    FROM GM_TB_FEED_COMENTARIOS
     WHERE ID = :id
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -532,7 +532,7 @@ export async function toggleFeedHighlight(postIdInput, input) {
   if (nextValue === 1) {
     await query(
       `
-      UPDATE FEED_POSTS
+      UPDATE GM_TB_FEED_POSTS
       SET POST_DESTAQUE = 0
       WHERE EMPRESA_ID = :empresaId
       `,
@@ -542,7 +542,7 @@ export async function toggleFeedHighlight(postIdInput, input) {
 
   await query(
     `
-    UPDATE FEED_POSTS
+    UPDATE GM_TB_FEED_POSTS
     SET POST_DESTAQUE = :nextValue
     WHERE ID = :postId
     `,

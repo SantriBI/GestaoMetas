@@ -1,17 +1,17 @@
 import { query } from "../db/oracle.js"
 import { resolverEscopoVendedor } from "./vendedorScopeService.js"
 
-const OBJECTIVE_TABLE = "OBJETIVOS_VENDEDOR"
+const OBJECTIVE_TABLE = "GM_TB_OBJETIVOS_VENDEDOR"
 const OBJECTIVE_SEQUENCE = "OBJETIVOS_VENDEDOR_SEQ"
 const OBJECTIVE_SCRIPT_PATH = "Back/sql/objetivos_vendedor.sql"
 const OBJECTIVE_UPGRADE_SCRIPT_PATH = "Back/sql/objetivos_vendedor_upgrade_multiplos.sql"
-const PROFILE_TABLE = "PERFIL_VENDEDOR"
+const PROFILE_TABLE = "GM_TB_PERFIL_VENDEDOR"
 const PROFILE_SEQUENCE = "PERFIL_VENDEDOR_SEQ"
 const PROFILE_SCRIPT_PATH = "Back/sql/perfil_vendedor.sql"
 const DEFAULT_COMMISSION_RATE = 0.03
 const CHALLENGE_TABLES = [
-  "DESAFIOS_COMERCIAIS",
-  "DESAFIOS_COMERCIAIS_PROGRESSO",
+  "GM_TB_DESAFIOS_COMERCIAIS",
+  "GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO",
 ]
 const ORACLE_UNIQUE_VIOLATION = 1
 const ORACLE_TABLE_NOT_FOUND = 942
@@ -253,7 +253,7 @@ async function ensureObjectiveModuleReady() {
       scriptPath: OBJECTIVE_SCRIPT_PATH,
       instructions: [
         "Execute o script SQL do modulo Minha Meta de Vida no banco Oracle.",
-        "Confirme a criacao da tabela OBJETIVOS_VENDEDOR e da sequence OBJETIVOS_VENDEDOR_SEQ.",
+        "Confirme a criacao da tabela GM_TB_OBJETIVOS_VENDEDOR e da sequence OBJETIVOS_VENDEDOR_SEQ.",
       ],
     }
   )
@@ -279,7 +279,7 @@ async function ensureProfileModuleReady() {
       scriptPath: PROFILE_SCRIPT_PATH,
       instructions: [
         "Execute o script SQL do perfil do vendedor no banco Oracle.",
-        "Confirme a criacao da tabela PERFIL_VENDEDOR e da sequence PERFIL_VENDEDOR_SEQ.",
+        "Confirme a criacao da tabela GM_TB_PERFIL_VENDEDOR e da sequence PERFIL_VENDEDOR_SEQ.",
       ],
     }
   )
@@ -310,7 +310,7 @@ async function loadSellerUser(skVendedor) {
   const rows = await query(
     `
     SELECT nome, empresa_id, sk_vendedor
-    FROM usuarios_app
+    FROM GM_TB_USUARIOS_APP
     WHERE sk_vendedor = :sk_vendedor
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -341,7 +341,7 @@ async function loadObjectivesBySeller({ skVendedor, vendedorId, empresaId }) {
   const rows = await query(
     `
     SELECT *
-    FROM objetivos_vendedor
+    FROM GM_TB_OBJETIVOS_VENDEDOR
     WHERE ativo = 'S'
       AND (
         (:sk_vendedor IS NOT NULL AND sk_vendedor = :sk_vendedor)
@@ -364,7 +364,7 @@ async function loadObjectiveById(idObjetivo) {
   const rows = await query(
     `
     SELECT *
-    FROM objetivos_vendedor
+    FROM GM_TB_OBJETIVOS_VENDEDOR
     WHERE id_objetivo = :id_objetivo
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -378,7 +378,7 @@ async function loadProfileBySeller({ vendedorId, empresaId }) {
   const rows = await query(
     `
     SELECT *
-    FROM perfil_vendedor
+    FROM GM_TB_PERFIL_VENDEDOR
     WHERE vendedor_id = :vendedor_id
       AND (:empresa_id IS NULL OR empresa_id = :empresa_id)
     ORDER BY criado_em DESC, id DESC
@@ -397,7 +397,7 @@ async function loadProfileById(idPerfil) {
   const rows = await query(
     `
     SELECT *
-    FROM perfil_vendedor
+    FROM GM_TB_PERFIL_VENDEDOR
     WHERE id = :id
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -415,7 +415,7 @@ async function calculateSalesRevenue(skVendedor, trackingStartDate) {
   const monthlyRows = await query(
     `
     SELECT receita_mes
-    FROM DM_VENDAS.VW_RANKING_VENDEDORES
+    FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
     WHERE sk_vendedor = :sk_vendedor
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -556,8 +556,8 @@ async function calculateChallengeRewards(skVendedor, trackingStartDate, empresaI
         NVL(SUM(CASE WHEN d.exige_aceite = 'S' THEN NVL(p.premio_valor, 0) ELSE 0 END), 0),
         2
       ) AS desafios_total
-    FROM desafios_comerciais_progresso p
-    JOIN desafios_comerciais d
+    FROM GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO p
+    JOIN GM_TB_DESAFIOS_COMERCIAIS d
       ON d.id_desafio = p.id_desafio
     WHERE p.sk_vendedor = :sk_vendedor
       AND p.premio_liberado = 'S'
@@ -1305,7 +1305,7 @@ export async function createSellerLifeGoal(payload) {
   try {
     await query(
       `
-      INSERT INTO objetivos_vendedor (
+      INSERT INTO GM_TB_OBJETIVOS_VENDEDOR (
         id_objetivo,
         empresa_id,
         vendedor_id,
@@ -1349,7 +1349,7 @@ export async function createSellerLifeGoal(payload) {
         {
           scriptPath: OBJECTIVE_UPGRADE_SCRIPT_PATH,
           instructions: [
-            "Execute a migracao da tabela OBJETIVOS_VENDEDOR para remover a restricao de objetivo unico.",
+            "Execute a migracao da tabela GM_TB_OBJETIVOS_VENDEDOR para remover a restricao de objetivo unico.",
             "Depois repita a criacao do novo objetivo.",
           ],
           originalMessage: error.message,
@@ -1400,7 +1400,7 @@ export async function updateSellerLifeGoal(idObjetivo, payload) {
 
   await query(
     `
-    UPDATE objetivos_vendedor
+    UPDATE GM_TB_OBJETIVOS_VENDEDOR
     SET nome_objetivo = :nome_objetivo,
         valor_objetivo = :valor_objetivo,
         data_limite = :data_limite,
@@ -1503,7 +1503,7 @@ export async function createSellerProfile(payload) {
 
   await query(
     `
-    INSERT INTO perfil_vendedor (
+    INSERT INTO GM_TB_PERFIL_VENDEDOR (
       ${insertColumns.join(",\n      ")}
     )
     VALUES (
@@ -1571,7 +1571,7 @@ export async function updateSellerProfile(idPerfil, payload) {
 
   await query(
     `
-    UPDATE perfil_vendedor
+    UPDATE GM_TB_PERFIL_VENDEDOR
     SET ${updateSets.join(",\n        ")}
     WHERE id = :id
     `,

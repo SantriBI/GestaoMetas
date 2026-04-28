@@ -36,7 +36,7 @@ async function carregarRankingMensal() {
       meta_mes,
       perc_atingimento,
       ranking_atingimento
-    FROM DM_VENDAS.VW_RANKING_VENDEDORES
+    FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
     ORDER BY ranking_atingimento
   `)
 }

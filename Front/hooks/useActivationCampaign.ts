@@ -21,7 +21,7 @@ import {
 } from "@/lib/activation-service"
 
 const ACTIVATION_CAMPAIGN_DB_WARNING =
-  "A campanha foi gerada, mas ainda não foi salva no banco. Execute o script Back/sql/campanhas_ativacao.sql para habilitar a persistência."
+  "A campanha foi gerada, mas ainda não foi salva no banco. Execute o script Back/sql/gm_migration_padronizacao_nomes.sql e depois valide a estrutura de persistência."
 
 export function useActivationCampaign(scope: ActivationScope | null) {
   const [segments, setSegments] = useState<ActivationSegment[]>([])

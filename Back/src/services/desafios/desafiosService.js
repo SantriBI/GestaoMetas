@@ -4,11 +4,11 @@ import { calculateParticipantProgress } from "./desafiosProgressService.js"
 import { calculateChallengeImpact, calculateDraftChallengeImpact } from "./desafiosImpactService.js"
 
 const TABLES = [
-  "DESAFIOS_COMERCIAIS",
-  "DESAFIOS_COMERCIAIS_METAS",
-  "DESAFIOS_COMERCIAIS_VENDEDORES",
-  "DESAFIOS_COMERCIAIS_PROGRESSO",
-  "DESAFIOS_COMERCIAIS_LOG",
+  "GM_TB_DESAFIOS_COMERCIAIS",
+  "GM_TB_DESAFIOS_COMERCIAIS_METAS",
+  "GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES",
+  "GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO",
+  "GM_TB_DESAFIOS_COMERCIAIS_LOG",
 ]
 
 const SEQUENCES = [
@@ -281,7 +281,7 @@ async function loadMetas(idDesafio) {
   const rows = await query(
     `
     SELECT *
-    FROM desafios_comerciais_metas
+    FROM GM_TB_DESAFIOS_COMERCIAIS_METAS
     WHERE id_desafio = :id_desafio
     ORDER BY ordem_exibicao, id_meta
     `,
@@ -294,7 +294,7 @@ async function loadParticipants(idDesafio) {
   const rows = await query(
     `
     SELECT *
-    FROM desafios_comerciais_vendedores
+    FROM GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES
     WHERE id_desafio = :id_desafio
     ORDER BY nome_vendedor
     `,
@@ -307,7 +307,7 @@ async function loadTimeline(idDesafio) {
   const rows = await query(
     `
     SELECT evento, descricao, data_evento
-    FROM desafios_comerciais_log
+    FROM GM_TB_DESAFIOS_COMERCIAIS_LOG
     WHERE id_desafio = :id_desafio
     ORDER BY data_evento DESC
     `,
@@ -334,10 +334,10 @@ async function resolveTargetSellers(payload) {
       SELECT DISTINCT sk_vendedor, nome_vendedor, sk_empresa
       FROM (
         SELECT sk_vendedor, nome_vendedor, sk_empresa
-        FROM DM_VENDAS.VW_RANKING_VENDEDORES
+        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
         UNION ALL
         SELECT sk_vendedor, nome_vendedor, sk_empresa
-        FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
       )
       WHERE sk_vendedor IN (${explicitSellers.join(",")})
       `
@@ -361,10 +361,10 @@ async function resolveTargetSellers(payload) {
     SELECT DISTINCT base.sk_vendedor, base.nome_vendedor, base.sk_empresa
     FROM (
       SELECT sk_vendedor, nome_vendedor, sk_empresa
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
       UNION ALL
       SELECT sk_vendedor, nome_vendedor, sk_empresa
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
     ) base
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
     ORDER BY base.nome_vendedor
@@ -382,7 +382,7 @@ async function insertLog(idDesafio, evento, descricao, skVendedor = null) {
   const id = await nextSequenceValue("DESAFIOS_COMERCIAIS_LOG_SEQ")
   await query(
     `
-    INSERT INTO desafios_comerciais_log (
+    INSERT INTO GM_TB_DESAFIOS_COMERCIAIS_LOG (
       id,
       id_desafio,
       sk_vendedor,
@@ -407,7 +407,7 @@ async function updateProgressRows(challenge, metas, participantResult) {
     const existingRows = await query(
       `
       SELECT id
-      FROM desafios_comerciais_progresso
+      FROM GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO
       WHERE id_meta = :id_meta
         AND sk_vendedor = :sk_vendedor
       `,
@@ -421,7 +421,7 @@ async function updateProgressRows(challenge, metas, participantResult) {
     if (!existingRows.length) {
       await query(
         `
-        INSERT INTO desafios_comerciais_progresso (
+        INSERT INTO GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO (
           id,
           id_desafio,
           id_meta,
@@ -462,7 +462,7 @@ async function updateProgressRows(challenge, metas, participantResult) {
 
     await query(
       `
-      UPDATE desafios_comerciais_progresso
+      UPDATE GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO
       SET progresso_atual = :progresso_atual,
           percentual_conclusao = :percentual_conclusao,
           concluido_em = :concluido_em,
@@ -484,7 +484,7 @@ async function updateProgressRows(challenge, metas, participantResult) {
 
   await query(
     `
-    UPDATE desafios_comerciais_vendedores
+    UPDATE GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES
     SET status_participacao = :status_participacao,
         premio_total_liberado = :premio_total_liberado,
         concluido_em = :concluido_em,
@@ -638,10 +638,10 @@ export async function listChallengeMetadata() {
     SELECT DISTINCT sk_vendedor, nome_vendedor, sk_empresa
     FROM (
       SELECT sk_vendedor, nome_vendedor, sk_empresa
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
       UNION ALL
       SELECT sk_vendedor, nome_vendedor, sk_empresa
-      FROM DM_VENDAS.VW_RANKING_VENDEDORES_DIA
+      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
     )
     ORDER BY nome_vendedor
     `
@@ -833,7 +833,7 @@ export async function listChallenges() {
   const rows = await query(
     `
     SELECT *
-    FROM desafios_comerciais
+    FROM GM_TB_DESAFIOS_COMERCIAIS
     ORDER BY data_inicio DESC, id_desafio DESC
     `
   )
@@ -882,7 +882,7 @@ export async function getChallengeById(idDesafio) {
   const rows = await query(
     `
     SELECT *
-    FROM desafios_comerciais
+    FROM GM_TB_DESAFIOS_COMERCIAIS
     WHERE id_desafio = :id_desafio
     `,
     { id_desafio: idDesafio }
@@ -901,7 +901,7 @@ export async function createChallenge(payload) {
 
   await query(
     `
-    INSERT INTO desafios_comerciais (
+    INSERT INTO GM_TB_DESAFIOS_COMERCIAIS (
       id_desafio,
       empresa_id,
       titulo,
@@ -944,7 +944,7 @@ export async function createChallenge(payload) {
     const idMeta = await nextSequenceValue("DESAFIOS_COMERCIAIS_METAS_SEQ")
     await query(
       `
-      INSERT INTO desafios_comerciais_metas (
+      INSERT INTO GM_TB_DESAFIOS_COMERCIAIS_METAS (
         id_meta,
         id_desafio,
         tipo_meta,
@@ -985,7 +985,7 @@ export async function createChallenge(payload) {
     const id = await nextSequenceValue("DESAFIOS_COMERCIAIS_VENDEDORES_SEQ")
     await query(
       `
-      INSERT INTO desafios_comerciais_vendedores (
+      INSERT INTO GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES (
         id,
         id_desafio,
         sk_vendedor,
@@ -1021,7 +1021,7 @@ export async function updateChallenge(idDesafio, payload) {
   const targetSellers = await resolveTargetSellers(payload)
   await query(
     `
-    UPDATE desafios_comerciais
+    UPDATE GM_TB_DESAFIOS_COMERCIAIS
     SET empresa_id = :empresa_id,
         titulo = :titulo,
         descricao = :descricao,
@@ -1044,14 +1044,14 @@ export async function updateChallenge(idDesafio, payload) {
     }
   )
 
-  await query(`DELETE FROM desafios_comerciais_progresso WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
-  await query(`DELETE FROM desafios_comerciais_vendedores WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
-  await query(`DELETE FROM desafios_comerciais_metas WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
+  await query(`DELETE FROM GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
+  await query(`DELETE FROM GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
+  await query(`DELETE FROM GM_TB_DESAFIOS_COMERCIAIS_METAS WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
   for (const [index, meta] of payload.metas.entries()) {
     const idMeta = await nextSequenceValue("DESAFIOS_COMERCIAIS_METAS_SEQ")
     await query(
       `
-      INSERT INTO desafios_comerciais_metas (
+      INSERT INTO GM_TB_DESAFIOS_COMERCIAIS_METAS (
         id_meta,
         id_desafio,
         tipo_meta,
@@ -1092,7 +1092,7 @@ export async function updateChallenge(idDesafio, payload) {
     const id = await nextSequenceValue("DESAFIOS_COMERCIAIS_VENDEDORES_SEQ")
     await query(
       `
-      INSERT INTO desafios_comerciais_vendedores (
+      INSERT INTO GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES (
         id,
         id_desafio,
         sk_vendedor,
@@ -1126,7 +1126,7 @@ export async function closeChallenge(idDesafio, status = "ENCERRADO") {
   await ensureModuleReadyForWrite()
   await query(
     `
-    UPDATE desafios_comerciais
+    UPDATE GM_TB_DESAFIOS_COMERCIAIS
     SET status = :status,
         atualizado_em = SYSDATE
     WHERE id_desafio = :id_desafio
@@ -1135,7 +1135,7 @@ export async function closeChallenge(idDesafio, status = "ENCERRADO") {
   )
   await query(
     `
-    UPDATE desafios_comerciais_vendedores
+    UPDATE GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES
     SET status_participacao = CASE
       WHEN status_participacao = 'CONCLUIDO' THEN status_participacao
       ELSE 'EXPIRADO'
@@ -1153,7 +1153,7 @@ export async function closeChallenge(idDesafio, status = "ENCERRADO") {
 async function markViewed(idDesafio, skVendedor) {
   await query(
     `
-    UPDATE desafios_comerciais_vendedores
+    UPDATE GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES
     SET visualizado_em = NVL(visualizado_em, SYSDATE),
         ultima_atualizacao = SYSDATE
     WHERE id_desafio = :id_desafio
@@ -1224,7 +1224,7 @@ export async function acceptChallenge(idDesafio, skVendedor) {
 
   await query(
     `
-    UPDATE desafios_comerciais_vendedores
+    UPDATE GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES
     SET status_participacao = 'ACEITO',
         visualizado_em = NVL(visualizado_em, SYSDATE),
         aceito_em = SYSDATE,
@@ -1251,7 +1251,7 @@ export async function declineChallenge(idDesafio, skVendedor) {
 
   await query(
     `
-    UPDATE desafios_comerciais_vendedores
+    UPDATE GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES
     SET status_participacao = 'RECUSADO',
         visualizado_em = NVL(visualizado_em, SYSDATE),
         ultima_atualizacao = SYSDATE
@@ -1277,7 +1277,7 @@ export async function refreshChallengeProgress(idDesafio, sellerFilter = null) {
     )
   }
 
-  const challengeRows = await query(`SELECT * FROM desafios_comerciais WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
+  const challengeRows = await query(`SELECT * FROM GM_TB_DESAFIOS_COMERCIAIS WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
   if (!challengeRows.length) throw new Error("Desafio nao encontrado.")
 
   const challenge = normalizeChallenge(challengeRows[0])
@@ -1328,8 +1328,8 @@ export async function listSellerChallenges(skVendedor, mode = "all") {
   const rows = await query(
     `
     SELECT d.*
-    FROM desafios_comerciais d
-    JOIN desafios_comerciais_vendedores v
+    FROM GM_TB_DESAFIOS_COMERCIAIS d
+    JOIN GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES v
       ON v.id_desafio = d.id_desafio
     WHERE v.sk_vendedor = :sk_vendedor
     ORDER BY d.data_inicio DESC, d.id_desafio DESC
@@ -1389,8 +1389,8 @@ export async function getSellerChallengeAlert(skVendedor) {
            d.status,
            d.exige_aceite,
            v.status_participacao
-    FROM desafios_comerciais d
-    JOIN desafios_comerciais_vendedores v
+    FROM GM_TB_DESAFIOS_COMERCIAIS d
+    JOIN GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES v
       ON v.id_desafio = d.id_desafio
     WHERE v.sk_vendedor = :sk_vendedor
       AND d.status IN ('ATIVO', 'AGENDADO')

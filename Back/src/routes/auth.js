@@ -18,7 +18,7 @@ async function hasFotoUrlColumn() {
     `
     SELECT COUNT(*) AS total
     FROM USER_TAB_COLUMNS
-    WHERE TABLE_NAME = 'USUARIOS_APP'
+    WHERE TABLE_NAME = 'GM_TB_USUARIOS_APP'
       AND COLUMN_NAME = 'FOTO_URL'
     `
   )
@@ -59,7 +59,7 @@ router.post('/login', async (req, res) => {
           ${fotoColumnSql},
           senha_temporaria,
           ativo
-        FROM usuarios_app
+        FROM GM_TB_USUARIOS_APP
         WHERE TRIM(login) = :loginDigitado
            OR (:loginNormalizado <> '' AND REGEXP_REPLACE(login, '[^0-9]', '') = :loginNormalizado)
       )
@@ -127,7 +127,7 @@ router.post('/alterar-senha', async (req, res) => {
       SELECT *
       FROM (
         SELECT id_usuario, senha_hash
-        FROM usuarios_app
+        FROM GM_TB_USUARIOS_APP
         WHERE TRIM(login) = :loginDigitado
            OR (:loginNormalizado <> '' AND REGEXP_REPLACE(login, '[^0-9]', '') = :loginNormalizado)
       )
@@ -154,7 +154,7 @@ router.post('/alterar-senha', async (req, res) => {
 
     await query(
       `
-      UPDATE usuarios_app
+      UPDATE GM_TB_USUARIOS_APP
       SET senha_hash = :novaSenhaHash,
           senha_temporaria = 'N',
           atualizado_em = SYSDATE
@@ -191,7 +191,7 @@ router.post('/resetar-senhas-temporarias', async (req, res) => {
 
     await query(
       `
-      UPDATE usuarios_app
+      UPDATE GM_TB_USUARIOS_APP
       SET senha_hash = :hashTemporario,
           senha_temporaria = 'S',
           atualizado_em = SYSDATE
