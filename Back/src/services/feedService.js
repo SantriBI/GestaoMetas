@@ -1,5 +1,6 @@
 import oracledb from "oracledb"
 import { query } from "../db/oracle.js"
+import { resolveOracleObjectNames } from "../db/oracleObjectNames.js"
 
 const MAX_POST_LENGTH = 1000
 const MAX_COMMENT_LENGTH = 500
@@ -118,19 +119,34 @@ function nvarchar(value) {
   }
 }
 
+async function getFeedTableNames() {
+  const resolvedNames = await resolveOracleObjectNames([
+    "feedPostsTable",
+    "feedLikesTable",
+    "feedCommentsTable",
+  ])
+
+  return {
+    postsTable: resolvedNames.feedPostsTable,
+    likesTable: resolvedNames.feedLikesTable,
+    commentsTable: resolvedNames.feedCommentsTable,
+  }
+}
+
 async function refreshPostCounters(postId) {
+  const { postsTable, likesTable, commentsTable } = await getFeedTableNames()
   await query(
     `
-    UPDATE GM_TB_FEED_POSTS p
+    UPDATE ${postsTable} p
     SET
       TOTAL_CURTIDAS = (
         SELECT COUNT(*)
-        FROM GM_TB_FEED_CURTIDAS c
+        FROM ${likesTable} c
         WHERE c.POST_ID = p.ID
       ),
       TOTAL_COMENTARIOS = (
         SELECT COUNT(*)
-        FROM GM_TB_FEED_COMENTARIOS fc
+        FROM ${commentsTable} fc
         WHERE fc.POST_ID = p.ID
       )
     WHERE p.ID = :postId
@@ -140,6 +156,7 @@ async function refreshPostCounters(postId) {
 }
 
 async function findPostRow(postId, empresaId) {
+  const { postsTable } = await getFeedTableNames()
   const rows = await query(
     `
     SELECT
@@ -153,7 +170,7 @@ async function findPostRow(postId, empresaId) {
       TOTAL_CURTIDAS,
       TOTAL_COMENTARIOS,
       POST_DESTAQUE
-    FROM GM_TB_FEED_POSTS
+    FROM ${postsTable}
     WHERE ID = :postId
       AND EMPRESA_ID = :empresaId
     FETCH FIRST 1 ROWS ONLY
@@ -165,6 +182,7 @@ async function findPostRow(postId, empresaId) {
 }
 
 async function findPostForActor(postId, actor) {
+  const { postsTable, likesTable } = await getFeedTableNames()
   const rows = await query(
     `
     SELECT
@@ -180,13 +198,13 @@ async function findPostForActor(postId, actor) {
       CASE
         WHEN EXISTS (
           SELECT 1
-          FROM GM_TB_FEED_CURTIDAS c
+          FROM ${likesTable} c
           WHERE c.POST_ID = p.ID
             AND c.USUARIO_ID = :usuarioId
         ) THEN 1
         ELSE 0
       END AS CURTIDO_PELO_USUARIO
-    FROM GM_TB_FEED_POSTS p
+    FROM ${postsTable} p
     WHERE p.ID = :postId
       AND p.EMPRESA_ID = :empresaId
     FETCH FIRST 1 ROWS ONLY
@@ -212,6 +230,7 @@ export async function listFeedPosts(input) {
     MAX_PAGE_SIZE
   )
   const offset = Math.max(toNumber(input?.offset, 0), 0)
+  const { postsTable, likesTable } = await getFeedTableNames()
   const rows = await query(
     `
     SELECT
@@ -227,13 +246,13 @@ export async function listFeedPosts(input) {
       CASE
         WHEN EXISTS (
           SELECT 1
-          FROM GM_TB_FEED_CURTIDAS c
+          FROM ${likesTable} c
           WHERE c.POST_ID = p.ID
             AND c.USUARIO_ID = :usuarioId
         ) THEN 1
         ELSE 0
       END AS CURTIDO_PELO_USUARIO
-    FROM GM_TB_FEED_POSTS p
+    FROM ${postsTable} p
     WHERE p.EMPRESA_ID = :empresaId
     ORDER BY p.POST_DESTAQUE DESC, p.DATA_POSTAGEM DESC, p.ID DESC
     OFFSET :offset ROWS FETCH NEXT :fetchRows ROWS ONLY
@@ -264,10 +283,11 @@ export async function createFeedPost(input) {
   const actor = normalizeActor(input)
   const mensagem = sanitizeText(input?.mensagem, MAX_POST_LENGTH, "Mensagem")
   const id = await getNextId("FEED_POSTS_SEQ")
+  const { postsTable } = await getFeedTableNames()
 
   await query(
     `
-    INSERT INTO GM_TB_FEED_POSTS (
+    INSERT INTO ${postsTable} (
       ID,
       EMPRESA_ID,
       USUARIO_ID,
@@ -309,6 +329,7 @@ export async function updateFeedPost(postIdInput, input) {
   const postId = toNumber(postIdInput, NaN)
   const mensagem = sanitizeText(input?.mensagem, MAX_POST_LENGTH, "Mensagem")
   const post = await findPostRow(postId, actor.empresaId)
+  const { postsTable } = await getFeedTableNames()
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
@@ -320,7 +341,7 @@ export async function updateFeedPost(postIdInput, input) {
 
   await query(
     `
-    UPDATE GM_TB_FEED_POSTS
+    UPDATE ${postsTable}
     SET MENSAGEM = :mensagem
     WHERE ID = :postId
     `,
@@ -337,6 +358,7 @@ export async function deleteFeedPost(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
   const post = await findPostRow(postId, actor.empresaId)
+  const { postsTable } = await getFeedTableNames()
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
@@ -347,7 +369,7 @@ export async function deleteFeedPost(postIdInput, input) {
     throw new FeedError("Voce nao tem permissao para excluir este post.", 403)
   }
 
-  await query(`DELETE FROM GM_TB_FEED_POSTS WHERE ID = :postId`, { postId })
+  await query(`DELETE FROM ${postsTable} WHERE ID = :postId`, { postId })
 
   return { success: true }
 }
@@ -355,6 +377,7 @@ export async function deleteFeedPost(postIdInput, input) {
 export async function toggleFeedLike(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
+  const { likesTable } = await getFeedTableNames()
   await findPostRow(postId, actor.empresaId).then((post) => {
     if (!post) {
       throw new FeedError("Post nao encontrado.", 404)
@@ -365,7 +388,7 @@ export async function toggleFeedLike(postIdInput, input) {
   const existing = await query(
     `
     SELECT ID
-    FROM GM_TB_FEED_CURTIDAS
+    FROM ${likesTable}
     WHERE POST_ID = :postId
       AND USUARIO_ID = :usuarioId
     FETCH FIRST 1 ROWS ONLY
@@ -380,7 +403,7 @@ export async function toggleFeedLike(postIdInput, input) {
   if (existing.length) {
     await query(
       `
-      DELETE FROM GM_TB_FEED_CURTIDAS
+      DELETE FROM ${likesTable}
       WHERE POST_ID = :postId
         AND USUARIO_ID = :usuarioId
       `,
@@ -394,7 +417,7 @@ export async function toggleFeedLike(postIdInput, input) {
     const id = await getNextId("FEED_CURTIDAS_SEQ")
     await query(
       `
-      INSERT INTO GM_TB_FEED_CURTIDAS (
+      INSERT INTO ${likesTable} (
         ID,
         POST_ID,
         USUARIO_ID,
@@ -427,6 +450,7 @@ export async function listFeedComments(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
   const post = await findPostRow(postId, actor.empresaId)
+  const { commentsTable } = await getFeedTableNames()
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
@@ -441,7 +465,7 @@ export async function listFeedComments(postIdInput, input) {
       NOME_USUARIO,
       COMENTARIO,
       DATA_COMENTARIO
-    FROM GM_TB_FEED_COMENTARIOS
+    FROM ${commentsTable}
     WHERE POST_ID = :postId
     ORDER BY DATA_COMENTARIO ASC, ID ASC
     `,
@@ -456,6 +480,7 @@ export async function createFeedComment(postIdInput, input) {
   const postId = toNumber(postIdInput, NaN)
   const comentario = sanitizeText(input?.comentario, MAX_COMMENT_LENGTH, "Comentario")
   const post = await findPostRow(postId, actor.empresaId)
+  const { commentsTable } = await getFeedTableNames()
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
@@ -464,7 +489,7 @@ export async function createFeedComment(postIdInput, input) {
   const id = await getNextId("FEED_COMENTARIOS_SEQ")
   await query(
     `
-    INSERT INTO GM_TB_FEED_COMENTARIOS (
+    INSERT INTO ${commentsTable} (
       ID,
       POST_ID,
       USUARIO_ID,
@@ -500,7 +525,7 @@ export async function createFeedComment(postIdInput, input) {
       NOME_USUARIO,
       COMENTARIO,
       DATA_COMENTARIO
-    FROM GM_TB_FEED_COMENTARIOS
+    FROM ${commentsTable}
     WHERE ID = :id
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -516,6 +541,7 @@ export async function createFeedComment(postIdInput, input) {
 export async function toggleFeedHighlight(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
+  const { postsTable } = await getFeedTableNames()
 
   if (actor.tipoUsuario !== "GERENTE") {
     throw new FeedError("Apenas gerentes podem destacar posts.", 403)
@@ -532,7 +558,7 @@ export async function toggleFeedHighlight(postIdInput, input) {
   if (nextValue === 1) {
     await query(
       `
-      UPDATE GM_TB_FEED_POSTS
+      UPDATE ${postsTable}
       SET POST_DESTAQUE = 0
       WHERE EMPRESA_ID = :empresaId
       `,
@@ -542,7 +568,7 @@ export async function toggleFeedHighlight(postIdInput, input) {
 
   await query(
     `
-    UPDATE GM_TB_FEED_POSTS
+    UPDATE ${postsTable}
     SET POST_DESTAQUE = :nextValue
     WHERE ID = :postId
     `,

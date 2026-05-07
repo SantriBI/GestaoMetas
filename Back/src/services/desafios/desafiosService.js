@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { query } from "../../db/oracle.js"
+import { resolveOracleObjectNames } from "../../db/oracleObjectNames.js"
 import { calculateParticipantProgress } from "./desafiosProgressService.js"
 import { calculateChallengeImpact, calculateDraftChallengeImpact } from "./desafiosImpactService.js"
 
@@ -324,6 +325,10 @@ async function loadTimeline(idDesafio) {
 }
 
 async function resolveTargetSellers(payload) {
+  const {
+    rankingVendorsView: rankingView,
+    rankingVendorsDayView: rankingDayView,
+  } = await resolveOracleObjectNames(["rankingVendorsView", "rankingVendorsDayView"])
   const explicitSellers = Array.isArray(payload.sellerIds)
     ? payload.sellerIds.map(Number).filter(Number.isFinite)
     : []
@@ -334,10 +339,10 @@ async function resolveTargetSellers(payload) {
       SELECT DISTINCT sk_vendedor, nome_vendedor, sk_empresa
       FROM (
         SELECT sk_vendedor, nome_vendedor, sk_empresa
-        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+        FROM ${rankingView}
         UNION ALL
         SELECT sk_vendedor, nome_vendedor, sk_empresa
-        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
+        FROM ${rankingDayView}
       )
       WHERE sk_vendedor IN (${explicitSellers.join(",")})
       `
@@ -361,10 +366,10 @@ async function resolveTargetSellers(payload) {
     SELECT DISTINCT base.sk_vendedor, base.nome_vendedor, base.sk_empresa
     FROM (
       SELECT sk_vendedor, nome_vendedor, sk_empresa
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+      FROM ${rankingView}
       UNION ALL
       SELECT sk_vendedor, nome_vendedor, sk_empresa
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
+      FROM ${rankingDayView}
     ) base
     ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
     ORDER BY base.nome_vendedor
@@ -633,15 +638,19 @@ export async function getChallengeModuleSetup() {
 }
 
 export async function listChallengeMetadata() {
+  const {
+    rankingVendorsView: rankingView,
+    rankingVendorsDayView: rankingDayView,
+  } = await resolveOracleObjectNames(["rankingVendorsView", "rankingVendorsDayView"])
   const rows = await query(
     `
     SELECT DISTINCT sk_vendedor, nome_vendedor, sk_empresa
     FROM (
       SELECT sk_vendedor, nome_vendedor, sk_empresa
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+      FROM ${rankingView}
       UNION ALL
       SELECT sk_vendedor, nome_vendedor, sk_empresa
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
+      FROM ${rankingDayView}
     )
     ORDER BY nome_vendedor
     `

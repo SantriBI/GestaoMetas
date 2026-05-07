@@ -1,5 +1,10 @@
 ﻿import express from "express"
 import { query } from "../db/oracle.js"
+import {
+  getRankingVendorsDayViewName,
+  getRankingVendorsViewName,
+  getUsersTableName,
+} from "../db/oracleObjectNames.js"
 
 const router = express.Router()
 
@@ -23,16 +28,20 @@ function normalizarClassificacao(value) {
 }
 
 async function resolverVendedorId(sk_vendedor) {
+  const [rankingView, rankingDayView] = await Promise.all([
+    getRankingVendorsViewName(),
+    getRankingVendorsDayViewName(),
+  ])
   const vendedorRows = await query(
     `
     SELECT vendedor_id
     FROM (
       SELECT vendedor_id
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+      FROM ${rankingView}
       WHERE sk_vendedor = :sk_vendedor
       UNION ALL
       SELECT vendedor_id
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
+      FROM ${rankingDayView}
       WHERE sk_vendedor = :sk_vendedor
     )
     WHERE ROWNUM = 1
@@ -48,10 +57,11 @@ async function resolverVendedorId(sk_vendedor) {
 }
 
 async function carregarUsuarioFallback(sk_vendedor) {
+  const userTable = await getUsersTableName()
   const rows = await query(
     `
     SELECT nome, empresa_id, sk_vendedor
-    FROM GM_TB_USUARIOS_APP
+    FROM ${userTable}
     WHERE sk_vendedor = :sk_vendedor
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -64,6 +74,10 @@ async function carregarUsuarioFallback(sk_vendedor) {
 router.get("/vendedor/:sk_vendedor", async (req, res) => {
   try {
     const { sk_vendedor } = req.params
+    const [rankingView, rankingDayView] = await Promise.all([
+      getRankingVendorsViewName(),
+      getRankingVendorsDayViewName(),
+    ])
 
     const [mensalRows, diarioRows, totalVendedoresRows, usuarioFallback] = await Promise.all([
       query(
@@ -78,7 +92,7 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
             perc_atingimento,
             ranking_atingimento,
             clientes_mes
-          FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+          FROM ${rankingView}
           WHERE sk_vendedor = :sk_vendedor
         )
         WHERE ROWNUM = 1
@@ -98,7 +112,7 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
             dias_restantes,
             status_dia,
             perc_performance_dia
-          FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
+          FROM ${rankingDayView}
           WHERE sk_vendedor = :sk_vendedor
         )
         WHERE ROWNUM = 1
@@ -108,7 +122,7 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
       query(
         `
         SELECT COUNT(*) AS total_vendedores
-        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+        FROM ${rankingView}
         `
       ),
       carregarUsuarioFallback(sk_vendedor),
@@ -153,6 +167,7 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
 router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
   try {
     const { sk_vendedor } = req.params
+    const rankingView = await getRankingVendorsViewName()
 
     // Parte das consultas depende apenas de sk_vendedor.
     // Elas rodam em paralelo enquanto resolvemos o vendedor_id usado nos orcamentos.
@@ -174,7 +189,7 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
           meta_mes,
           perc_atingimento,
           clientes_mes
-        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+        FROM ${rankingView}
         WHERE sk_vendedor = :sk_vendedor
         FETCH FIRST 1 ROWS ONLY
         `,

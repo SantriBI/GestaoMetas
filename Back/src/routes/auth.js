@@ -1,6 +1,7 @@
 import express from 'express'
 import bcrypt from 'bcrypt'
 import { query } from '../db/oracle.js'
+import { getUsersTableName } from '../db/oracleObjectNames.js'
 
 const router = express.Router()
 let fotoUrlColumnExists = null
@@ -14,13 +15,15 @@ async function hasFotoUrlColumn() {
     return fotoUrlColumnExists
   }
 
+  const userTable = await getUsersTableName()
   const rows = await query(
     `
     SELECT COUNT(*) AS total
     FROM USER_TAB_COLUMNS
-    WHERE TABLE_NAME = 'GM_TB_USUARIOS_APP'
+    WHERE TABLE_NAME = :tableName
       AND COLUMN_NAME = 'FOTO_URL'
-    `
+    `,
+    { tableName: userTable.split('.').pop() }
   )
 
   fotoUrlColumnExists = Number(rows[0]?.TOTAL ?? 0) > 0
@@ -40,6 +43,7 @@ router.post('/login', async (req, res) => {
   try {
     const loginDigitado = String(login).trim()
     const loginNormalizado = normalizarCPF(loginDigitado)
+    const userTable = await getUsersTableName()
     const fotoColumnSql = (await hasFotoUrlColumn())
       ? 'foto_url'
       : 'CAST(NULL AS VARCHAR2(500)) AS foto_url'
@@ -59,7 +63,7 @@ router.post('/login', async (req, res) => {
           ${fotoColumnSql},
           senha_temporaria,
           ativo
-        FROM GM_TB_USUARIOS_APP
+        FROM ${userTable}
         WHERE TRIM(login) = :loginDigitado
            OR (:loginNormalizado <> '' AND REGEXP_REPLACE(login, '[^0-9]', '') = :loginNormalizado)
       )
@@ -118,16 +122,14 @@ router.post('/alterar-senha', async (req, res) => {
   try {
     const loginDigitado = String(login).trim()
     const loginNormalizado = normalizarCPF(loginDigitado)
-    const fotoColumnSql = (await hasFotoUrlColumn())
-      ? 'foto_url'
-      : 'CAST(NULL AS VARCHAR2(500)) AS foto_url'
+    const userTable = await getUsersTableName()
 
     const rows = await query(
       `
       SELECT *
       FROM (
         SELECT id_usuario, senha_hash
-        FROM GM_TB_USUARIOS_APP
+        FROM ${userTable}
         WHERE TRIM(login) = :loginDigitado
            OR (:loginNormalizado <> '' AND REGEXP_REPLACE(login, '[^0-9]', '') = :loginNormalizado)
       )
@@ -154,7 +156,7 @@ router.post('/alterar-senha', async (req, res) => {
 
     await query(
       `
-      UPDATE GM_TB_USUARIOS_APP
+      UPDATE ${userTable}
       SET senha_hash = :novaSenhaHash,
           senha_temporaria = 'N',
           atualizado_em = SYSDATE
@@ -188,10 +190,11 @@ router.post('/resetar-senhas-temporarias', async (req, res) => {
 
   try {
     const hashTemporario = '$2a$12$1cXgi9XcQ0GF8NH9PaEtN.adhzylBin.SvRgd0dqv2S1nOysgsWJy'
+    const userTable = await getUsersTableName()
 
     await query(
       `
-      UPDATE GM_TB_USUARIOS_APP
+      UPDATE ${userTable}
       SET senha_hash = :hashTemporario,
           senha_temporaria = 'S',
           atualizado_em = SYSDATE

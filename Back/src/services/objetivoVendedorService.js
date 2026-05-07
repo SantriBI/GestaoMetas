@@ -1,4 +1,10 @@
 import { query } from "../db/oracle.js"
+import {
+  getObjectivesTableName,
+  getProfileTableName,
+  getRankingVendorsViewName,
+  getUsersTableName,
+} from "../db/oracleObjectNames.js"
 import { resolverEscopoVendedor } from "./vendedorScopeService.js"
 
 const OBJECTIVE_TABLE = "GM_TB_OBJETIVOS_VENDEDOR"
@@ -229,13 +235,17 @@ async function profileIncomeBreakdownReady() {
     return cachedProfileIncomeBreakdownSupport
   }
 
-  cachedProfileIncomeBreakdownSupport = await tableHasColumns(PROFILE_TABLE, ["SALARIO_FIXO", "COMISSAO_DESEJADA"])
+  cachedProfileIncomeBreakdownSupport = await tableHasColumns(
+    await getProfileTableName(),
+    ["SALARIO_FIXO", "COMISSAO_DESEJADA"]
+  )
   return cachedProfileIncomeBreakdownSupport
 }
 
 async function ensureObjectiveModuleReady() {
+  const objectiveTableName = await getObjectivesTableName()
   const [tableReady, sequenceReady] = await Promise.all([
-    tableExists(OBJECTIVE_TABLE),
+    tableExists(objectiveTableName),
     sequenceExists(OBJECTIVE_SEQUENCE),
   ])
 
@@ -260,8 +270,9 @@ async function ensureObjectiveModuleReady() {
 }
 
 async function ensureProfileModuleReady() {
+  const profileTableName = await getProfileTableName()
   const [tableReady, sequenceReady] = await Promise.all([
-    tableExists(PROFILE_TABLE),
+    tableExists(profileTableName),
     sequenceExists(PROFILE_SEQUENCE),
   ])
 
@@ -286,8 +297,9 @@ async function ensureProfileModuleReady() {
 }
 
 async function isProfileModuleReady() {
+  const profileTableName = await getProfileTableName()
   const [tableReady, sequenceReady] = await Promise.all([
-    tableExists(PROFILE_TABLE),
+    tableExists(profileTableName),
     sequenceExists(PROFILE_SEQUENCE),
   ])
 
@@ -307,10 +319,11 @@ async function nextSequenceValue(sequenceName) {
 async function loadSellerUser(skVendedor) {
   if (!skVendedor) return null
 
+  const userTable = await getUsersTableName()
   const rows = await query(
     `
     SELECT nome, empresa_id, sk_vendedor
-    FROM GM_TB_USUARIOS_APP
+    FROM ${userTable}
     WHERE sk_vendedor = :sk_vendedor
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -338,10 +351,11 @@ async function resolveSellerContext(vendorCode, fallback = {}) {
 }
 
 async function loadObjectivesBySeller({ skVendedor, vendedorId, empresaId }) {
+  const objectiveTable = await getObjectivesTableName()
   const rows = await query(
     `
     SELECT *
-    FROM GM_TB_OBJETIVOS_VENDEDOR
+    FROM ${objectiveTable}
     WHERE ativo = 'S'
       AND (
         (:sk_vendedor IS NOT NULL AND sk_vendedor = :sk_vendedor)
@@ -361,10 +375,11 @@ async function loadObjectivesBySeller({ skVendedor, vendedorId, empresaId }) {
 }
 
 async function loadObjectiveById(idObjetivo) {
+  const objectiveTable = await getObjectivesTableName()
   const rows = await query(
     `
     SELECT *
-    FROM GM_TB_OBJETIVOS_VENDEDOR
+    FROM ${objectiveTable}
     WHERE id_objetivo = :id_objetivo
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -375,10 +390,11 @@ async function loadObjectiveById(idObjetivo) {
 }
 
 async function loadProfileBySeller({ vendedorId, empresaId }) {
+  const profileTable = await getProfileTableName()
   const rows = await query(
     `
     SELECT *
-    FROM GM_TB_PERFIL_VENDEDOR
+    FROM ${profileTable}
     WHERE vendedor_id = :vendedor_id
       AND (:empresa_id IS NULL OR empresa_id = :empresa_id)
     ORDER BY criado_em DESC, id DESC
@@ -394,10 +410,11 @@ async function loadProfileBySeller({ vendedorId, empresaId }) {
 }
 
 async function loadProfileById(idPerfil) {
+  const profileTable = await getProfileTableName()
   const rows = await query(
     `
     SELECT *
-    FROM GM_TB_PERFIL_VENDEDOR
+    FROM ${profileTable}
     WHERE id = :id
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -412,10 +429,11 @@ async function calculateSalesRevenue(skVendedor, trackingStartDate) {
     return 0
   }
 
+  const rankingView = await getRankingVendorsViewName()
   const monthlyRows = await query(
     `
     SELECT receita_mes
-    FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+    FROM ${rankingView}
     WHERE sk_vendedor = :sk_vendedor
     FETCH FIRST 1 ROWS ONLY
     `,
@@ -1301,11 +1319,12 @@ export async function createSellerLifeGoal(payload) {
   }
 
   const idObjetivo = await nextSequenceValue(OBJECTIVE_SEQUENCE)
+  const objectiveTable = await getObjectivesTableName()
 
   try {
     await query(
       `
-      INSERT INTO GM_TB_OBJETIVOS_VENDEDOR (
+      INSERT INTO ${objectiveTable} (
         id_objetivo,
         empresa_id,
         vendedor_id,
@@ -1397,10 +1416,11 @@ export async function updateSellerLifeGoal(idObjetivo, payload) {
   }
 
   const objectiveData = validateObjectivePayload(payload)
+  const objectiveTable = await getObjectivesTableName()
 
   await query(
     `
-    UPDATE GM_TB_OBJETIVOS_VENDEDOR
+    UPDATE ${objectiveTable}
     SET nome_objetivo = :nome_objetivo,
         valor_objetivo = :valor_objetivo,
         data_limite = :data_limite,
@@ -1461,6 +1481,7 @@ export async function createSellerProfile(payload) {
   const profileData = validateProfilePayload(payload)
   const idPerfil = await nextSequenceValue(PROFILE_SEQUENCE)
   const supportsIncomeBreakdown = await profileIncomeBreakdownReady()
+  const profileTable = await getProfileTableName()
   const insertColumns = [
     "id",
     "vendedor_id",
@@ -1503,7 +1524,7 @@ export async function createSellerProfile(payload) {
 
   await query(
     `
-    INSERT INTO GM_TB_PERFIL_VENDEDOR (
+    INSERT INTO ${profileTable} (
       ${insertColumns.join(",\n      ")}
     )
     VALUES (
@@ -1547,6 +1568,7 @@ export async function updateSellerProfile(idPerfil, payload) {
 
   const profileData = validateProfilePayload(payload)
   const supportsIncomeBreakdown = await profileIncomeBreakdownReady()
+  const profileTable = await getProfileTableName()
   const updateSets = [
     "renda_desejada = :renda_desejada",
     "motivo_trabalho = :motivo_trabalho",
@@ -1571,7 +1593,7 @@ export async function updateSellerProfile(idPerfil, payload) {
 
   await query(
     `
-    UPDATE GM_TB_PERFIL_VENDEDOR
+    UPDATE ${profileTable}
     SET ${updateSets.join(",\n        ")}
     WHERE id = :id
     `,

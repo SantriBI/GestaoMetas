@@ -1,5 +1,9 @@
 import express from "express"
 import { query } from "../db/oracle.js"
+import {
+  getRankingVendorsDayViewName,
+  getRankingVendorsViewName,
+} from "../db/oracleObjectNames.js"
 
 const router = express.Router()
 const ORACLE_TABLE_NOT_FOUND = 942
@@ -73,16 +77,20 @@ function extrairJson(texto) {
 }
 
 async function resolverEscopoVendedor(codigoRecebido) {
+  const [rankingView, rankingDayView] = await Promise.all([
+    getRankingVendorsViewName(),
+    getRankingVendorsDayViewName(),
+  ])
   const rows = await query(
     `
     SELECT *
     FROM (
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+      FROM ${rankingView}
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
       UNION ALL
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
+      FROM ${rankingDayView}
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
     )
     WHERE ROWNUM = 1
@@ -100,6 +108,10 @@ async function resolverEscopoVendedor(codigoRecebido) {
 }
 
 async function carregarDadosAssistente(vendedor) {
+  const [rankingView, rankingDayView] = await Promise.all([
+    getRankingVendorsViewName(),
+    getRankingVendorsDayViewName(),
+  ])
   const [
     mensalRows,
     diarioRows,
@@ -116,7 +128,7 @@ async function carregarDadosAssistente(vendedor) {
         receita_mes,
         meta_mes,
         perc_atingimento
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+      FROM ${rankingView}
       WHERE sk_vendedor = :sk_vendedor
       FETCH FIRST 1 ROWS ONLY
       `,
@@ -125,7 +137,7 @@ async function carregarDadosAssistente(vendedor) {
     query(
       `
       SELECT dias_restantes
-      FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
+      FROM ${rankingDayView}
       WHERE sk_vendedor = :sk_vendedor
       FETCH FIRST 1 ROWS ONLY
       `,

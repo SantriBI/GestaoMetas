@@ -1,5 +1,6 @@
 import express from "express"
 import { query } from "../db/oracle.js"
+import { getRankingVendorsDayHistViewName } from "../db/oracleObjectNames.js"
 
 const router = express.Router()
 
@@ -35,6 +36,7 @@ function formatPercentBR(value) {
 }
 
 async function loadHistorico(empresaId) {
+  const rankingDayHistView = await getRankingVendorsDayHistViewName()
   let filtroEmpresa = ""
   const bindsBase = {}
 
@@ -45,12 +47,12 @@ async function loadHistorico(empresaId) {
 
   const refs = await query(
     `
-    SELECT DATA_REF
-    FROM (
-      SELECT DISTINCT DATA_REF
-      FROM GM_VW_RANKING_VENDEDORES_DIA_HIST
-      WHERE 1 = 1
-      ${filtroEmpresa}
+      SELECT DATA_REF
+      FROM (
+        SELECT DISTINCT DATA_REF
+        FROM ${rankingDayHistView}
+        WHERE 1 = 1
+        ${filtroEmpresa}
       ORDER BY DATA_REF DESC
     )
     WHERE ROWNUM <= 2
@@ -74,7 +76,7 @@ async function loadHistorico(empresaId) {
       NOME_VENDEDOR,
       RECEITA_DIA,
       RANKING_DIA
-    FROM GM_VW_RANKING_VENDEDORES_DIA_HIST
+    FROM ${rankingDayHistView}
     WHERE DATA_REF = :dataHoje
     ${filtroEmpresa}
     `,
@@ -91,7 +93,7 @@ async function loadHistorico(empresaId) {
           NOME_VENDEDOR,
           RECEITA_DIA,
           RANKING_DIA
-        FROM GM_VW_RANKING_VENDEDORES_DIA_HIST
+        FROM ${rankingDayHistView}
         WHERE DATA_REF = :dataOntem
         ${filtroEmpresa}
         `,

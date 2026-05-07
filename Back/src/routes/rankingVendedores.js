@@ -1,5 +1,9 @@
 import express from "express"
 import { query } from "../db/oracle.js"
+import {
+  getRankingVendorsDayViewName,
+  getRankingVendorsViewName,
+} from "../db/oracleObjectNames.js"
 
 const router = express.Router()
 
@@ -22,19 +26,23 @@ function normalizeRow(row) {
 router.get("/ranking-vendedores", async (req, res) => {
   try {
     const modo = req.query.modo || "mensal"
+    const [rankingView, rankingDayView] = await Promise.all([
+      getRankingVendorsViewName(),
+      getRankingVendorsDayViewName(),
+    ])
 
     let sql = ""
 
     if (modo === "diario") {
       sql = `
         SELECT *
-        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES_DIA
+        FROM ${rankingDayView}
         ORDER BY ranking_dia
       `
     } else {
       sql = `
         SELECT *
-        FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+        FROM ${rankingView}
         ORDER BY ranking_atingimento
       `
     }

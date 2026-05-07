@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import path from "path"
 import { randomUUID } from "crypto"
 import { query } from "../db/oracle.js"
+import { getUsersTableName } from "../db/oracleObjectNames.js"
 
 const router = express.Router()
 const uploadDir = path.resolve(process.cwd(), "uploads", "usuarios")
@@ -64,13 +65,15 @@ async function hasFotoUrlColumn() {
     return fotoUrlColumnExists
   }
 
+  const userTable = await getUsersTableName()
   const rows = await query(
     `
     SELECT COUNT(*) AS total
     FROM USER_TAB_COLUMNS
-    WHERE TABLE_NAME = 'GM_TB_USUARIOS_APP'
+    WHERE TABLE_NAME = :tableName
       AND COLUMN_NAME = 'FOTO_URL'
-    `
+    `,
+    { tableName: userTable.split(".").pop() }
   )
 
   fotoUrlColumnExists = Number(rows[0]?.TOTAL ?? 0) > 0
@@ -78,6 +81,7 @@ async function hasFotoUrlColumn() {
 }
 
 async function buscarUsuarioPorId(idUsuario) {
+  const userTable = await getUsersTableName()
   const fotoColumnSql = (await hasFotoUrlColumn())
     ? "foto_url"
     : "CAST(NULL AS VARCHAR2(500)) AS foto_url"
@@ -95,7 +99,7 @@ async function buscarUsuarioPorId(idUsuario) {
       senha_hash,
       senha_temporaria,
       ativo
-    FROM GM_TB_USUARIOS_APP
+    FROM ${userTable}
     WHERE id_usuario = :id_usuario
     `,
     { id_usuario: idUsuario }
@@ -135,11 +139,12 @@ async function alterarSenha(req, res) {
   }
 
   try {
+    const userTable = await getUsersTableName()
     const rows = id_usuario
       ? await query(
           `
           SELECT id_usuario, senha_hash
-          FROM GM_TB_USUARIOS_APP
+          FROM ${userTable}
           WHERE id_usuario = :id_usuario
           `,
           { id_usuario }
@@ -149,7 +154,7 @@ async function alterarSenha(req, res) {
           SELECT *
           FROM (
             SELECT id_usuario, senha_hash
-            FROM GM_TB_USUARIOS_APP
+            FROM ${userTable}
             WHERE TRIM(login) = :loginDigitado
                OR (:loginNormalizado <> '' AND REGEXP_REPLACE(login, '[^0-9]', '') = :loginNormalizado)
           )
@@ -176,7 +181,7 @@ async function alterarSenha(req, res) {
 
     await query(
       `
-      UPDATE GM_TB_USUARIOS_APP
+      UPDATE ${userTable}
       SET senha_hash = :novaSenhaHash,
           senha_temporaria = 'N',
           atualizado_em = SYSDATE
@@ -252,6 +257,7 @@ router.post("/usuarios/upload-foto", async (req, res) => {
       })
     }
 
+    const userTable = await getUsersTableName()
     const usuario = await buscarUsuarioPorId(id_usuario)
     if (!usuario || usuario.ATIVO !== "S") {
       return res.status(404).json({ error: "Usuário não encontrado" })
@@ -274,7 +280,7 @@ router.post("/usuarios/upload-foto", async (req, res) => {
 
     await query(
       `
-      UPDATE GM_TB_USUARIOS_APP
+      UPDATE ${userTable}
       SET foto_url = :fotoUrl,
           atualizado_em = SYSDATE
       WHERE id_usuario = :id_usuario
@@ -314,11 +320,12 @@ router.put("/usuarios/atualizar-cpf", async (req, res) => {
       return res.status(404).json({ error: "Usuário não encontrado" })
     }
 
+    const userTable = await getUsersTableName()
     const cpfNormalizado = normalizarCPF(cpfInformado)
     const duplicados = await query(
       `
       SELECT id_usuario
-      FROM GM_TB_USUARIOS_APP
+      FROM ${userTable}
       WHERE id_usuario <> :id_usuario
         AND REGEXP_REPLACE(login, '[^0-9]', '') = :cpf
       `,
@@ -336,7 +343,7 @@ router.put("/usuarios/atualizar-cpf", async (req, res) => {
 
     await query(
       `
-      UPDATE GM_TB_USUARIOS_APP
+      UPDATE ${userTable}
       SET login = :login,
           atualizado_em = SYSDATE
       WHERE id_usuario = :id_usuario

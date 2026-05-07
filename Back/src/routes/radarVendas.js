@@ -1,5 +1,6 @@
 import express from "express"
 import { query } from "../db/oracle.js"
+import { getRankingVendorsViewName } from "../db/oracleObjectNames.js"
 
 const router = express.Router()
 
@@ -29,6 +30,7 @@ function selecionarTopCategorias(categorias, criterio, limite = 2) {
 }
 
 async function carregarRankingMensal() {
+  const rankingView = await getRankingVendorsViewName()
   return query(`
     SELECT
       nome_vendedor,
@@ -36,7 +38,7 @@ async function carregarRankingMensal() {
       meta_mes,
       perc_atingimento,
       ranking_atingimento
-    FROM DM_VENDAS.GM_VW_RANKING_VENDEDORES
+    FROM ${rankingView}
     ORDER BY ranking_atingimento
   `)
 }

@@ -1,5 +1,6 @@
 import { FeedError } from "./feedService.js"
 import { query } from "../db/oracle.js"
+import { resolveOracleObjectNames } from "../db/oracleObjectNames.js"
 
 function toNumber(value, fallback = 0) {
   const parsed = Number(value)
@@ -57,21 +58,26 @@ function normalizeSince(value) {
 export async function getFeedActivityCount(input) {
   const actor = normalizeActor(input)
   const since = normalizeSince(input?.since)
+  const {
+    feedPostsTable: postsTable,
+    feedCommentsTable: commentsTable,
+    feedLikesTable: likesTable,
+  } = await resolveOracleObjectNames(["feedPostsTable", "feedCommentsTable", "feedLikesTable"])
 
   const rows = await query(
     `
     SELECT
       (
         SELECT COUNT(*)
-        FROM GM_TB_FEED_POSTS p
+        FROM ${postsTable} p
         WHERE p.EMPRESA_ID = :empresaId
           AND p.DATA_POSTAGEM > :sinceDate
           AND p.USUARIO_ID <> :usuarioId
       ) +
       (
         SELECT COUNT(*)
-        FROM GM_TB_FEED_COMENTARIOS c
-        JOIN GM_TB_FEED_POSTS p
+        FROM ${commentsTable} c
+        JOIN ${postsTable} p
           ON p.ID = c.POST_ID
         WHERE p.EMPRESA_ID = :empresaId
           AND c.DATA_COMENTARIO > :sinceDate
@@ -79,8 +85,8 @@ export async function getFeedActivityCount(input) {
       ) +
       (
         SELECT COUNT(*)
-        FROM GM_TB_FEED_CURTIDAS l
-        JOIN GM_TB_FEED_POSTS p
+        FROM ${likesTable} l
+        JOIN ${postsTable} p
           ON p.ID = l.POST_ID
         WHERE p.EMPRESA_ID = :empresaId
           AND l.DATA_CURTIDA > :sinceDate
