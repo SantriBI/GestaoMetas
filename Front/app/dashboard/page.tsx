@@ -319,44 +319,36 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid gap-4">
-                <section className="rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))] p-4 backdrop-blur-sm sm:p-5">
-                  <div className="mb-4 flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-white/45">Central de comando</p>
-                      <h2 className="mt-1 text-lg font-semibold text-white">Ritmo de acompanhamento</h2>
-                    </div>
-                    <Activity className="h-5 w-5 text-emerald-300" />
-                  </div>
-
-                  <div className="rounded-2xl border border-white/8 bg-black/15 p-4">
-                    <p className="text-xs uppercase tracking-[0.18em] text-white/45">Modo de acompanhamento</p>
-                    <p className="mt-2 text-sm leading-6 text-[#aac0b4]">
-                      Alterne entre leitura do dia e consolidado mensal sem perder o contexto da equipe.
-                    </p>
-                    <div className="mt-4 flex w-full items-center gap-1 rounded-2xl border border-white/10 bg-black/20 p-1">
-                      <button
-                        onClick={() => setViewMode("diario")}
-                        className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
-                          viewMode === "diario"
-                            ? "bg-[linear-gradient(135deg,#0b3b2e,#22c55e)] text-white shadow-[0_12px_30px_rgba(34,197,94,0.24)]"
-                            : "text-white/70 hover:text-white"
-                        }`}
-                      >
-                        <Calendar className="h-4 w-4" />
-                        Diario
-                      </button>
-                      <button
-                        onClick={() => setViewMode("mensal")}
-                        className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
-                          viewMode === "mensal"
-                            ? "bg-[linear-gradient(135deg,#0b3b2e,#22c55e)] text-white shadow-[0_12px_30px_rgba(34,197,94,0.24)]"
-                            : "text-white/70 hover:text-white"
-                        }`}
-                      >
-                        <CalendarDays className="h-4 w-4" />
-                        Mensal
-                      </button>
-                    </div>
+                <section className="justify-self-start w-full max-w-sm rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-2 backdrop-blur-sm">
+                  <div
+                    className="flex w-full items-center gap-1 rounded-[20px] border border-white/10 bg-black/20 p-1"
+                    role="group"
+                    aria-label="Modo de acompanhamento"
+                  >
+                    <button
+                      onClick={() => setViewMode("diario")}
+                      aria-pressed={viewMode === "diario"}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-sm font-medium transition-all ${
+                        viewMode === "diario"
+                          ? "bg-[linear-gradient(135deg,#0b3b2e,#22c55e)] text-white shadow-[0_12px_30px_rgba(34,197,94,0.24)]"
+                          : "text-white/70 hover:text-white"
+                      }`}
+                    >
+                      <Calendar className="h-4 w-4" />
+                      Diario
+                    </button>
+                    <button
+                      onClick={() => setViewMode("mensal")}
+                      aria-pressed={viewMode === "mensal"}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-sm font-medium transition-all ${
+                        viewMode === "mensal"
+                          ? "bg-[linear-gradient(135deg,#0b3b2e,#22c55e)] text-white shadow-[0_12px_30px_rgba(34,197,94,0.24)]"
+                          : "text-white/70 hover:text-white"
+                      }`}
+                    >
+                      <CalendarDays className="h-4 w-4" />
+                      Mensal
+                    </button>
                   </div>
                 </section>
               </div>

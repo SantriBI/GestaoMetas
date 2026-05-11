@@ -60,7 +60,11 @@ export function FeedCommentsList({
         <Textarea
           value={comment}
           onChange={(event) => setComment(event.target.value.slice(0, 500))}
-          placeholder={`Comente na publicacao de ${post.nomeUsuario}...`}
+          placeholder={
+            post.isPrivado
+              ? `Comente na mensagem privada de ${post.nomeUsuario}...`
+              : `Comente na publicacao de ${post.nomeUsuario}...`
+          }
           className="min-h-[96px] resize-none rounded-2xl border-[#20304c] bg-[#0d1626] text-sm text-white placeholder:text-[#6f84a6] focus-visible:ring-emerald-400/50"
         />
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -86,7 +90,9 @@ export function FeedCommentsList({
 
         {!isLoading && comments.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-center text-sm text-[#7f95b7]">
-            Ainda nao ha comentarios. Seja o primeiro a incentivar o time.
+            {post.isPrivado
+              ? "Ainda nao ha comentarios nessa mensagem privada."
+              : "Ainda nao ha comentarios. Seja o primeiro a incentivar o time."}
           </div>
         ) : null}
 

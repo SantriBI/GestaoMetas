@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import type { FeedComment, FeedPost, FeedPostsResponse } from "@/lib/feed-types"
+import type { FeedComment, FeedPost, FeedPostsResponse, FeedRecipient } from "@/lib/feed-types"
 import type { AuthUser } from "@/lib/user-session"
 
 type CommentState = {
@@ -13,6 +13,11 @@ type CommentState = {
 interface UseFeedOptions {
   user: AuthUser | null
   pageSize?: number
+}
+
+interface CreatePostInput {
+  message: string
+  recipient?: FeedRecipient | null
 }
 
 function normalizeErrorMessage(error: unknown, fallback: string) {
@@ -134,22 +139,29 @@ export function useFeed({ user, pageSize = 10 }: UseFeedOptions) {
     }
   }, [pageSize, user?.id_usuario, user?.empresa_id, user?.sk_empresa, user?.role])
 
-  async function createPost(message: string) {
+  async function createPost(input: CreatePostInput) {
     if (!user) throw new Error("Usuario nao autenticado.")
 
     const actor = buildActorPayload(user)
+    const message = input.message.trim()
+    const recipient = input.recipient ?? null
     const tempId = Date.now() * -1
     const optimisticPost: FeedPost = {
       id: tempId,
       usuarioId: actor.usuario_id,
       nomeUsuario: actor.nome_usuario,
       tipoUsuario: actor.tipo_usuario,
-      mensagem: message.trim(),
+      mensagem: message,
       dataPostagem: new Date().toISOString(),
       totalCurtidas: 0,
       totalComentarios: 0,
       postDestaque: false,
       curtidoPeloUsuario: false,
+      visibilidade: recipient ? "PRIVADO" : "PUBLICO",
+      isPrivado: Boolean(recipient),
+      destinatarioUsuarioId: recipient?.id ?? null,
+      destinatarioNome: recipient?.nome ?? null,
+      destinatarioTipo: recipient?.tipoUsuario ?? null,
       canEdit: true,
       canDelete: true,
       canToggleDestaque: actor.tipo_usuario === "GERENTE",
@@ -162,7 +174,11 @@ export function useFeed({ user, pageSize = 10 }: UseFeedOptions) {
       const response = await fetch("/api/feed/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...actor, mensagem: message }),
+        body: JSON.stringify({
+          ...actor,
+          mensagem: message,
+          destinatario_usuario_id: recipient?.id ?? null,
+        }),
       })
       const payload = await readJsonOrThrow(response, "Erro ao publicar post.")
       const createdPost = payload.data as FeedPost
@@ -422,6 +438,30 @@ export function useFeed({ user, pageSize = 10 }: UseFeedOptions) {
     }
   }
 
+  async function searchRecipients(term: string) {
+    if (!user) throw new Error("Usuario nao autenticado.")
+
+    const trimmedTerm = term.trim()
+    if (!trimmedTerm) {
+      return []
+    }
+
+    const actor = buildActorPayload(user)
+    const params = new URLSearchParams({
+      usuario_id: String(actor.usuario_id),
+      nome_usuario: actor.nome_usuario,
+      tipo_usuario: actor.tipo_usuario,
+      empresa_id: String(actor.empresa_id),
+      termo: trimmedTerm,
+    })
+
+    const response = await fetch(`/api/feed/usuarios?${params.toString()}`, {
+      cache: "no-store",
+    })
+    const payload = await readJsonOrThrow(response, "Erro ao buscar usuarios.")
+    return (payload.data ?? []) as FeedRecipient[]
+  }
+
   async function loadMore() {
     if (!hasMore || isLoadingMore) return
 
@@ -449,6 +489,7 @@ export function useFeed({ user, pageSize = 10 }: UseFeedOptions) {
     loadComments,
     addComment,
     toggleHighlight,
+    searchRecipients,
     loadMore,
   }
 }

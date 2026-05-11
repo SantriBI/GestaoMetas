@@ -4,6 +4,7 @@ import {
   getFeedActivityCountHandler,
   getFeedComments,
   getFeedPosts,
+  getFeedRecipients,
   postFeedComment,
   postFeedHighlight,
   postFeedLike,
@@ -14,6 +15,7 @@ import {
 const router = express.Router()
 
 router.get("/feed/posts", getFeedPosts)
+router.get("/feed/usuarios", getFeedRecipients)
 router.get("/feed/activity-count", getFeedActivityCountHandler)
 router.post("/feed/posts", postFeedPost)
 router.put("/feed/posts/:id", putFeedPost)

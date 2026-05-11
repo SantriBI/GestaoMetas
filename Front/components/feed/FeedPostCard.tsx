@@ -1,7 +1,7 @@
 ﻿"use client"
 
 import { useState } from "react"
-import { Edit3, MoreHorizontal, Pin, ShieldAlert, Trash2 } from "lucide-react"
+import { Edit3, Lock, MoreHorizontal, Pin, ShieldAlert, Trash2 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   AlertDialog,
@@ -29,6 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
 import { FeedCommentsList } from "@/components/feed/FeedCommentsList"
 import { FeedPostActions } from "@/components/feed/FeedPostActions"
@@ -83,6 +84,7 @@ export function FeedPostCard({
   const [isDeleting, setIsDeleting] = useState(false)
   const [isLiking, setIsLiking] = useState(false)
   const [isHighlighting, setIsHighlighting] = useState(false)
+  const privateHighlightDisabled = post.isPrivado && !post.postDestaque
 
   async function handleLike() {
     try {
@@ -148,6 +150,12 @@ export function FeedPostCard({
                 <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-[#9bb0cd]">
                   {post.tipoUsuario === "GERENTE" ? "Gerente" : "Vendedor"}
                 </span>
+                {post.isPrivado ? (
+                  <Badge className="border-cyan-400/18 bg-cyan-500/12 text-cyan-100">
+                    <Lock className="h-3 w-3" />
+                    Privado
+                  </Badge>
+                ) : null}
                 {post.postDestaque ? (
                   <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-500/12 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-emerald-200">
                     <Pin className="h-3 w-3" />
@@ -156,6 +164,11 @@ export function FeedPostCard({
                 ) : null}
               </div>
               <p className="mt-1 text-xs tracking-[0.08em] text-[#7f95b7]">{formatPostDate(post.dataPostagem)}</p>
+              {post.isPrivado ? (
+                <p className="mt-2 text-xs text-cyan-100/80">
+                  De {post.nomeUsuario} para {post.destinatarioNome ?? "destinatario reservado"}
+                </p>
+              ) : null}
             </div>
 
             <DropdownMenu>
@@ -170,9 +183,16 @@ export function FeedPostCard({
               <DropdownMenuContent align="end" className="border-[#1d2a40] bg-[#0b1320] text-white">
                 {post.canToggleDestaque ? (
                   <>
-                    <DropdownMenuItem onClick={handleHighlight} disabled={isHighlighting}>
+                    <DropdownMenuItem
+                      onClick={handleHighlight}
+                      disabled={isHighlighting || privateHighlightDisabled}
+                    >
                       <Pin className="h-4 w-4" />
-                      {post.postDestaque ? "Remover destaque" : "Fixar no topo"}
+                      {privateHighlightDisabled
+                        ? "Post privado nao pode ser destacado"
+                        : post.postDestaque
+                          ? "Remover destaque"
+                          : "Fixar no topo"}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator className="bg-white/8" />
                   </>
@@ -268,7 +288,9 @@ export function FeedPostCard({
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir publicacao?</AlertDialogTitle>
             <AlertDialogDescription>
-              Essa acao remove o post e seus comentarios do feed da equipe.
+              {post.isPrivado
+                ? "Essa acao remove a mensagem privada e seus comentarios."
+                : "Essa acao remove o post e seus comentarios do feed da equipe."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
