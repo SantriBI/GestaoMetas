@@ -5,6 +5,7 @@ import {
   deleteFeedPost,
   listFeedComments,
   listFeedPosts,
+  searchFeedRecipients,
   toggleFeedHighlight,
   toggleFeedLike,
   updateFeedPost,
@@ -67,10 +68,24 @@ export async function postFeedPost(req, res) {
       data: await createFeedPost({
         ...getActorFromRequest(req),
         mensagem: req.body?.mensagem,
+        destinatario_usuario_id: req.body?.destinatario_usuario_id,
       }),
     })
   } catch (error) {
     handleFeedError(res, error, "Erro ao publicar post no feed.")
+  }
+}
+
+export async function getFeedRecipients(req, res) {
+  try {
+    res.json({
+      data: await searchFeedRecipients({
+        ...getActorFromRequest(req),
+        termo: req.query.termo,
+      }),
+    })
+  } catch (error) {
+    handleFeedError(res, error, "Erro ao buscar usuarios para mensagem privada.")
   }
 }
 

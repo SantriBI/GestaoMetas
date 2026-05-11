@@ -1,11 +1,14 @@
 import oracledb from "oracledb"
 import { query } from "../db/oracle.js"
-import { resolveOracleObjectNames } from "../db/oracleObjectNames.js"
+import { getUsersTableName, resolveOracleObjectNames } from "../db/oracleObjectNames.js"
 
 const MAX_POST_LENGTH = 1000
 const MAX_COMMENT_LENGTH = 500
 const DEFAULT_PAGE_SIZE = 10
 const MAX_PAGE_SIZE = 25
+const FEED_VISIBILITY_PUBLIC = "PUBLICO"
+const FEED_VISIBILITY_PRIVATE = "PRIVADO"
+const RECIPIENT_SEARCH_LIMIT = 10
 
 export class FeedError extends Error {
   constructor(message, statusCode = 400) {
@@ -24,6 +27,11 @@ function normalizeRow(row) {
 function toNumber(value, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function toNullableNumber(value) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function normalizeRole(value) {
@@ -73,10 +81,68 @@ function normalizeActor(actor) {
   }
 }
 
+function normalizeRecipientId(value) {
+  const raw = String(value ?? "").trim()
+
+  if (!raw) {
+    return null
+  }
+
+  const destinatarioUsuarioId = Number(raw)
+  if (!Number.isFinite(destinatarioUsuarioId) || destinatarioUsuarioId <= 0) {
+    throw new FeedError("Destinatario invalido.", 400)
+  }
+
+  return destinatarioUsuarioId
+}
+
+function normalizeVisibility(destinatarioUsuarioId) {
+  return destinatarioUsuarioId ? FEED_VISIBILITY_PRIVATE : FEED_VISIBILITY_PUBLIC
+}
+
+function normalizeVisibilityValue(value, destinatarioUsuarioId) {
+  const normalized = String(value ?? "").trim().toUpperCase()
+
+  if (normalized === FEED_VISIBILITY_PRIVATE) {
+    return FEED_VISIBILITY_PRIVATE
+  }
+
+  if (normalized === FEED_VISIBILITY_PUBLIC) {
+    return FEED_VISIBILITY_PUBLIC
+  }
+
+  return toNullableNumber(destinatarioUsuarioId) ? FEED_VISIBILITY_PRIVATE : FEED_VISIBILITY_PUBLIC
+}
+
+function buildVisiblePostsCondition(alias = "p") {
+  return `
+    ${alias}.EMPRESA_ID = :empresaId
+      AND (
+        NVL(${alias}.VISIBILIDADE, '${FEED_VISIBILITY_PUBLIC}') = '${FEED_VISIBILITY_PUBLIC}'
+        OR ${alias}.USUARIO_ID = :usuarioId
+        OR ${alias}.DESTINATARIO_USUARIO_ID = :usuarioId
+      )
+  `
+}
+
+function mapRecipient(row) {
+  const recipient = normalizeRow(row)
+
+  return {
+    id: toNumber(recipient.id_usuario),
+    nome: recipient.nome ?? "",
+    login: recipient.login ?? "",
+    tipoUsuario: normalizeRole(recipient.role ?? recipient.tipo_usuario),
+    skVendedor: toNullableNumber(recipient.sk_vendedor),
+  }
+}
+
 function mapPost(row, actor) {
   const post = normalizeRow(row)
   const isAuthor = toNumber(post.usuario_id) === actor.usuarioId
   const isGerente = actor.tipoUsuario === "GERENTE"
+  const visibilidade = normalizeVisibilityValue(post.visibilidade, post.destinatario_usuario_id)
+  const isPrivado = visibilidade === FEED_VISIBILITY_PRIVATE
 
   return {
     id: toNumber(post.id),
@@ -89,6 +155,11 @@ function mapPost(row, actor) {
     totalComentarios: toNumber(post.total_comentarios),
     postDestaque: toNumber(post.post_destaque) === 1,
     curtidoPeloUsuario: toNumber(post.curtido_pelo_usuario) === 1,
+    visibilidade,
+    isPrivado,
+    destinatarioUsuarioId: toNullableNumber(post.destinatario_usuario_id),
+    destinatarioNome: post.destinatario_nome ?? null,
+    destinatarioTipo: normalizeRole(post.destinatario_tipo) || null,
     canEdit: isAuthor,
     canDelete: isAuthor || isGerente,
     canToggleDestaque: isGerente,
@@ -133,6 +204,56 @@ async function getFeedTableNames() {
   }
 }
 
+async function findPrivateMessageRecipient(actor, destinatarioUsuarioId) {
+  if (!destinatarioUsuarioId) {
+    return null
+  }
+
+  if (destinatarioUsuarioId === actor.usuarioId) {
+    throw new FeedError("Escolha outro usuario para enviar a mensagem privada.", 400)
+  }
+
+  const usersTable = await getUsersTableName()
+  const rows = await query(
+    `
+    SELECT
+      ID_USUARIO,
+      NOME,
+      LOGIN,
+      ROLE,
+      EMPRESA_ID,
+      SK_VENDEDOR,
+      ATIVO
+    FROM ${usersTable}
+    WHERE ID_USUARIO = :destinatarioUsuarioId
+      AND EMPRESA_ID = :empresaId
+    FETCH FIRST 1 ROWS ONLY
+    `,
+    {
+      destinatarioUsuarioId,
+      empresaId: actor.empresaId,
+    }
+  )
+
+  const destinatario = rows[0] ? normalizeRow(rows[0]) : null
+  if (!destinatario || destinatario.ativo !== "S") {
+    throw new FeedError("Nao foi possivel encontrar um destinatario ativo para a mensagem privada.", 400)
+  }
+
+  const tipoUsuario = normalizeRole(destinatario.role)
+  if (tipoUsuario !== "VENDEDOR" && tipoUsuario !== "GERENTE") {
+    throw new FeedError("Nao foi possivel encontrar um destinatario ativo para a mensagem privada.", 400)
+  }
+
+  return {
+    usuarioId: toNumber(destinatario.id_usuario),
+    nome: destinatario.nome ?? "",
+    login: destinatario.login ?? "",
+    tipoUsuario,
+    skVendedor: toNullableNumber(destinatario.sk_vendedor),
+  }
+}
+
 async function refreshPostCounters(postId) {
   const { postsTable, likesTable, commentsTable } = await getFeedTableNames()
   await query(
@@ -155,27 +276,35 @@ async function refreshPostCounters(postId) {
   )
 }
 
-async function findPostRow(postId, empresaId) {
+async function findPostRow(postId, actor) {
   const { postsTable } = await getFeedTableNames()
   const rows = await query(
     `
     SELECT
-      ID,
-      EMPRESA_ID,
-      USUARIO_ID,
-      NOME_USUARIO,
-      TIPO_USUARIO,
-      MENSAGEM,
-      DATA_POSTAGEM,
-      TOTAL_CURTIDAS,
-      TOTAL_COMENTARIOS,
-      POST_DESTAQUE
-    FROM ${postsTable}
-    WHERE ID = :postId
-      AND EMPRESA_ID = :empresaId
+      p.ID,
+      p.EMPRESA_ID,
+      p.USUARIO_ID,
+      p.NOME_USUARIO,
+      p.TIPO_USUARIO,
+      p.MENSAGEM,
+      p.DATA_POSTAGEM,
+      p.TOTAL_CURTIDAS,
+      p.TOTAL_COMENTARIOS,
+      p.POST_DESTAQUE,
+      p.VISIBILIDADE,
+      p.DESTINATARIO_USUARIO_ID,
+      p.DESTINATARIO_NOME,
+      p.DESTINATARIO_TIPO
+    FROM ${postsTable} p
+    WHERE p.ID = :postId
+      AND ${buildVisiblePostsCondition("p")}
     FETCH FIRST 1 ROWS ONLY
     `,
-    { postId, empresaId }
+    {
+      postId,
+      empresaId: actor.empresaId,
+      usuarioId: actor.usuarioId,
+    }
   )
 
   return rows[0] ? normalizeRow(rows[0]) : null
@@ -195,6 +324,10 @@ async function findPostForActor(postId, actor) {
       p.TOTAL_CURTIDAS,
       p.TOTAL_COMENTARIOS,
       p.POST_DESTAQUE,
+      p.VISIBILIDADE,
+      p.DESTINATARIO_USUARIO_ID,
+      p.DESTINATARIO_NOME,
+      p.DESTINATARIO_TIPO,
       CASE
         WHEN EXISTS (
           SELECT 1
@@ -206,7 +339,7 @@ async function findPostForActor(postId, actor) {
       END AS CURTIDO_PELO_USUARIO
     FROM ${postsTable} p
     WHERE p.ID = :postId
-      AND p.EMPRESA_ID = :empresaId
+      AND ${buildVisiblePostsCondition("p")}
     FETCH FIRST 1 ROWS ONLY
     `,
     {
@@ -243,6 +376,10 @@ export async function listFeedPosts(input) {
       p.TOTAL_CURTIDAS,
       p.TOTAL_COMENTARIOS,
       p.POST_DESTAQUE,
+      p.VISIBILIDADE,
+      p.DESTINATARIO_USUARIO_ID,
+      p.DESTINATARIO_NOME,
+      p.DESTINATARIO_TIPO,
       CASE
         WHEN EXISTS (
           SELECT 1
@@ -253,7 +390,7 @@ export async function listFeedPosts(input) {
         ELSE 0
       END AS CURTIDO_PELO_USUARIO
     FROM ${postsTable} p
-    WHERE p.EMPRESA_ID = :empresaId
+    WHERE ${buildVisiblePostsCondition("p")}
     ORDER BY p.POST_DESTAQUE DESC, p.DATA_POSTAGEM DESC, p.ID DESC
     OFFSET :offset ROWS FETCH NEXT :fetchRows ROWS ONLY
     `,
@@ -279,9 +416,56 @@ export async function listFeedPosts(input) {
   }
 }
 
+export async function searchFeedRecipients(input) {
+  const actor = normalizeActor(input)
+  const termo = String(input?.termo ?? input?.term ?? "").trim()
+
+  if (!termo) {
+    return []
+  }
+
+  const usersTable = await getUsersTableName()
+  const rows = await query(
+    `
+    SELECT
+      ID_USUARIO,
+      NOME,
+      LOGIN,
+      ROLE,
+      SK_VENDEDOR
+    FROM ${usersTable}
+    WHERE EMPRESA_ID = :empresaId
+      AND ATIVO = 'S'
+      AND ID_USUARIO <> :usuarioId
+      AND ROLE IN ('VENDEDOR', 'GERENTE')
+      AND (
+        UPPER(NOME) LIKE '%' || UPPER(:termo) || '%'
+        OR UPPER(LOGIN) LIKE '%' || UPPER(:termo) || '%'
+        OR UPPER(ROLE) LIKE '%' || UPPER(:termo) || '%'
+      )
+    ORDER BY NOME
+    FETCH FIRST ${RECIPIENT_SEARCH_LIMIT} ROWS ONLY
+    `,
+    {
+      empresaId: actor.empresaId,
+      usuarioId: actor.usuarioId,
+      termo,
+    }
+  )
+
+  return rows
+    .map(mapRecipient)
+    .filter((recipient) => recipient.id > 0 && (recipient.tipoUsuario === "VENDEDOR" || recipient.tipoUsuario === "GERENTE"))
+}
+
 export async function createFeedPost(input) {
   const actor = normalizeActor(input)
   const mensagem = sanitizeText(input?.mensagem, MAX_POST_LENGTH, "Mensagem")
+  const destinatarioUsuarioId = normalizeRecipientId(
+    input?.destinatarioUsuarioId ?? input?.destinatario_usuario_id
+  )
+  const visibilidade = normalizeVisibility(destinatarioUsuarioId)
+  const destinatario = await findPrivateMessageRecipient(actor, destinatarioUsuarioId)
   const id = await getNextId("FEED_POSTS_SEQ")
   const { postsTable } = await getFeedTableNames()
 
@@ -294,6 +478,10 @@ export async function createFeedPost(input) {
       NOME_USUARIO,
       TIPO_USUARIO,
       MENSAGEM,
+      VISIBILIDADE,
+      DESTINATARIO_USUARIO_ID,
+      DESTINATARIO_NOME,
+      DESTINATARIO_TIPO,
       DATA_POSTAGEM,
       TOTAL_CURTIDAS,
       TOTAL_COMENTARIOS,
@@ -305,6 +493,10 @@ export async function createFeedPost(input) {
       :nomeUsuario,
       :tipoUsuario,
       :mensagem,
+      :visibilidade,
+      :destinatarioUsuarioId,
+      :destinatarioNome,
+      :destinatarioTipo,
       SYSDATE,
       0,
       0,
@@ -318,6 +510,10 @@ export async function createFeedPost(input) {
       nomeUsuario: nvarchar(actor.nomeUsuario),
       tipoUsuario: nvarchar(actor.tipoUsuario),
       mensagem: nvarchar(mensagem),
+      visibilidade,
+      destinatarioUsuarioId: destinatario?.usuarioId ?? null,
+      destinatarioNome: destinatario ? nvarchar(destinatario.nome) : null,
+      destinatarioTipo: destinatario ? nvarchar(destinatario.tipoUsuario) : null,
     }
   )
 
@@ -328,7 +524,7 @@ export async function updateFeedPost(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
   const mensagem = sanitizeText(input?.mensagem, MAX_POST_LENGTH, "Mensagem")
-  const post = await findPostRow(postId, actor.empresaId)
+  const post = await findPostRow(postId, actor)
   const { postsTable } = await getFeedTableNames()
 
   if (!post) {
@@ -357,7 +553,7 @@ export async function updateFeedPost(postIdInput, input) {
 export async function deleteFeedPost(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
-  const post = await findPostRow(postId, actor.empresaId)
+  const post = await findPostRow(postId, actor)
   const { postsTable } = await getFeedTableNames()
 
   if (!post) {
@@ -378,12 +574,11 @@ export async function toggleFeedLike(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
   const { likesTable } = await getFeedTableNames()
-  await findPostRow(postId, actor.empresaId).then((post) => {
-    if (!post) {
-      throw new FeedError("Post nao encontrado.", 404)
-    }
-    return post
-  })
+  const post = await findPostRow(postId, actor)
+
+  if (!post) {
+    throw new FeedError("Post nao encontrado.", 404)
+  }
 
   const existing = await query(
     `
@@ -449,7 +644,7 @@ export async function toggleFeedLike(postIdInput, input) {
 export async function listFeedComments(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
-  const post = await findPostRow(postId, actor.empresaId)
+  const post = await findPostRow(postId, actor)
   const { commentsTable } = await getFeedTableNames()
 
   if (!post) {
@@ -479,7 +674,7 @@ export async function createFeedComment(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
   const comentario = sanitizeText(input?.comentario, MAX_COMMENT_LENGTH, "Comentario")
-  const post = await findPostRow(postId, actor.empresaId)
+  const post = await findPostRow(postId, actor)
   const { commentsTable } = await getFeedTableNames()
 
   if (!post) {
@@ -547,13 +742,18 @@ export async function toggleFeedHighlight(postIdInput, input) {
     throw new FeedError("Apenas gerentes podem destacar posts.", 403)
   }
 
-  const post = await findPostRow(postId, actor.empresaId)
+  const post = await findPostRow(postId, actor)
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
   }
 
   const nextValue = toNumber(post.post_destaque) === 1 ? 0 : 1
+  const visibilidade = normalizeVisibilityValue(post.visibilidade, post.destinatario_usuario_id)
+
+  if (nextValue === 1 && visibilidade === FEED_VISIBILITY_PRIVATE) {
+    throw new FeedError("Posts privados nao podem ser destacados.", 400)
+  }
 
   if (nextValue === 1) {
     await query(

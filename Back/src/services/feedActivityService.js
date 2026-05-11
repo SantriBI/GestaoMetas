@@ -2,9 +2,21 @@ import { FeedError } from "./feedService.js"
 import { query } from "../db/oracle.js"
 import { resolveOracleObjectNames } from "../db/oracleObjectNames.js"
 
+const FEED_VISIBILITY_PUBLIC = "PUBLICO"
+
 function toNumber(value, fallback = 0) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function buildVisiblePostsCondition(alias = "p") {
+  return `
+    (
+      NVL(${alias}.VISIBILIDADE, '${FEED_VISIBILITY_PUBLIC}') = '${FEED_VISIBILITY_PUBLIC}'
+      OR ${alias}.USUARIO_ID = :usuarioId
+      OR ${alias}.DESTINATARIO_USUARIO_ID = :usuarioId
+    )
+  `
 }
 
 function normalizeRole(value) {
@@ -71,6 +83,7 @@ export async function getFeedActivityCount(input) {
         SELECT COUNT(*)
         FROM ${postsTable} p
         WHERE p.EMPRESA_ID = :empresaId
+          AND ${buildVisiblePostsCondition("p")}
           AND p.DATA_POSTAGEM > :sinceDate
           AND p.USUARIO_ID <> :usuarioId
       ) +
@@ -80,6 +93,7 @@ export async function getFeedActivityCount(input) {
         JOIN ${postsTable} p
           ON p.ID = c.POST_ID
         WHERE p.EMPRESA_ID = :empresaId
+          AND ${buildVisiblePostsCondition("p")}
           AND c.DATA_COMENTARIO > :sinceDate
           AND c.USUARIO_ID <> :usuarioId
       ) +
@@ -89,6 +103,7 @@ export async function getFeedActivityCount(input) {
         JOIN ${postsTable} p
           ON p.ID = l.POST_ID
         WHERE p.EMPRESA_ID = :empresaId
+          AND ${buildVisiblePostsCondition("p")}
           AND l.DATA_CURTIDA > :sinceDate
           AND l.USUARIO_ID <> :usuarioId
       ) AS TOTAL

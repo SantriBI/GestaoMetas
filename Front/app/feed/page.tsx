@@ -9,6 +9,7 @@ import { AppShellNav } from "@/components/layout/AppShellNav"
 import { useFeed } from "@/hooks/useFeed"
 import { toast } from "@/hooks/use-toast"
 import { markFeedAsSeen } from "@/lib/feed-activity"
+import type { FeedRecipient } from "@/lib/feed-types"
 import { getStoredUser, setStoredUser, type AuthUser } from "@/lib/user-session"
 
 export default function FeedPage() {
@@ -29,6 +30,7 @@ export default function FeedPage() {
     loadComments,
     addComment,
     toggleHighlight,
+    searchRecipients,
     loadMore,
   } = useFeed({ user })
 
@@ -66,12 +68,14 @@ export default function FeedPage() {
     }
   }, [])
 
-  async function handleCreatePost(message: string) {
+  async function handleCreatePost(input: { message: string; recipient?: FeedRecipient | null }) {
     try {
-      await createPost(message)
+      await createPost(input)
       toast({
-        title: "Post publicado",
-        description: "Sua mensagem ja apareceu no feed da equipe.",
+        title: input.recipient ? "Mensagem privada enviada" : "Post publicado",
+        description: input.recipient
+          ? `Sua mensagem foi enviada para ${input.recipient.nome}.`
+          : "Sua mensagem ja apareceu no feed da equipe.",
       })
     } catch (err) {
       toast({
@@ -169,7 +173,14 @@ export default function FeedPage() {
           </div>
         </section>
 
-        {user ? <FeedComposer user={user} isSubmitting={isCreating} onSubmit={handleCreatePost} /> : null}
+        {user ? (
+          <FeedComposer
+            user={user}
+            isSubmitting={isCreating}
+            onSubmit={handleCreatePost}
+            onSearchRecipients={searchRecipients}
+          />
+        ) : null}
 
         <section className="mt-6">
           {error ? (
