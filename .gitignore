@@ -1,3 +1,6 @@
 Back/node_modules/
 Front/node_modules/
 Front/.next/
+node_modules/ 
+Back/node_modules/ 
+Front/node_modules/ 
