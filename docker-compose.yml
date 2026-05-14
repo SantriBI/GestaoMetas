@@ -46,6 +46,11 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1}
       N8N_ATIVACAO_WEBHOOK: ${N8N_ATIVACAO_WEBHOOK:-}
+      ZAPI_INSTANCE_ID: ${ZAPI_INSTANCE_ID:-}
+      ZAPI_INSTANCE_TOKEN: ${ZAPI_INSTANCE_TOKEN:-}
+      ZAPI_CLIENT_TOKEN: ${ZAPI_CLIENT_TOKEN:-}
+      ZAPI_BASE_URL: ${ZAPI_BASE_URL:-https://api.z-api.io}
+      SIP_PUBLIC_URL: ${SIP_PUBLIC_URL:-https://sip.com.br}
     ports:
       - "${BACKEND_HOST_PORT:-3001}:${BACKEND_PORT:-3001}"
     depends_on:

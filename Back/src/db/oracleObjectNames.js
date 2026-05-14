@@ -1,5 +1,13 @@
 import { query } from "./oracle.js"
 
+export const CHALLENGE_TABLE_ALIASES = Object.freeze({
+  challengeTable: ["GM_TB_DESAFIOS_COMERCIAIS", "DESAFIOS_COMERCIAIS"],
+  challengeGoalsTable: ["GM_TB_DESAFIOS_COMERCIAIS_METAS", "DESAFIOS_COMERCIAIS_METAS"],
+  challengeSellersTable: ["GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES", "DESAFIOS_COMERCIAIS_VENDEDORES"],
+  challengeProgressTable: ["GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO", "DESAFIOS_COMERCIAIS_PROGRESSO"],
+  challengeLogTable: ["GM_TB_DESAFIOS_COMERCIAIS_LOG", "DESAFIOS_COMERCIAIS_LOG"],
+})
+
 const OBJECT_SPECS = {
   usersTable: {
     type: "TABLE",
@@ -25,6 +33,26 @@ const OBJECT_SPECS = {
     type: "TABLE",
     candidates: ["GM_TB_PERFIL_VENDEDOR", "PERFIL_VENDEDOR"],
   },
+  challengeTable: {
+    type: "TABLE",
+    candidates: CHALLENGE_TABLE_ALIASES.challengeTable,
+  },
+  challengeGoalsTable: {
+    type: "TABLE",
+    candidates: CHALLENGE_TABLE_ALIASES.challengeGoalsTable,
+  },
+  challengeSellersTable: {
+    type: "TABLE",
+    candidates: CHALLENGE_TABLE_ALIASES.challengeSellersTable,
+  },
+  challengeProgressTable: {
+    type: "TABLE",
+    candidates: CHALLENGE_TABLE_ALIASES.challengeProgressTable,
+  },
+  challengeLogTable: {
+    type: "TABLE",
+    candidates: CHALLENGE_TABLE_ALIASES.challengeLogTable,
+  },
   rankingVendorsView: {
     type: "VIEW",
     owner: "DM_VENDAS",
@@ -41,7 +69,25 @@ const OBJECT_SPECS = {
   },
 }
 
+const DEFAULT_ACTIVATION_TABLE_NAMES = {
+  campaignsTable: "CAMPANHAS_ATIVACAO",
+  campaignClientsTable: "CAMPANHAS_ATIVACAO_CLIENTES",
+  campaignLinksTable: "CAMPANHA_LINKS",
+  campaignEventsTable: "CAMPANHA_EVENTOS",
+}
+
+const ACTIVATION_TABLE_FAMILIES = [
+  DEFAULT_ACTIVATION_TABLE_NAMES,
+  {
+    campaignsTable: "GM_TB_CAMPANHAS_ATIVACAO",
+    campaignClientsTable: "GM_TB_CAMPANHAS_ATIVACAO_CLIENTES",
+    campaignLinksTable: "GM_TB_CAMPANHA_LINKS",
+    campaignEventsTable: "GM_TB_CAMPANHA_EVENTOS",
+  },
+]
+
 const objectNameCache = new Map()
+let cachedActivationTableNames = null
 
 function normalizeRow(row) {
   return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key.toLowerCase(), value]))
@@ -53,6 +99,20 @@ function buildObjectName(owner, objectName) {
 
 function buildInList(candidates) {
   return candidates.map((candidate) => `'${candidate}'`).join(", ")
+}
+
+async function tableExistsInCurrentSchema(tableName) {
+  const rows = await query(
+    `
+    SELECT COUNT(*) AS total
+    FROM USER_TABLES
+    WHERE TABLE_NAME = :table_name
+    `,
+    { table_name: String(tableName ?? "").toUpperCase() }
+  )
+
+  const total = Number(rows[0]?.TOTAL ?? rows[0]?.total ?? 0)
+  return Number.isFinite(total) && total > 0
 }
 
 async function findCurrentSchemaObject(spec) {
@@ -140,6 +200,10 @@ export async function getProfileTableName() {
   return resolveOracleObjectName("profileTable")
 }
 
+export async function getChallengeTableNames() {
+  return resolveOracleObjectNames(Object.keys(CHALLENGE_TABLE_ALIASES))
+}
+
 export async function getRankingVendorsViewName() {
   return resolveOracleObjectName("rankingVendorsView")
 }
@@ -150,4 +214,23 @@ export async function getRankingVendorsDayViewName() {
 
 export async function getRankingVendorsDayHistViewName() {
   return resolveOracleObjectName("rankingVendorsDayHistView")
+}
+
+export async function getActivationTableNames() {
+  if (cachedActivationTableNames) {
+    return cachedActivationTableNames
+  }
+
+  for (const family of ACTIVATION_TABLE_FAMILIES) {
+    const hasCampaigns = await tableExistsInCurrentSchema(family.campaignsTable)
+    const hasCampaignClients = await tableExistsInCurrentSchema(family.campaignClientsTable)
+
+    if (hasCampaigns && hasCampaignClients) {
+      cachedActivationTableNames = family
+      return cachedActivationTableNames
+    }
+  }
+
+  cachedActivationTableNames = DEFAULT_ACTIVATION_TABLE_NAMES
+  return cachedActivationTableNames
 }

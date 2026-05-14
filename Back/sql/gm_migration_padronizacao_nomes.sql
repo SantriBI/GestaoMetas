@@ -80,8 +80,7 @@ BEGIN
   rename_table_if_needed('DESAFIOS_COMERCIAIS_LOG', 'GM_TB_DESAFIOS_COMERCIAIS_LOG');
 
   -- Modulo Ativacao de Clientes
-  rename_table_if_needed('CAMPANHAS_ATIVACAO', 'GM_TB_CAMPANHAS_ATIVACAO');
-  rename_table_if_needed('CAMPANHAS_ATIVACAO_CLIENTES', 'GM_TB_CAMPANHAS_ATIVACAO_CLIENTES');
+  -- Mantido sem prefixo GM_TB para compatibilidade com a evolucao da Z-API e Central de Negociacao.
   rename_table_if_needed('TEMPLATES_MENSAGENS', 'GM_TB_TEMPLATES_MENSAGENS');
 
   -- Portal da Industria

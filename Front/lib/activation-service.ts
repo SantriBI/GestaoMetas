@@ -1,6 +1,8 @@
 import {
   ActivationCampaignPayload,
+  ActivationCampaignDashboard,
   ActivationCampaignResponse,
+  ActivationNegotiationCenter,
   ActivationPreviewResponse,
   ActivationScope,
   ActivationSegment,
@@ -183,6 +185,37 @@ export async function sendActivationCampaign(
     method: "POST",
     body: JSON.stringify(payload),
   })
+}
+
+export async function getActivationCampaignDashboard(campanhaId: number | string) {
+  const payload = await fetchJson<{ data: ActivationCampaignDashboard }>(
+    `/api/ativacao-clientes/campanhas/${campanhaId}/dashboard`
+  )
+  return payload.data
+}
+
+export async function getNegotiationCenter(token: string) {
+  const payload = await fetchJson<{ data: ActivationNegotiationCenter }>(
+    `/api/ativacao-clientes/negociacao/${encodeURIComponent(token)}`
+  )
+  return payload.data
+}
+
+export async function postNegotiationEvent(
+  token: string,
+  body: {
+    action: string
+    button?: string | null
+    source?: string | null
+  }
+) {
+  return fetchJson<{ data: { success: boolean; action: string; eventType: string } }>(
+    `/api/ativacao-clientes/negociacao/${encodeURIComponent(token)}/eventos`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    }
+  )
 }
 
 export function formatActivationDate(value?: string | number | Date | null) {

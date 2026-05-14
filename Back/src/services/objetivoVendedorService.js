@@ -1,5 +1,7 @@
 import { query } from "../db/oracle.js"
 import {
+  CHALLENGE_TABLE_ALIASES,
+  getChallengeTableNames,
   getObjectivesTableName,
   getProfileTableName,
   getRankingVendorsViewName,
@@ -16,8 +18,14 @@ const PROFILE_SEQUENCE = "PERFIL_VENDEDOR_SEQ"
 const PROFILE_SCRIPT_PATH = "Back/sql/perfil_vendedor.sql"
 const DEFAULT_COMMISSION_RATE = 0.03
 const CHALLENGE_TABLES = [
-  "GM_TB_DESAFIOS_COMERCIAIS",
-  "GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO",
+  {
+    name: CHALLENGE_TABLE_ALIASES.challengeTable[0],
+    candidates: CHALLENGE_TABLE_ALIASES.challengeTable,
+  },
+  {
+    name: CHALLENGE_TABLE_ALIASES.challengeProgressTable[0],
+    candidates: CHALLENGE_TABLE_ALIASES.challengeProgressTable,
+  },
 ]
 const ORACLE_UNIQUE_VIOLATION = 1
 const ORACLE_TABLE_NOT_FOUND = 942
@@ -198,6 +206,11 @@ async function tableExists(tableName) {
   return numberValue(rows[0]?.TOTAL ?? rows[0]?.total) > 0
 }
 
+async function tableFamilyExists(tableNames) {
+  const checks = await Promise.all(tableNames.map((tableName) => tableExists(tableName)))
+  return checks.some(Boolean)
+}
+
 async function sequenceExists(sequenceName) {
   const rows = await query(
     `
@@ -307,7 +320,7 @@ async function isProfileModuleReady() {
 }
 
 async function challengeTablesReady() {
-  const checks = await Promise.all(CHALLENGE_TABLES.map((tableName) => tableExists(tableName)))
+  const checks = await Promise.all(CHALLENGE_TABLES.map(({ candidates }) => tableFamilyExists(candidates)))
   return checks.every(Boolean)
 }
 
@@ -563,6 +576,7 @@ async function calculateChallengeRewards(skVendedor, trackingStartDate, empresaI
     }
   }
 
+  const { challengeTable, challengeProgressTable } = await getChallengeTableNames()
   const rows = await query(
     `
     SELECT
@@ -574,8 +588,8 @@ async function calculateChallengeRewards(skVendedor, trackingStartDate, empresaI
         NVL(SUM(CASE WHEN d.exige_aceite = 'S' THEN NVL(p.premio_valor, 0) ELSE 0 END), 0),
         2
       ) AS desafios_total
-    FROM GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO p
-    JOIN GM_TB_DESAFIOS_COMERCIAIS d
+    FROM ${challengeProgressTable} p
+    JOIN ${challengeTable} d
       ON d.id_desafio = p.id_desafio
     WHERE p.sk_vendedor = :sk_vendedor
       AND p.premio_liberado = 'S'

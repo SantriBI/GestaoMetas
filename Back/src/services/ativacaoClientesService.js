@@ -1,5 +1,17 @@
 import ExcelJS from "exceljs"
 import { query } from "../db/oracle.js"
+import { getActivationTableNames } from "../db/oracleObjectNames.js"
+import {
+  LARGE_CAMPAIGN_WARNING_THRESHOLD,
+  buildCampaignWebhookPayload,
+  buildNegotiationCenter,
+  buildCampaignWarning,
+  ensureCampaignLinks,
+  getCampaignDashboard,
+  hasAdvancedCampaignSupport,
+  trackNegotiationInteraction,
+} from "./ativacaoClientesJourneyService.js"
+import { startCampaignSend } from "./zapi/zapiMessageService.js"
 
 const DEFAULT_TEMPLATES = [
   {
@@ -122,6 +134,7 @@ const SEGMENTS = [
 ]
 
 let cachedCampanhaAtivacaoConfirmationSupport = null
+let cachedActivationTables = null
 
 function normalizarLinha(row) {
   return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key.toLowerCase(), value]))
@@ -191,7 +204,8 @@ function escapeWhatsAppMessage(value) {
 function montarWaLink(telefone, mensagemFinal) {
   const limpo = telefoneValido(telefone)
   if (!limpo) return null
-  return `https://wa.me/55${limpo}?text=${escapeWhatsAppMessage(mensagemFinal)}`
+  const phone = limpo.startsWith("55") ? limpo : `55${limpo}`
+  return `https://wa.me/${phone}?text=${escapeWhatsAppMessage(mensagemFinal)}`
 }
 
 function hasPlaceholder(message, placeholder) {
@@ -261,6 +275,15 @@ async function nextTableId(tableName) {
   return numero(rows[0]?.NEXT_ID ?? rows[0]?.next_id)
 }
 
+async function getActivationTables() {
+  if (cachedActivationTables) {
+    return cachedActivationTables
+  }
+
+  cachedActivationTables = await getActivationTableNames()
+  return cachedActivationTables
+}
+
 async function tableHasColumns(tableName, columnNames) {
   if (!columnNames.length) {
     return true
@@ -284,7 +307,8 @@ async function campanhaAtivacaoSuportaConfirmacao() {
     return cachedCampanhaAtivacaoConfirmationSupport
   }
 
-  cachedCampanhaAtivacaoConfirmationSupport = await tableHasColumns("GM_TB_CAMPANHAS_ATIVACAO", [
+  const tables = await getActivationTables()
+  cachedCampanhaAtivacaoConfirmationSupport = await tableHasColumns(tables.campaignsTable, [
     "DATA_CONFIRMACAO",
     "ID_USUARIO_CONFIRMACAO",
     "NOME_USUARIO_CONFIRMACAO",
@@ -739,9 +763,10 @@ export async function atualizarTemplate(id, payload) {
 }
 
 export async function criarCampanha(payload) {
+  const tables = await getActivationTables()
   const confirmation = buildCampaignConfirmation(payload)
   const templateId = normalizeCampaignTemplateId(payload.template_id)
-  const clientes =
+  const clientesSelecionados =
     payload.clientes?.length
       ? decorateClientes(payload.clientes, payload.mensagem_base)
       : await getClientesBySegment({
@@ -751,11 +776,12 @@ export async function criarCampanha(payload) {
           messageBase: payload.mensagem_base,
         })
 
-  const resumo = summarizeClientes(clientes)
+  const resumo = summarizeClientes(clientesSelecionados)
+  const warning = buildCampaignWarning(resumo.total_clientes)
 
   if (
-    !(await tableExists("GM_TB_CAMPANHAS_ATIVACAO")) ||
-    !(await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES"))
+    !(await tableExists(tables.campaignsTable)) ||
+    !(await tableExists(tables.campaignClientsTable))
   ) {
     return {
       persisted: false,
@@ -767,13 +793,14 @@ export async function criarCampanha(payload) {
         data_confirmacao: confirmation.data_confirmacao,
         id_usuario_confirmacao: confirmation.id_usuario_confirmacao,
         nome_usuario_confirmacao: confirmation.nome_usuario_confirmacao,
+        warning,
         ...resumo,
-        clientes,
+        clientes: clientesSelecionados,
       },
     }
   }
 
-  const campanhaId = await nextTableId("GM_TB_CAMPANHAS_ATIVACAO")
+  const campanhaId = await nextTableId(tables.campaignsTable)
   const suportaConfirmacao = await campanhaAtivacaoSuportaConfirmacao()
 
   const insertColumns = [
@@ -828,7 +855,7 @@ export async function criarCampanha(payload) {
 
   await query(
     `
-    INSERT INTO GM_TB_CAMPANHAS_ATIVACAO (
+    INSERT INTO ${tables.campaignsTable} (
       ${insertColumns.join(",\n      ")}
     ) VALUES (
       ${insertValues.join(",\n      ")}
@@ -837,10 +864,10 @@ export async function criarCampanha(payload) {
     insertBinds
   )
 
-  for (const [index, cliente] of clientes.entries()) {
+  for (const [index, cliente] of clientesSelecionados.entries()) {
     await query(
       `
-      INSERT INTO GM_TB_CAMPANHAS_ATIVACAO_CLIENTES (
+      INSERT INTO ${tables.campaignClientsTable} (
         id,
         campanha_id,
         sk_cliente,
@@ -882,6 +909,11 @@ export async function criarCampanha(payload) {
     )
   }
 
+  let clientesCampanha = clientesSelecionados
+  if (await hasAdvancedCampaignSupport()) {
+    clientesCampanha = await ensureCampaignLinks(campanhaId)
+  }
+
   return {
     persisted: true,
     campanha: {
@@ -892,8 +924,9 @@ export async function criarCampanha(payload) {
       data_confirmacao: confirmation.data_confirmacao,
       id_usuario_confirmacao: confirmation.id_usuario_confirmacao,
       nome_usuario_confirmacao: confirmation.nome_usuario_confirmacao,
+      warning,
       ...resumo,
-      clientes,
+      clientes: clientesCampanha,
     },
   }
 }
@@ -932,6 +965,7 @@ export async function gerarExcelCampanha(clientes = [], campanha = {}) {
     { header: "Classificação", key: "classificacao_rfv", width: 20 },
     { header: "Data da campanha", key: "data_campanha", width: 20 },
     { header: "Confirmado por", key: "usuario_confirmacao", width: 28 },
+    { header: "Central de negociação", key: "link_url", width: 38 },
     { header: "Mensagem", key: "mensagem_final", width: 50 },
   ]
 
@@ -948,6 +982,7 @@ export async function gerarExcelCampanha(clientes = [], campanha = {}) {
       classificacao_rfv: clienteNormalizado.classificacao_rfv ?? "",
       data_campanha: dataCampanha,
       usuario_confirmacao: usuarioConfirmacao,
+      link_url: texto(cliente.link_url) ?? "",
       mensagem_final: texto(cliente.mensagem_final) ?? "",
     })
   })
@@ -966,64 +1001,39 @@ export function gerarNomeArquivo(segmento) {
 }
 
 export async function enviarCampanha(campanhaId, payload = {}) {
-  let clientes = []
-  let campanha = { id: campanhaId, segmento: payload.segmento ?? null }
+  const tables = await getActivationTables()
   const confirmation = buildCampaignConfirmation(payload)
+  const campanhaRows = await query(
+    `
+    SELECT id, segmento, vendedor_id, mensagem_base
+    FROM ${tables.campaignsTable}
+    WHERE id = :id
+    `,
+    { id: campanhaId }
+  )
 
-  if (await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES")) {
-    const rows = await query(
-      `
-      SELECT
-        campanha_id,
-        sk_cliente,
-        nome_cliente,
-        telefone,
-        classificacao_rfv,
-        ultima_compra,
-        valor_orcamento,
-        data_orcamento,
-        mensagem_final
-      FROM GM_TB_CAMPANHAS_ATIVACAO_CLIENTES
-      WHERE campanha_id = :campanha_id
-      ORDER BY id
-      `,
-      { campanha_id: campanhaId }
+  if (!campanhaRows.length) {
+    throw new Error("Campanha de ativacao nao encontrada.")
+  }
+
+  const campanhaBase = normalizarLinha(campanhaRows[0])
+  const campanha = {
+    id: campanhaId,
+    segmento: texto(campanhaBase.segmento) ?? payload.segmento ?? null,
+    vendedor_id: campanhaBase.vendedor_id ?? payload.sk_vendedor ?? null,
+    mensagem_base: texto(campanhaBase.mensagem_base) ?? payload.mensagem_base ?? null,
+  }
+
+  if (!(await hasAdvancedCampaignSupport())) {
+    throw new Error(
+      "A estrutura avancada da ativacao ainda nao foi criada. Execute o script Back/sql/campanhas_ativacao_zapi.sql antes de confirmar a campanha."
     )
-
-    clientes = rows.map((row, index) => {
-      const item = normalizarLinha(row)
-      return {
-        id: `${item.campanha_id}-${index}`,
-        sk_cliente: item.sk_cliente ?? null,
-        nome_cliente: texto(item.nome_cliente),
-        telefone: telefoneValido(item.telefone),
-        classificacao_rfv: texto(item.classificacao_rfv),
-        ultima_compra: item.ultima_compra ?? null,
-        valor_orcamento: item.valor_orcamento ?? null,
-        data_orcamento: item.data_orcamento ?? null,
-        mensagem_final: texto(item.mensagem_final) ?? "",
-        whatsapp_link: item.telefone ? montarWaLink(item.telefone, item.mensagem_final ?? "") : null,
-      }
-    })
-  } else if (payload.clientes?.length) {
-    clientes = decorateClientes(payload.clientes, payload.mensagem_base)
   }
 
-  const webhookPayload = {
-    campanha_id: campanhaId,
-    segmento: payload.segmento ?? campanha.segmento,
-    vendedor_id: payload.sk_vendedor ?? null,
-    mensagem_base: payload.mensagem_base ?? null,
-    clientes: clientes.map((cliente) => ({
-      nome_cliente: cliente.nome_cliente,
-      telefone: cliente.telefone,
-      ultima_compra: cliente.ultima_compra ?? null,
-      valor_orcamento: cliente.valor_orcamento ?? null,
-      data_orcamento: cliente.data_orcamento ?? null,
-      mensagem_final: cliente.mensagem_final,
-      whatsapp_link: cliente.whatsapp_link,
-    })),
-  }
+  const clientes = await ensureCampaignLinks(campanhaId)
+
+  const warning = buildCampaignWarning(clientes.length)
+  const webhookPayload = buildCampaignWebhookPayload(campanhaId, campanha, clientes)
 
   let webhookStatus = "nao_configurado"
 
@@ -1040,25 +1050,10 @@ export async function enviarCampanha(campanhaId, payload = {}) {
     }
   }
 
-  if (await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES")) {
-    const status = webhookStatus === "enviado" ? "ENVIADO_WEBHOOK" : "LINK_GERADO"
+  if ((await tableExists(tables.campaignsTable)) && (await campanhaAtivacaoSuportaConfirmacao())) {
     await query(
       `
-      UPDATE GM_TB_CAMPANHAS_ATIVACAO_CLIENTES
-      SET status_envio = :status_envio
-      WHERE campanha_id = :campanha_id
-      `,
-      {
-        status_envio: status,
-        campanha_id: campanhaId,
-      }
-    )
-  }
-
-  if ((await tableExists("GM_TB_CAMPANHAS_ATIVACAO")) && (await campanhaAtivacaoSuportaConfirmacao())) {
-    await query(
-      `
-      UPDATE GM_TB_CAMPANHAS_ATIVACAO
+      UPDATE ${tables.campaignsTable}
       SET data_confirmacao = :data_confirmacao,
           id_usuario_confirmacao = :id_usuario_confirmacao,
           nome_usuario_confirmacao = :nome_usuario_confirmacao
@@ -1073,6 +1068,9 @@ export async function enviarCampanha(campanhaId, payload = {}) {
     )
   }
 
+  const sendProcess = await startCampaignSend(campanhaId)
+  const dashboard = await getCampaignDashboard(campanhaId)
+
   return {
     campanha: {
       ...campanha,
@@ -1080,8 +1078,31 @@ export async function enviarCampanha(campanhaId, payload = {}) {
       id_usuario_confirmacao: confirmation.id_usuario_confirmacao,
       nome_usuario_confirmacao: confirmation.nome_usuario_confirmacao,
     },
+    warning,
+    envio_status: sendProcess.job.status,
+    job: sendProcess.job,
+    dashboard,
     webhook_status: webhookStatus,
     clientes,
     payload_n8n: webhookPayload,
   }
 }
+
+export async function obterDashboardCampanha(campanhaId) {
+  return getCampaignDashboard(campanhaId)
+}
+
+export async function obterCentralNegociacao(token) {
+  const payload = await buildNegotiationCenter(token)
+  if (!payload) {
+    throw new Error("Link de negociacao nao encontrado ou expirado.")
+  }
+
+  return payload
+}
+
+export async function registrarEventoCentralNegociacao(token, action, payload = {}) {
+  return trackNegotiationInteraction(token, action, payload)
+}
+
+export { LARGE_CAMPAIGN_WARNING_THRESHOLD }

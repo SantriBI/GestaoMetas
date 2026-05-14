@@ -73,6 +73,7 @@ O frontend usa `App Router` e esta organizado por dominios de negocio.
 - `/area-ataque`: carteira priorizada
 - `/investigar-cliente`: leitura detalhada de cliente
 - `/ativacao-clientes`: fluxo de campanha e reativacao
+- `/n/[token]`: Central publica de negociacao por cliente
 - `/feed`: mural interno da equipe
 - `/perfil`: dados do usuario
 - `/alterar-senha`: atualizacao de senha
@@ -103,6 +104,9 @@ O backend concentra as regras de negocio e a integracao com os bancos.
 - `/api/assistente-vendas/*`: apoio comercial e proximas acoes
 - `/api/usuarios/*`: perfil, senha e foto do usuario
 - `/api/ativacao-clientes/*`: segmentos, resumo, preview e campanhas
+- `/api/ativacao-clientes/campanhas/:id/dashboard`: KPIs e funil da campanha
+- `/api/ativacao-clientes/negociacao/:token`: dados publicos da Central de Negociacao
+- `/api/webhooks/zapi`: recebimento de entregue, lido e resposta da Z-API
 - `/api/templates-mensagens/*`: templates da ativacao
 - `/api/feed/*`: posts, comentarios, curtidas, destaque e atividade
 - `/api/health`: health-check basico
@@ -135,7 +139,7 @@ Permite buscar cliente por nome, CPF ou CNPJ e devolve perfil, RFV, historico fi
 
 ### 💬 Central de ativacao
 
-Organiza campanhas com segmentacao, templates, preview de clientes e links prontos de WhatsApp.
+Organiza campanhas com segmentacao, templates, preview de clientes, envio automatico via Z-API e links rastreaveis da Central de Negociacao.
 
 ### 📰 Feed
 
@@ -243,6 +247,11 @@ Dependendo dos modulos usados, estas tambem podem ser necessarias:
 - `DB_PORT`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
+- `ZAPI_INSTANCE_ID`
+- `ZAPI_INSTANCE_TOKEN`
+- `ZAPI_CLIENT_TOKEN`
+- `ZAPI_BASE_URL`
+- `SIP_PUBLIC_URL`
 - `MYSQL_DATABASE`
 - `MYSQL_USER`
 - `MYSQL_PASSWORD`
@@ -364,6 +373,7 @@ Pelo codigo atual e pelos arquivos de infraestrutura, o projeto espera ao menos:
 - Leituras Oracle possuem tentativa de retry para alguns erros transitorios
 - O frontend armazena a sessao do usuario em `sessionStorage`
 - O `next.config.mjs` esta com `ignoreBuildErrors: true`, o que acelera iteracao, mas pede revisao antes de endurecer deploy
+- Para ativacao automatica com Z-API, execute tambem `Back/sql/campanhas_ativacao_zapi.sql`
 
 ## 🚀 Resumo final
 

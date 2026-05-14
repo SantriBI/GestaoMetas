@@ -3,6 +3,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
+  ActivationCampaignDashboard,
   ActivationCampaignResponse,
   ActivationPreviewResponse,
   ActivationScope,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/activation-types"
 import {
   createActivationCampaign,
+  getActivationCampaignDashboard,
   getActivationPreview,
   getActivationSegments,
   getActivationSummary,
@@ -22,6 +24,9 @@ import {
 
 const ACTIVATION_CAMPAIGN_DB_WARNING =
   "A campanha foi gerada, mas ainda não foi salva no banco. Execute o script Back/sql/gm_migration_padronizacao_nomes.sql e depois valide a estrutura de persistência."
+
+const LARGE_CAMPAIGN_WARNING =
+  "Campanhas muito grandes podem aumentar o risco de limitacao do WhatsApp."
 
 export function useActivationCampaign(scope: ActivationScope | null) {
   const [segments, setSegments] = useState<ActivationSegment[]>([])
@@ -39,8 +44,10 @@ export function useActivationCampaign(scope: ActivationScope | null) {
   const [isBootLoading, setIsBootLoading] = useState(true)
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const [isPersisting, setIsPersisting] = useState(false)
+  const [isDashboardLoading, setIsDashboardLoading] = useState(false)
   const [lastCampaignId, setLastCampaignId] = useState<number | string | null>(null)
   const [lastSendStatus, setLastSendStatus] = useState<string | null>(null)
+  const [dashboard, setDashboard] = useState<ActivationCampaignDashboard | null>(null)
   const [error, setError] = useState<string | null>(null)
   const hasBootstrappedRef = useRef(false)
   const previousSegmentRef = useRef("")
@@ -219,8 +226,59 @@ export function useActivationCampaign(scope: ActivationScope | null) {
   }, [previewClients, selectedClientIds])
 
   const sampleClient = selectedClients[0] ?? previewClients[0] ?? null
+  const largeCampaignWarning = selectedClients.length > 150 ? LARGE_CAMPAIGN_WARNING : null
+
+  useEffect(() => {
+    if (!lastCampaignId) {
+      setDashboard(null)
+      return
+    }
+
+    const persistedCampaignId = lastCampaignId
+    let active = true
+    let timer: number | null = null
+
+    async function loadDashboard(showLoader: boolean) {
+      try {
+        if (showLoader) {
+          setIsDashboardLoading(true)
+        }
+
+        const data = await getActivationCampaignDashboard(persistedCampaignId)
+        if (!active) return
+        setDashboard(data)
+      } catch (err) {
+        if (active) {
+          console.error("Erro ao atualizar dashboard da campanha:", err)
+        }
+      } finally {
+        if (active && showLoader) {
+          setIsDashboardLoading(false)
+        }
+      }
+    }
+
+    void loadDashboard(true)
+    timer = window.setInterval(() => {
+      void loadDashboard(false)
+    }, 15000)
+
+    return () => {
+      active = false
+      if (timer) {
+        window.clearInterval(timer)
+      }
+    }
+  }, [lastCampaignId])
+
+  function resetCampaignTracking() {
+    setLastCampaignId(null)
+    setLastSendStatus(null)
+    setDashboard(null)
+  }
 
   function applyTemplate(templateId: string) {
+    resetCampaignTracking()
     setSelectedTemplateId(templateId)
     const template = templates.find((item) => String(item.id ?? "") === templateId)
     if (template?.mensagem) {
@@ -228,26 +286,40 @@ export function useActivationCampaign(scope: ActivationScope | null) {
     }
   }
 
+  function handleSegmentChange(segmentId: string) {
+    resetCampaignTracking()
+    setSelectedSegment(segmentId)
+  }
+
+  function handleMessageChange(nextMessage: string) {
+    resetCampaignTracking()
+    setMessage(nextMessage)
+  }
+
   function toggleClient(clientId: string) {
     const client = previewClients.find((item) => item.id === clientId)
     if (!client || !client.possui_telefone) return
 
+    resetCampaignTracking()
     setSelectedClientIds((current) =>
       current.includes(clientId) ? current.filter((id) => id !== clientId) : [...current, clientId]
     )
   }
 
   function toggleAllClients(checked: boolean) {
+    resetCampaignTracking()
     const validIds = previewClients.filter((client) => client.possui_telefone).map((client) => client.id)
     setSelectedClientIds(checked ? validIds : [])
   }
 
   function removeClient(clientId: string) {
+    resetCampaignTracking()
     setRemovedClientIds((current) => (current.includes(clientId) ? current : [...current, clientId]))
     setSelectedClientIds((current) => current.filter((id) => id !== clientId))
   }
 
   function restoreRemovedClients() {
+    resetCampaignTracking()
     setRemovedClientIds([])
     setSelectedClientIds(previewClients.filter((client) => client.possui_telefone).map((client) => client.id))
   }
@@ -334,7 +406,11 @@ export function useActivationCampaign(scope: ActivationScope | null) {
         clientes: selectedClients,
       })
 
-      setLastSendStatus(response.webhook_status)
+      setLastSendStatus(response.envio_status ?? response.job?.status ?? response.webhook_status)
+      setDashboard(response.dashboard ?? null)
+      if (response.warning) {
+        toast.warning(response.warning)
+      }
       toast.success("Campanha criada com sucesso 🚀", {
         description: createdResponse?.downloaded
           ? `Download iniciado: ${createdResponse.file_name ?? "campanha.xlsx"}.`
@@ -383,11 +459,14 @@ export function useActivationCampaign(scope: ActivationScope | null) {
     isBootLoading,
     isPreviewLoading,
     isPersisting,
+    isDashboardLoading,
     lastCampaignId,
     lastSendStatus,
+    dashboard,
+    largeCampaignWarning,
     error,
-    setSelectedSegment,
-    setMessage,
+    setSelectedSegment: handleSegmentChange,
+    setMessage: handleMessageChange,
     setSearch,
     setSortBy,
     setSortDir,

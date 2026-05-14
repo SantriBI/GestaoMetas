@@ -148,6 +148,9 @@ export default function AtivacaoClientesPage() {
               selectedCount={wizard.selectedClients.length}
               message={wizard.message}
               clients={wizard.selectedClients}
+              dashboard={wizard.dashboard}
+              sendStatus={wizard.lastSendStatus}
+              warning={wizard.largeCampaignWarning ?? wizard.dashboard?.campanha.warning ?? null}
               onBack={wizard.goToPreviousStep}
               onOpenAll={openAllLinks}
               onConfirm={() => {
@@ -155,6 +158,7 @@ export default function AtivacaoClientesPage() {
               }}
               onTestLink={openLink}
               isBusy={wizard.isPersisting}
+              isDashboardLoading={wizard.isDashboardLoading}
               lastCampaignId={wizard.lastCampaignId}
             />
           ) : null}

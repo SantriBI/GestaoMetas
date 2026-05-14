@@ -7,9 +7,13 @@ import {
   gerarNomeArquivo,
   listarSegmentos,
   listarTemplates,
+  obterCentralNegociacao,
+  obterDashboardCampanha,
   obterPreviewCampanha,
   obterResumoCampanha,
+  registrarEventoCentralNegociacao,
 } from "../services/ativacaoClientesService.js"
+import { processZapiWebhook } from "../services/zapi/zapiWebhook.js"
 
 function getScopeFromRequest(req) {
   const source = req.method === "GET" ? req.query : req.body
@@ -106,6 +110,49 @@ export async function postEnviarCampanha(req, res) {
   } catch (error) {
     console.error("Erro ao enviar campanha de ativação:", error)
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro ao enviar campanha." })
+  }
+}
+
+export async function getCampanhaDashboard(req, res) {
+  try {
+    const campanhaId = Number(req.params.id)
+    res.json({ data: await obterDashboardCampanha(campanhaId) })
+  } catch (error) {
+    console.error("Erro ao buscar dashboard da campanha de ativaÃ§Ã£o:", error)
+    res.status(400).json({ error: error instanceof Error ? error.message : "Erro ao buscar dashboard da campanha." })
+  }
+}
+
+export async function getCentralNegociacao(req, res) {
+  try {
+    res.json({ data: await obterCentralNegociacao(req.params.token) })
+  } catch (error) {
+    console.error("Erro ao carregar a Central de NegociaÃ§Ã£o:", error)
+    res.status(404).json({ error: error instanceof Error ? error.message : "Link de negociaÃ§Ã£o nÃ£o encontrado." })
+  }
+}
+
+export async function postCentralNegociacaoEvento(req, res) {
+  try {
+    res.json({
+      data: await registrarEventoCentralNegociacao(req.params.token, req.body?.action, {
+        button: req.body?.button ?? null,
+        source: req.body?.source ?? "central-publica",
+      }),
+    })
+  } catch (error) {
+    console.error("Erro ao registrar evento da Central de NegociaÃ§Ã£o:", error)
+    res.status(400).json({ error: error instanceof Error ? error.message : "Erro ao registrar evento da Central." })
+  }
+}
+
+export async function postZapiWebhook(req, res) {
+  try {
+    const data = await processZapiWebhook(req.body ?? {})
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error("Erro ao processar webhook da Z-API:", error)
+    res.status(500).json({ error: error instanceof Error ? error.message : "Erro ao processar webhook da Z-API." })
   }
 }
 
