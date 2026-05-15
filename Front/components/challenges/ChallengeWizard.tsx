@@ -453,7 +453,7 @@ export function ChallengeWizard({
             </p>
             <p className="mt-1 text-sm text-white/46">
               {moduleSetup?.ready === false
-                ? "A campanha pode ser revisada agora, mas a publicacao fica bloqueada ate a inicializacao do banco."
+                ? "A campanha pode ser revisada agora, mas a publicacao fica bloqueada ate a persistencia do modulo."
                 : "O fluxo foi reduzido ao essencial para publicar mais rapido e com melhor leitura de retorno."}
             </p>
           </div>

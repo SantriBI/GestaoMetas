@@ -228,3 +228,14 @@ export function replaceActivationVariables(
 
   return String(message ?? "").replace(/\{([a-z_]+)\}/gi, (_, key) => variables[key] ?? "")
 }
+
+export function buildActivationWhatsappLink(
+  phone: string | null | undefined,
+  message: string | null | undefined
+) {
+  const cleanPhone = String(phone ?? "").replace(/\D/g, "")
+  if (cleanPhone.length < 10) return null
+
+  const encodedMessage = encodeURIComponent(String(message ?? "")).replace(/%20/g, "+")
+  return `https://wa.me/55${cleanPhone}?text=${encodedMessage}`
+}

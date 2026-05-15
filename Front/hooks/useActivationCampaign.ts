@@ -11,6 +11,7 @@ import {
   MessageTemplate,
 } from "@/lib/activation-types"
 import {
+  buildActivationWhatsappLink,
   createActivationCampaign,
   getActivationPreview,
   getActivationSegments,
@@ -184,10 +185,15 @@ export function useActivationCampaign(scope: ActivationScope | null) {
 
     return (preview?.clientes ?? [])
       .filter((client) => !removedSet.has(client.id))
-      .map((client) => ({
-        ...client,
-        mensagem_final: replaceActivationVariables(message, client),
-      }))
+      .map((client) => {
+        const mensagemFinal = replaceActivationVariables(message, client)
+
+        return {
+          ...client,
+          mensagem_final: mensagemFinal,
+          whatsapp_link: buildActivationWhatsappLink(client.telefone, mensagemFinal),
+        }
+      })
   }, [preview, removedClientIds, message])
 
   const summary = useMemo(() => {

@@ -61,8 +61,8 @@ export function ChallengeExistingList({
       {!setup?.ready ? (
         <ChallengeInitializationWarning
           setup={setup}
-          title="A central de campanhas ainda nao foi liberada no banco."
-          description="Voce pode revisar a tela, mas a publicacao depende da inicializacao."
+          title="As tabelas do modulo de campanhas ainda nao foram localizadas no banco."
+          description="Voce pode revisar a tela, mas a publicacao depende da persistencia do modulo."
           compact
         />
       ) : null}

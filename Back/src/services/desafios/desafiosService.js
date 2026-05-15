@@ -1,15 +1,35 @@
 import { readFile } from "node:fs/promises"
-import { query } from "../../db/oracle.js"
+import { query as oracleQuery } from "../../db/oracle.js"
 import { resolveOracleObjectNames } from "../../db/oracleObjectNames.js"
 import { calculateParticipantProgress } from "./desafiosProgressService.js"
 import { calculateChallengeImpact, calculateDraftChallengeImpact } from "./desafiosImpactService.js"
 
-const TABLES = [
-  "GM_TB_DESAFIOS_COMERCIAIS",
-  "GM_TB_DESAFIOS_COMERCIAIS_METAS",
-  "GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES",
-  "GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO",
-  "GM_TB_DESAFIOS_COMERCIAIS_LOG",
+const TABLE_REQUIREMENTS = [
+  {
+    key: "challengesTable",
+    legacyName: "GM_TB_DESAFIOS_COMERCIAIS",
+    displayName: "DESAFIOS_COMERCIAIS",
+  },
+  {
+    key: "challengeGoalsTable",
+    legacyName: "GM_TB_DESAFIOS_COMERCIAIS_METAS",
+    displayName: "DESAFIOS_COMERCIAIS_METAS",
+  },
+  {
+    key: "challengeParticipantsTable",
+    legacyName: "GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES",
+    displayName: "DESAFIOS_COMERCIAIS_VENDEDORES",
+  },
+  {
+    key: "challengeProgressTable",
+    legacyName: "GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO",
+    displayName: "DESAFIOS_COMERCIAIS_PROGRESSO",
+  },
+  {
+    key: "challengeLogTable",
+    legacyName: "GM_TB_DESAFIOS_COMERCIAIS_LOG",
+    displayName: "DESAFIOS_COMERCIAIS_LOG",
+  },
 ]
 
 const SEQUENCES = [
@@ -75,6 +95,27 @@ function boolFromOracle(value) {
   return String(value ?? "").toUpperCase() === "S"
 }
 
+async function getChallengeTableNames() {
+  return resolveOracleObjectNames(TABLE_REQUIREMENTS.map((item) => item.key))
+}
+
+async function resolveChallengeSql(sql) {
+  if (typeof sql !== "string" || !sql.includes("GM_TB_DESAFIOS_COMERCIAIS")) {
+    return sql
+  }
+
+  const resolvedNames = await getChallengeTableNames()
+
+  return TABLE_REQUIREMENTS
+    .slice()
+    .sort((left, right) => right.legacyName.length - left.legacyName.length)
+    .reduce((statement, item) => statement.replaceAll(item.legacyName, resolvedNames[item.key]), sql)
+}
+
+async function query(sql, params) {
+  return oracleQuery(await resolveChallengeSql(sql), params)
+}
+
 function normalizeRow(row) {
   return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key.toLowerCase(), value]))
 }
@@ -124,8 +165,14 @@ async function sequenceExists(sequenceName) {
 }
 
 async function inspectModuleReadiness() {
+  const resolvedTables = await getChallengeTableNames()
   const [tableChecks, sequenceChecks] = await Promise.all([
-    Promise.all(TABLES.map(async (tableName) => ({ name: tableName, exists: await tableExists(tableName) }))),
+    Promise.all(
+      TABLE_REQUIREMENTS.map(async (table) => ({
+        name: table.displayName,
+        exists: await tableExists(resolvedTables[table.key]),
+      }))
+    ),
     Promise.all(SEQUENCES.map(async (sequenceName) => ({ name: sequenceName, exists: await sequenceExists(sequenceName) }))),
   ])
 
@@ -149,7 +196,7 @@ async function ensureModuleReadyForWrite() {
       scriptPath: moduleSqlPath,
       instructions: [
         "Execute o script SQL do modulo de desafios no banco Oracle.",
-        "Confirme a criacao das tabelas e sequences do modulo.",
+        "Confirme a criacao das tabelas DESAFIOS_COMERCIAIS_* e das sequences do modulo.",
         "Recarregue a tela para habilitar a persistencia de desafios.",
       ],
     }
@@ -631,7 +678,7 @@ export async function getChallengeModuleSetup() {
     sqlScript,
     instructions: [
       "Execute o script SQL do modulo de desafios no banco Oracle.",
-      "Valide a criacao das tabelas, indices e sequences do modulo.",
+      "Valide a criacao das tabelas DESAFIOS_COMERCIAIS_*, dos indices e das sequences do modulo.",
       "Recarregue a pagina para liberar criacao, edicao e acompanhamento das campanhas.",
     ],
   }

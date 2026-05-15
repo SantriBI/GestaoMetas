@@ -61,6 +61,7 @@ export default function AtivacaoClientesPage() {
   function openAllLinks() {
     wizard.selectedClients.forEach((client, index) => {
       if (!client.whatsapp_link) return
+
       window.setTimeout(() => {
         openLink(client.whatsapp_link as string)
       }, index * 120)

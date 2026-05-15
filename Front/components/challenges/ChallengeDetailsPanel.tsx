@@ -2,6 +2,7 @@ import Image from "next/image"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { ArrowRight, Award, Coins, TrendingUp, Users } from "lucide-react"
+import { ChallengePayoutReport } from "@/components/challenges/ChallengePayoutReport"
 import { ChallengeParticipantsTable } from "@/components/challenges/ChallengeParticipantsTable"
 import { ChallengeProgressList } from "@/components/challenges/ChallengeProgressList"
 import { ChallengeStatusBadge } from "@/components/challenges/ChallengeStatusBadge"
@@ -194,6 +195,8 @@ export function ChallengeDetailsPanel({ challenge }: { challenge: Challenge }) {
           )}
         </section>
       </div>
+
+      {challenge.participants?.length ? <ChallengePayoutReport challenge={challenge} /> : null}
     </div>
   )
 }

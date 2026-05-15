@@ -58,8 +58,8 @@ export function ChallengeInlineWizard({
       {!setup?.ready ? (
         <ChallengeInitializationWarning
           setup={setup}
-          title="A central de campanhas ainda precisa ser liberada no banco."
-          description="Voce pode montar a campanha, mas a publicacao depende da inicializacao."
+          title="As tabelas do modulo de campanhas ainda nao foram localizadas no banco."
+          description="Voce pode montar a campanha, mas a publicacao depende da persistencia do modulo."
           compact
         />
       ) : null}

@@ -25,6 +25,26 @@ const OBJECT_SPECS = {
     type: "TABLE",
     candidates: ["GM_TB_PERFIL_VENDEDOR", "PERFIL_VENDEDOR"],
   },
+  challengesTable: {
+    type: "TABLE",
+    candidates: ["GM_TB_DESAFIOS_COMERCIAIS", "DESAFIOS_COMERCIAIS"],
+  },
+  challengeGoalsTable: {
+    type: "TABLE",
+    candidates: ["GM_TB_DESAFIOS_COMERCIAIS_METAS", "DESAFIOS_COMERCIAIS_METAS"],
+  },
+  challengeParticipantsTable: {
+    type: "TABLE",
+    candidates: ["GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES", "DESAFIOS_COMERCIAIS_VENDEDORES"],
+  },
+  challengeProgressTable: {
+    type: "TABLE",
+    candidates: ["GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO", "DESAFIOS_COMERCIAIS_PROGRESSO"],
+  },
+  challengeLogTable: {
+    type: "TABLE",
+    candidates: ["GM_TB_DESAFIOS_COMERCIAIS_LOG", "DESAFIOS_COMERCIAIS_LOG"],
+  },
   rankingVendorsView: {
     type: "VIEW",
     owner: "DM_VENDAS",
@@ -104,7 +124,9 @@ export async function resolveOracleObjectName(key) {
     : await findCurrentSchemaObject(spec)
 
   const finalName = buildObjectName(spec.owner, resolvedObjectName ?? spec.candidates[0])
-  objectNameCache.set(key, finalName)
+  if (resolvedObjectName) {
+    objectNameCache.set(key, finalName)
+  }
   return finalName
 }
 
