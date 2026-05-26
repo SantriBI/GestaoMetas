@@ -279,10 +279,56 @@ export function formatCurrencyBRL(value: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number.isFinite(value) ? value : 0)
 }
 
+const challengeCalendarDatePattern = /^(\d{4})-(\d{2})-(\d{2})$/
+
+function buildChallengeCalendarDate(dateToken: string) {
+  const [year, month, day] = dateToken.split("-").map(Number)
+  const date = new Date(year, month - 1, day)
+  if (Number.isNaN(date.getTime())) return null
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
+  return date
+}
+
+function normalizeChallengeCalendarDate(value: string | Date | null | undefined) {
+  if (!value) return null
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`
+  }
+
+  const raw = String(value).trim()
+  const match = challengeCalendarDatePattern.exec(raw)
+  if (match) {
+    const normalized = `${match[1]}-${match[2]}-${match[3]}`
+    return buildChallengeCalendarDate(normalized) ? normalized : null
+  }
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return null
+
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`
+}
+
+export function getChallengeDateInputValue(value: string | Date | null | undefined) {
+  return normalizeChallengeCalendarDate(value) ?? ""
+}
+
+export function compareChallengeDateValues(
+  left: string | Date | null | undefined,
+  right: string | Date | null | undefined
+) {
+  const normalizedLeft = normalizeChallengeCalendarDate(left)
+  const normalizedRight = normalizeChallengeCalendarDate(right)
+  if (!normalizedLeft || !normalizedRight) return Number.NaN
+  return normalizedLeft.localeCompare(normalizedRight)
+}
+
 export function formatDateBR(value: string | Date | null | undefined) {
-  if (!value) return "-"
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return "-"
+  const normalizedValue = normalizeChallengeCalendarDate(value)
+  if (!normalizedValue) return "-"
+  const date = buildChallengeCalendarDate(normalizedValue)
+  if (!date) return "-"
   return date.toLocaleDateString("pt-BR")
 }
 

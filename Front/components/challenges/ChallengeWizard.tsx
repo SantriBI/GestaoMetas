@@ -17,8 +17,10 @@ import type {
   ChallengeModuleSetup,
 } from "@/lib/challenges"
 import {
+  compareChallengeDateValues,
   formatCurrencyBRL,
   formatDateBR,
+  getChallengeDateInputValue,
   getChallengeCampaignKind,
   getChallengeCampaignKindLabel,
   hasChallengeMetaTarget,
@@ -86,10 +88,10 @@ export function ChallengeWizard({
 
     const currentMonth = getCurrentMonthValue()
     const nextStart =
-      normalizeDateInput(editingChallenge?.dataInicio) ||
+      getChallengeDateInputValue(editingChallenge?.dataInicio) ||
       (effectiveKind === "BONUS" ? getMonthStart(currentMonth) : getTodayValue())
     const nextEnd =
-      normalizeDateInput(editingChallenge?.dataFim) ||
+      getChallengeDateInputValue(editingChallenge?.dataFim) ||
       (effectiveKind === "BONUS" ? getMonthEnd(currentMonth) : addDaysValue(getTodayValue(), 7))
     const nextMonth = effectiveKind === "BONUS" ? (nextStart ? nextStart.slice(0, 7) : currentMonth) : currentMonth
     const nextMetas = editingChallenge?.metas?.length
@@ -173,7 +175,7 @@ export function ChallengeWizard({
       : step === 1
         ? metasValidas
         : step === 2
-          ? Boolean(dataInicio && dataFim && new Date(dataFim).getTime() >= new Date(dataInicio).getTime())
+          ? Boolean(dataInicio && dataFim && compareChallengeDateValues(dataFim, dataInicio) >= 0)
           : true
 
   function handleMonthChange(value: string) {
@@ -332,7 +334,7 @@ export function ChallengeWizard({
                       </p>
                     </AsideCard>
 
-                    {dataInicio && dataFim && new Date(dataFim).getTime() < new Date(dataInicio).getTime() ? (
+                    {dataInicio && dataFim && compareChallengeDateValues(dataFim, dataInicio) < 0 ? (
                       <div className="rounded-[24px] border border-rose-300/18 bg-rose-400/10 p-5 text-sm leading-7 text-rose-100">
                         A data final precisa ser igual ou posterior a data inicial.
                       </div>
@@ -588,11 +590,6 @@ function getMonthEnd(value: string) {
   const [year, month] = value.split("-").map(Number)
   const lastDay = new Date(year, month, 0)
   return `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, "0")}-${String(lastDay.getDate()).padStart(2, "0")}`
-}
-
-function normalizeDateInput(value: string | Date | null | undefined) {
-  if (!value) return ""
-  return String(value).slice(0, 10)
 }
 
 const asidePanelClass = "space-y-5 rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(8,13,24,0.95),rgba(15,23,42,0.88))] p-6 shadow-[0_24px_70px_rgba(2,6,23,0.28)]"
