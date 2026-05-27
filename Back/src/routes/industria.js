@@ -1,12 +1,14 @@
 import express from "express"
 import bcrypt from "bcrypt"
 import { query } from "../db/oracle.js"
-import { resolveOracleObjectNames } from "../db/oracleObjectNames.js"
 
 const router = express.Router()
 const ORACLE_TABLE_NOT_FOUND = 942
 const FORNECEDOR_TABLE = "GM_TB_FORNECEDORES_LOGIN"
 const FORNECEDOR_SQL_PATH = "Back/sql/fornecedores_login.sql"
+const CHALLENGES_TABLE = "desafios_comerciais"
+const CHALLENGE_GOALS_TABLE = "desafios_comerciais_metas"
+const CHALLENGE_PROGRESS_TABLE = "desafios_comerciais_progresso"
 
 function numberValue(value) {
   const parsed = Number(value ?? 0)
@@ -191,12 +193,6 @@ function getChallengePriority(meta, now = new Date()) {
 
 async function loadBrandChallengeSummary(marca) {
   try {
-    const {
-      challengesTable,
-      challengeGoalsTable,
-      challengeProgressTable,
-    } = await resolveOracleObjectNames(["challengesTable", "challengeGoalsTable", "challengeProgressTable"])
-
     const metaRows = await query(`
       SELECT
         d.id_desafio,
@@ -209,8 +205,8 @@ async function loadBrandChallengeSummary(marca) {
         m.meta_valor,
         m.unidade_meta,
         m.config_json
-      FROM ${challengesTable} d
-      JOIN ${challengeGoalsTable} m
+      FROM ${CHALLENGES_TABLE} d
+      JOIN ${CHALLENGE_GOALS_TABLE} m
         ON m.id_desafio = d.id_desafio
       WHERE d.status <> 'CANCELADO'
         AND m.tipo_meta = 'PRODUTO_OU_MARCA'
@@ -234,7 +230,7 @@ async function loadBrandChallengeSummary(marca) {
       SELECT
         NVL(SUM(progresso_atual), 0) AS progresso_total,
         COUNT(DISTINCT sk_vendedor) AS vendedores_impactados
-      FROM ${challengeProgressTable}
+      FROM ${CHALLENGE_PROGRESS_TABLE}
       WHERE id_meta = :id_meta
       `,
       { id_meta: selected.idMeta }

@@ -4,7 +4,6 @@ import {
   getProfileTableName,
   getRankingVendorsViewName,
   getUsersTableName,
-  resolveOracleObjectNames,
 } from "../db/oracleObjectNames.js"
 import { resolverEscopoVendedor } from "./vendedorScopeService.js"
 
@@ -16,10 +15,8 @@ const PROFILE_TABLE = "GM_TB_PERFIL_VENDEDOR"
 const PROFILE_SEQUENCE = "PERFIL_VENDEDOR_SEQ"
 const PROFILE_SCRIPT_PATH = "Back/sql/perfil_vendedor.sql"
 const DEFAULT_COMMISSION_RATE = 0.03
-const CHALLENGE_TABLES = [
-  { key: "challengesTable" },
-  { key: "challengeProgressTable" },
-]
+const CHALLENGES_TABLE = "desafios_comerciais"
+const CHALLENGE_PROGRESS_TABLE = "desafios_comerciais_progresso"
 const ORACLE_UNIQUE_VIOLATION = 1
 const ORACLE_TABLE_NOT_FOUND = 942
 const ORACLE_INVALID_IDENTIFIER = 904
@@ -307,12 +304,6 @@ async function isProfileModuleReady() {
   return tableReady && sequenceReady
 }
 
-async function challengeTablesReady() {
-  const resolvedTables = await resolveOracleObjectNames(CHALLENGE_TABLES.map((table) => table.key))
-  const checks = await Promise.all(CHALLENGE_TABLES.map((table) => tableExists(resolvedTables[table.key])))
-  return checks.every(Boolean)
-}
-
 async function nextSequenceValue(sequenceName) {
   const rows = await query(`SELECT ${sequenceName}.NEXTVAL AS id FROM dual`)
   return numberValue(rows[0]?.ID ?? rows[0]?.id)
@@ -556,20 +547,6 @@ async function calculateChallengeRewards(skVendedor, trackingStartDate, empresaI
     }
   }
 
-  const enabled = await challengeTablesReady()
-  if (!enabled) {
-    return {
-      bonus: 0,
-      desafios: 0,
-      challengesEnabled: false,
-    }
-  }
-
-  const {
-    challengesTable,
-    challengeProgressTable,
-  } = await resolveOracleObjectNames(["challengesTable", "challengeProgressTable"])
-
   const rows = await query(
     `
     SELECT
@@ -581,8 +558,8 @@ async function calculateChallengeRewards(skVendedor, trackingStartDate, empresaI
         NVL(SUM(CASE WHEN d.exige_aceite = 'S' THEN NVL(p.premio_valor, 0) ELSE 0 END), 0),
         2
       ) AS desafios_total
-    FROM ${challengeProgressTable} p
-    JOIN ${challengesTable} d
+    FROM ${CHALLENGE_PROGRESS_TABLE} p
+    JOIN ${CHALLENGES_TABLE} d
       ON d.id_desafio = p.id_desafio
     WHERE p.sk_vendedor = :sk_vendedor
       AND p.premio_liberado = 'S'

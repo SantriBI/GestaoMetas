@@ -13,7 +13,15 @@ CREATE TABLE DESAFIOS_COMERCIAIS (
   criado_por VARCHAR2(120 CHAR),
   criado_em DATE DEFAULT SYSDATE NOT NULL,
   atualizado_em DATE DEFAULT SYSDATE NOT NULL,
-  CONSTRAINT ck_desafios_status CHECK (status IN ('RASCUNHO', 'AGENDADO', 'ATIVO', 'ENCERRADO', 'CANCELADO')),
+  CONSTRAINT ck_desafios_status CHECK (status IN (
+    'RASCUNHO',
+    'AGENDADO',
+    'ATIVO',
+    'ENCERRADO',
+    'ENCERRADO_AUTOMATICO',
+    'ENCERRADO_MANUAL',
+    'CANCELADO'
+  )),
   CONSTRAINT ck_desafios_aceite CHECK (exige_aceite IN ('S', 'N'))
 );
 

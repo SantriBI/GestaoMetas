@@ -42,16 +42,16 @@ export function ChallengeInlineWizard({
 
   return (
     <section className="space-y-4">
-      <div className="rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_24%),linear-gradient(145deg,rgba(8,13,24,0.98),rgba(15,23,42,0.96),rgba(24,24,52,0.92))] p-5 shadow-[0_28px_90px_rgba(0,0,0,0.32)] sm:p-6">
+      <div className="rounded-[28px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-5 shadow-[0_22px_60px_rgba(0,0,0,0.18)] sm:p-6">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.06] bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/58">
               <Wand2 className="h-4 w-4" />
               Criacao inline
             </div>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-white">{title}</h2>
           </div>
-          <p className="max-w-xl text-sm leading-6 text-white/62">Preencha so o essencial: nome, metas, recompensa, prazo e impacto.</p>
+          <p className="max-w-xl text-sm leading-6 text-white/54">Preencha o essencial: nome, metas, recompensa, prazo e impacto.</p>
         </div>
       </div>
 
@@ -70,7 +70,7 @@ export function ChallengeInlineWizard({
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,rgba(8,13,24,0.98),rgba(2,8,23,0.98))] shadow-[0_30px_100px_rgba(2,6,23,0.24)]">
+      <div className="overflow-hidden rounded-[32px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.025),rgba(255,255,255,0.015))] shadow-[0_24px_70px_rgba(0,0,0,0.18)]">
         <ChallengeWizard
           open
           campaignKind={campaignKind}

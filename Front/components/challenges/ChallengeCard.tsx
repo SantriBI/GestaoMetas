@@ -8,6 +8,7 @@ import {
   formatDateBR,
   getChallengeCampaignKind,
   getChallengeCampaignKindLabel,
+  getChallengeLifecycleStatus,
   getMetaTypeLabel,
   type Challenge,
 } from "@/lib/challenges"
@@ -31,6 +32,7 @@ export function ChallengeCard({
   const participant = challenge.participant
   const impact = challenge.impact
   const kind = getChallengeCampaignKind(challenge)
+  const lifecycleStatus = getChallengeLifecycleStatus(challenge)
   const ctas = challenge.ctas ?? []
   const participantPotentialReward = formatCurrencyBRL(
     metas.reduce((sum, meta) => sum + Number(meta.recompensaValor ?? 0), 0)
@@ -187,7 +189,7 @@ export function ChallengeCard({
             <span className="rounded-full border border-cyan-300/14 bg-cyan-300/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-50">
               {getChallengeCampaignKindLabel(kind)}
             </span>
-            <ChallengeStatusBadge status={challenge.status} />
+            <ChallengeStatusBadge status={lifecycleStatus} />
             <CampaignPill icon={<CalendarRange className="h-4 w-4 text-cyan-200" />} label={`${formatDateBR(challenge.dataInicio)} ate ${formatDateBR(challenge.dataFim)}`} />
           </div>
 

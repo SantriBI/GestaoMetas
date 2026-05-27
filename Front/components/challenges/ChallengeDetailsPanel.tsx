@@ -13,12 +13,14 @@ import {
   getChallengeBannerAsset,
   getChallengeCampaignKind,
   getChallengeCampaignKindLabel,
+  getChallengeLifecycleStatus,
   type Challenge,
 } from "@/lib/challenges"
 
 export function ChallengeDetailsPanel({ challenge }: { challenge: Challenge }) {
   const challengeBanner = getChallengeBannerAsset({ title: challenge.titulo, metas: challenge.metas })
   const participant = challenge.participant
+  const lifecycleStatus = getChallengeLifecycleStatus(challenge)
 
   if (participant) {
     const kind = getChallengeCampaignKind(challenge)
@@ -141,7 +143,7 @@ export function ChallengeDetailsPanel({ challenge }: { challenge: Challenge }) {
           <span className="rounded-full border border-cyan-300/14 bg-cyan-300/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-50">
             {getChallengeCampaignKindLabel(kind)}
           </span>
-          <ChallengeStatusBadge status={challenge.status} />
+          <ChallengeStatusBadge status={lifecycleStatus} />
           <span className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/65">
             {challenge.stats.totalParticipants} participante(s)
           </span>

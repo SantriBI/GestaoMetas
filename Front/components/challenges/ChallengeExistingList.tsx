@@ -1,14 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { Flag, Pencil, XCircle } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { ChallengeDetailsPanel } from "@/components/challenges/ChallengeDetailsPanel"
+import { ChevronDown } from "lucide-react"
+import { Accordion } from "@/components/ui/accordion"
 import { ChallengeEmptyState } from "@/components/challenges/ChallengeEmptyState"
-import { ChallengeExpandableCard } from "@/components/challenges/ChallengeExpandableCard"
 import { ChallengeInitializationWarning } from "@/components/challenges/ChallengeInitializationWarning"
+import { ChallengeManagerAccordionCard } from "@/components/challenges/ChallengeManagerAccordionCard"
 import {
-  getChallengeCampaignKindLabel,
+  getChallengeLifecycleStatus,
   type Challenge,
   type ChallengeCampaignKind,
   type ChallengeModuleSetup,
@@ -38,26 +37,40 @@ export function ChallengeExistingList({
   onEnd: (challenge: Challenge) => void | Promise<void>
   onCancel: (challenge: Challenge) => void | Promise<void>
 }) {
-  const sortedItems = [...items].sort((left, right) => getStatusWeight(right.status) - getStatusWeight(left.status))
-  const activeCount = items.filter((item) => item.status === "ATIVO").length
-  const [openingId, setOpeningId] = useState<string | null>(null)
+  const sortedItems = [...items].sort((left, right) => compareChallengesForDecision(left, right))
+  const activeCount = items.filter((item) => getChallengeLifecycleStatus(item) === "ATIVO").length
+  const [loadingChallengeId, setLoadingChallengeId] = useState<string | null>(null)
+  const [showClosedSection, setShowClosedSection] = useState(false)
+  const selectedValue = selectedChallenge ? String(selectedChallenge.id) : ""
+  const accordionValue = selectedValue || undefined
+  const sections = buildSections(sortedItems)
 
-  async function handleToggle(challenge: Challenge) {
-    if (String(selectedChallenge?.id ?? "") === String(challenge.id)) {
+  async function handleAccordionChange(nextValue: string) {
+    if (!nextValue) {
       onClose()
       return
     }
 
-    setOpeningId(String(challenge.id))
+    if (nextValue === selectedValue) {
+      onClose()
+      return
+    }
+
+    const targetChallenge = sortedItems.find((challenge) => String(challenge.id) === nextValue)
+    if (!targetChallenge) return
+
+    setLoadingChallengeId(nextValue)
     try {
-      await onOpen(challenge)
+      await onOpen(targetChallenge)
+    } catch {
+      onClose()
     } finally {
-      setOpeningId((current) => (current === String(challenge.id) ? null : current))
+      setLoadingChallengeId((current) => (current === nextValue ? null : current))
     }
   }
 
   return (
-    <section className="space-y-4">
+    <section className="space-y-5">
       {!setup?.ready ? (
         <ChallengeInitializationWarning
           setup={setup}
@@ -67,77 +80,96 @@ export function ChallengeExistingList({
         />
       ) : null}
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45">Carteira atual</p>
-          <h2 className="mt-1 text-xl font-black tracking-tight text-white">
-            {campaignKind === "BONUS" ? "Bonus mensais" : `${getChallengeCampaignKindLabel(campaignKind)}s publicados`}
-          </h2>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          <span className="rounded-full border border-white/10 bg-black/20 px-4 py-2 text-sm font-semibold text-white/72">
-            {activeCount} ativa(s)
-          </span>
-          <span className="rounded-full border border-white/10 bg-black/20 px-4 py-2 text-sm font-semibold text-white/72">
-            {items.length} campanha(s)
-          </span>
-        </div>
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/38">
+          {campaignKind === "BONUS" ? "Bonus" : "Desafios"}
+        </h2>
+        <p className="text-sm font-medium text-white/46">{activeCount} ativa(s) | {items.length} total</p>
       </div>
 
       {loading ? (
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {Array.from({ length: 2 }).map((_, index) => (
-            <div key={index} className="h-[240px] animate-pulse rounded-[30px] border border-white/8 bg-white/5" />
+            <div key={index} className="h-[192px] animate-pulse rounded-[28px] border border-white/[0.05] bg-white/[0.03]" />
           ))}
         </div>
       ) : sortedItems.length ? (
-        <>
-          <div className="space-y-4">
-            {sortedItems.map((challenge) => {
-              const isOpen = String(selectedChallenge?.id ?? "") === String(challenge.id)
-              const isLoading = openingId === String(challenge.id)
-              const detailChallenge = isOpen ? selectedChallenge : null
+        <Accordion type="single" collapsible value={accordionValue} onValueChange={(value) => void handleAccordionChange(value)} className="space-y-5">
+          {sections.map((section) => (
+            <div key={section.key} className="space-y-3.5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold tracking-tight text-white">{section.title}</h3>
+                <span className="self-start rounded-full border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-white/40">
+                  {section.items.length} campanha(s)
+                </span>
+              </div>
 
-              return (
-                <ChallengeExpandableCard
-                  key={challenge.id}
-                  challenge={challenge}
-                  mode="manager"
-                  isOpen={isOpen}
-                  isLoading={isLoading}
-                  detailEyebrow={campaignKind === "BONUS" ? "Detalhes do bonus" : "Detalhes do desafio"}
-                  detailTitle={detailChallenge?.titulo ?? challenge.titulo ?? (campaignKind === "BONUS" ? "Bonus mensal" : "Desafio")}
-                  detailActions={
-                    detailChallenge ? (
-                      <>
-                        <Button className="rounded-2xl bg-white/8 text-white hover:bg-white/12" onClick={() => onEdit(detailChallenge)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          Editar
-                        </Button>
-                        <Button className="rounded-2xl bg-amber-400/12 text-amber-100 hover:bg-amber-400/18" onClick={() => void onEnd(detailChallenge)}>
-                          <Flag className="mr-2 h-4 w-4" />
-                          Encerrar
-                        </Button>
-                        <Button className="rounded-2xl bg-rose-400/12 text-rose-100 hover:bg-rose-400/18" onClick={() => void onCancel(detailChallenge)}>
-                          <XCircle className="mr-2 h-4 w-4" />
-                          Cancelar
-                        </Button>
-                      </>
-                    ) : null
-                  }
-                  detailContent={detailChallenge ? <ChallengeDetailsPanel challenge={detailChallenge} /> : null}
-                  onToggle={() => void handleToggle(challenge)}
-                  onClose={onClose}
-                />
-              )
-            })}
-          </div>
-        </>
+              {section.key === "closed" ? (
+                <div className="space-y-3.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowClosedSection((current) => !current)}
+                    className="flex w-full items-center justify-between rounded-[20px] border border-white/[0.06] bg-white/[0.025] px-4 py-3 text-left transition hover:bg-white/[0.04]"
+                  >
+                    <p className="text-sm font-semibold text-white">{showClosedSection ? "Ocultar encerradas" : "Mostrar encerradas"}</p>
+                    <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.06] bg-white/[0.04] px-3 py-1.5 text-sm font-semibold text-white/76">
+                      {showClosedSection ? "Recolher" : "Expandir"}
+                      <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${showClosedSection ? "rotate-180" : ""}`} />
+                    </span>
+                  </button>
+
+                  {showClosedSection ? (
+                    <div className="space-y-3.5">
+                      {section.items.map((challenge) => {
+                        const challengeId = String(challenge.id)
+                        const isOpen = selectedValue === challengeId
+                        const isLoading = loadingChallengeId === challengeId
+                        const detailChallenge = selectedValue === challengeId ? selectedChallenge : null
+
+                        return (
+                          <ChallengeManagerAccordionCard
+                            key={challenge.id}
+                            challenge={detailChallenge ?? challenge}
+                            isOpen={isOpen}
+                            isLoading={isLoading}
+                            onEdit={onEdit}
+                            onEnd={onEnd}
+                            onCancel={onCancel}
+                          />
+                        )
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="space-y-3.5">
+                  {section.items.map((challenge) => {
+                    const challengeId = String(challenge.id)
+                    const isOpen = selectedValue === challengeId
+                    const isLoading = loadingChallengeId === challengeId
+                    const detailChallenge = selectedValue === challengeId ? selectedChallenge : null
+
+                    return (
+                      <ChallengeManagerAccordionCard
+                        key={challenge.id}
+                        challenge={detailChallenge ?? challenge}
+                        isOpen={isOpen}
+                        isLoading={isLoading}
+                        onEdit={onEdit}
+                        onEnd={onEnd}
+                        onCancel={onCancel}
+                      />
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </Accordion>
       ) : (
         <ChallengeEmptyState
-          title={campaignKind === "BONUS" ? "Nenhum bonus mensal criado" : "Nenhum desafio criado"}
-          description={campaignKind === "BONUS" ? "Assim que o primeiro bonus for publicado, ele aparece aqui." : "Assim que o primeiro desafio for publicado, ele aparece aqui."}
+          title={campaignKind === "BONUS" ? "Nenhum bonus criado" : "Nenhum desafio criado"}
+          description={campaignKind === "BONUS" ? "Publique o primeiro bonus." : "Publique o primeiro desafio."}
         />
       )}
     </section>
@@ -150,8 +182,74 @@ function getStatusWeight(status: ChallengeStatus) {
     AGENDADO: 4,
     RASCUNHO: 3,
     ENCERRADO: 2,
+    ENCERRADO_AUTOMATICO: 2,
+    ENCERRADO_MANUAL: 2,
     CANCELADO: 1,
   }
 
   return weights[status]
+}
+
+function compareChallengesForDecision(left: Challenge, right: Challenge) {
+  const leftStatus = getChallengeLifecycleStatus(left)
+  const rightStatus = getChallengeLifecycleStatus(right)
+  const weightDelta = getStatusWeight(rightStatus) - getStatusWeight(leftStatus)
+  if (weightDelta !== 0) return weightDelta
+
+  if (leftStatus === "ATIVO" && rightStatus === "ATIVO") {
+    return compareDateValues(left.dataFim, right.dataFim)
+  }
+
+  if (leftStatus === "AGENDADO" && rightStatus === "AGENDADO") {
+    return compareDateValues(left.dataInicio, right.dataInicio)
+  }
+
+  return compareDateValues(right.dataInicio, left.dataInicio)
+}
+
+function compareDateValues(
+  left: Challenge["dataInicio"] | Challenge["dataFim"],
+  right: Challenge["dataInicio"] | Challenge["dataFim"]
+) {
+  const leftTime = parseDateValue(left)
+  const rightTime = parseDateValue(right)
+  return leftTime - rightTime
+}
+
+function parseDateValue(value: Challenge["dataInicio"] | Challenge["dataFim"]) {
+  if (!value) return Number.POSITIVE_INFINITY
+  if (value instanceof Date) return value.getTime()
+
+  const raw = String(value).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const parsed = new Date(`${raw}T00:00:00`).getTime()
+    return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed
+  }
+
+  const parsed = new Date(raw).getTime()
+  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed
+}
+
+function buildSections(items: Challenge[]) {
+  const activeItems = items.filter((item) => getChallengeLifecycleStatus(item) === "ATIVO")
+  const scheduledItems = items.filter((item) => getChallengeLifecycleStatus(item) === "AGENDADO")
+  const closedItems = items.filter((item) => !["ATIVO", "AGENDADO"].includes(getChallengeLifecycleStatus(item)))
+
+  return [
+    {
+      key: "active",
+      title: "Em andamento",
+      items: activeItems,
+    },
+    {
+      key: "scheduled",
+      title: "Agendadas",
+      items: scheduledItems,
+    },
+    {
+      key: "closed",
+      title: "Encerradas",
+      items: closedItems,
+    },
+  ].filter((section) => section.items.length > 0)
 }

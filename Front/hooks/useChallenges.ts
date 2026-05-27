@@ -100,7 +100,7 @@ export function useManagerChallenges() {
   const endChallenge = useCallback(async (id: number | string) => {
     setSaving(true)
     try {
-      const challenge = await closeChallenge(id, "ENCERRADO")
+      const challenge = await closeChallenge(id, "ENCERRADO_MANUAL")
       await refresh()
       setSelectedChallenge(challenge)
       setActionError(null)

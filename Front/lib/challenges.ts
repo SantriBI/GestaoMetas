@@ -1,4 +1,11 @@
-export type ChallengeStatus = "RASCUNHO" | "AGENDADO" | "ATIVO" | "ENCERRADO" | "CANCELADO"
+export type ChallengeStatus =
+  | "RASCUNHO"
+  | "AGENDADO"
+  | "ATIVO"
+  | "ENCERRADO"
+  | "ENCERRADO_AUTOMATICO"
+  | "ENCERRADO_MANUAL"
+  | "CANCELADO";
 export type ParticipantStatus = "CONVIDADO" | "DISPONIVEL" | "ACEITO" | "EM_ANDAMENTO" | "CONCLUIDO" | "EXPIRADO" | "RECUSADO"
 export type ChallengeMetaType = "FATURAMENTO" | "PEDIDOS_FECHADOS" | "CLIENTES_ATENDIDOS" | "RECUPERAR_CLIENTES" | "PRODUTO_OU_MARCA"
 export type ChallengeCampaignKind = "DESAFIO" | "BONUS"
@@ -64,6 +71,8 @@ export interface SellerChallengeAlertResponse {
 
 type SellerCampaignSurfaceItem = {
   id: number | string
+  dataInicio?: string | Date | null
+  dataFim?: string | Date | null
   exigeAceite?: boolean | null
   status?: string | null
   participantStatus?: ParticipantStatus | string | null
@@ -94,6 +103,12 @@ export interface ChallengeMeta {
   concluidoEm?: string | Date | null
   premioLiberado?: boolean
   premioValor?: number
+}
+
+export interface ChallengeMetaTargetSummary {
+  kind: "PRODUCT" | "BRAND" | "PRODUCT_OR_BRAND"
+  label: string
+  value: string
 }
 
 export interface ChallengeParticipant {
@@ -257,9 +272,29 @@ export function getChallengeStatusLabel(status: ChallengeStatus) {
     AGENDADO: "Agendado",
     ATIVO: "Ativo",
     ENCERRADO: "Encerrado",
+    ENCERRADO_AUTOMATICO: "Encerrado",
+    ENCERRADO_MANUAL: "Encerrado manual",
     CANCELADO: "Cancelado",
   }
   return labels[status]
+}
+
+function normalizeChallengeStatusValue(value: unknown): ChallengeStatus | null {
+  const normalized = String(value ?? "").trim().toUpperCase()
+  if (["RASCUNHO", "AGENDADO", "ATIVO", "ENCERRADO", "ENCERRADO_AUTOMATICO", "ENCERRADO_MANUAL", "CANCELADO"].includes(normalized)) {
+    return normalized as ChallengeStatus
+  }
+
+  return null
+}
+
+export function isEndedChallengeStatus(status: ChallengeStatus | string | null | undefined) {
+  const normalized = String(status ?? "").trim().toUpperCase()
+  return ["ENCERRADO", "ENCERRADO_AUTOMATICO", "ENCERRADO_MANUAL"].includes(normalized)
+}
+
+export function isClosedChallengeStatus(status: ChallengeStatus | string | null | undefined) {
+  return isEndedChallengeStatus(status) || String(status ?? "").trim().toUpperCase() === "CANCELADO"
 }
 
 export function getParticipantStatusLabel(status: ParticipantStatus) {
@@ -314,6 +349,24 @@ export function getChallengeDateInputValue(value: string | Date | null | undefin
   return normalizeChallengeCalendarDate(value) ?? ""
 }
 
+export function parseChallengeDateTime(value: string | Date | null | undefined, edge: "start" | "end" = "start") {
+  if (!value) return null
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null
+    return new Date(value)
+  }
+
+  const raw = String(value).trim()
+  if (challengeCalendarDatePattern.test(raw)) {
+    return new Date(`${raw}T${edge === "end" ? "23:59:59.999" : "00:00:00.000"}`)
+  }
+
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) return null
+  return parsed
+}
+
 export function compareChallengeDateValues(
   left: string | Date | null | undefined,
   right: string | Date | null | undefined
@@ -332,6 +385,66 @@ export function formatDateBR(value: string | Date | null | undefined) {
   return date.toLocaleDateString("pt-BR")
 }
 
+export function getChallengeLifecycleStatus(
+  challenge: Pick<Challenge, "status" | "dataInicio" | "dataFim">,
+  now = new Date()
+): ChallengeStatus {
+  const persistedStatus = normalizeChallengeStatusValue(challenge.status)
+  if (persistedStatus === "CANCELADO") return "CANCELADO"
+  if (persistedStatus === "ENCERRADO_MANUAL" || persistedStatus === "ENCERRADO") return "ENCERRADO_MANUAL"
+
+  const startValue = getChallengeDateInputValue(challenge.dataInicio)
+  const endValue = getChallengeDateInputValue(challenge.dataFim)
+  const start = startValue ? parseChallengeDateTime(startValue, "start") : null
+  const end = endValue ? parseChallengeDateTime(endValue, "end") : null
+  if (!start || !end || Number.isNaN(now.getTime())) return persistedStatus ?? "RASCUNHO"
+
+  if (now.getTime() < start.getTime()) return "AGENDADO"
+  if (now.getTime() > end.getTime()) return "ENCERRADO_AUTOMATICO"
+  return "ATIVO"
+}
+
+export function getChallengeLifecycleLabel(
+  challenge: Pick<Challenge, "status" | "dataInicio" | "dataFim">,
+  now = new Date()
+) {
+  const lifecycleStatus = getChallengeLifecycleStatus(challenge, now)
+
+  if (lifecycleStatus === "AGENDADO") {
+    const startValue = getChallengeDateInputValue(challenge.dataInicio)
+    const start = startValue ? parseChallengeDateTime(startValue, "start") : null
+    if (!start) return "Agendado"
+    const daysUntilStart = Math.max(Math.ceil((start.getTime() - now.getTime()) / 86400000), 0)
+    return daysUntilStart <= 1 ? "Comeca em 1 dia" : `Comeca em ${daysUntilStart} dias`
+  }
+
+  if (lifecycleStatus === "ATIVO") {
+    const endValue = getChallengeDateInputValue(challenge.dataFim)
+    const end = endValue ? parseChallengeDateTime(endValue, "end") : null
+    if (!end) return "Ativo"
+    const remainingMs = end.getTime() - now.getTime()
+    const remainingDays = remainingMs / 86400000
+    if (remainingDays > 0 && remainingDays <= 1) return "Ultimas 24h"
+    const wholeRemainingDays = Math.max(Math.ceil(remainingMs / 86400000), 0)
+    if (wholeRemainingDays > 1) return `Termina em ${wholeRemainingDays} dias`
+    return "Ativo"
+  }
+
+  if (lifecycleStatus === "ENCERRADO_MANUAL") {
+    return "Encerrado manualmente"
+  }
+
+  if (isEndedChallengeStatus(lifecycleStatus)) {
+    return `Encerrado em ${formatDateBR(challenge.dataFim)}`
+  }
+
+  if (lifecycleStatus === "CANCELADO") {
+    return "Campanha cancelada"
+  }
+
+  return "Rascunho em configuracao"
+}
+
 export function formatMetaValue(meta: Pick<ChallengeMeta, "metaValor" | "unidadeMeta" | "tipoMeta">) {
   if (meta.tipoMeta === "FATURAMENTO" || meta.tipoMeta === "PRODUTO_OU_MARCA") return formatCurrencyBRL(meta.metaValor)
   return `${meta.metaValor} ${meta.unidadeMeta ?? ""}`.trim()
@@ -345,32 +458,82 @@ export function formatMetaProgressValue(meta: Pick<ChallengeMeta, "progressoAtua
   return `${meta.progressoAtual ?? 0} ${meta.unidadeMeta ?? ""}`.trim()
 }
 
-export function getChallengeMetaFocusLabel(meta: Pick<ChallengeMeta, "tipoMeta" | "config">) {
+function normalizeChallengeMetaTargetType(value: unknown) {
+  const normalized = String(value ?? "").trim().toUpperCase()
+  if (["PRODUCT", "BRAND", "PRODUCT_OR_BRAND", "CATEGORY"].includes(normalized)) {
+    return normalized
+  }
+
+  return null
+}
+
+function extractLegacyChallengeTargetValue(rawValue: unknown, kind: "PRODUCT" | "BRAND") {
+  const raw = String(rawValue ?? "").trim()
+  if (!raw) return ""
+
+  const prefix = kind === "PRODUCT" ? "produto" : "marca"
+  const cleaned = raw.replace(new RegExp(`^${prefix}\\s+(?:\\d+\\s*-\\s*)?`, "i"), "").trim()
+  return cleaned || raw
+}
+
+function resolveChallengeMetaTargetValue(config: Record<string, unknown>, kind: "PRODUCT" | "BRAND", targetType: string | null) {
+  const configuredName = String(kind === "PRODUCT" ? config.productName ?? "" : config.brandName ?? "").trim()
+  const configuredId = String(kind === "PRODUCT" ? config.productId ?? "" : config.brandId ?? "").trim()
+  const legacyValue = String(config.targetValue ?? "").trim()
+
+  if (configuredName) return configuredName
+  if (targetType === kind && legacyValue) {
+    return extractLegacyChallengeTargetValue(legacyValue, kind)
+  }
+  if (configuredId) return configuredId
+  return ""
+}
+
+export function getChallengeMetaTargetSummary(meta: Pick<ChallengeMeta, "tipoMeta" | "config">): ChallengeMetaTargetSummary | null {
   if (meta.tipoMeta !== "PRODUTO_OU_MARCA") return null
 
   const config = meta.config ?? {}
-  const productId = String(config.productId ?? "").trim()
-  const productName = String(config.productName ?? "").trim()
-  const brandId = String(config.brandId ?? "").trim()
-  const brandName = String(config.brandName ?? "").trim()
-  const legacyTarget = String(config.targetValue ?? "").trim()
-  const segments: string[] = []
+  const targetType = normalizeChallengeMetaTargetType(config.targetType)
+  const productValue = resolveChallengeMetaTargetValue(config, "PRODUCT", targetType)
+  const brandValue = resolveChallengeMetaTargetValue(config, "BRAND", targetType)
 
-  if (productId || productName) {
-    const productLabel = [productId, productName].filter(Boolean).join(" - ")
-    if (productLabel) segments.push(`Produto ${productLabel}`)
+  if (targetType === "PRODUCT" && productValue) {
+    return { kind: "PRODUCT", label: "Produto alvo", value: productValue }
   }
 
-  if (brandId || brandName) {
-    const brandLabel = [brandId, brandName].filter(Boolean).join(" - ")
-    if (brandLabel) segments.push(`Marca ${brandLabel}`)
+  if (targetType === "BRAND" && brandValue) {
+    return { kind: "BRAND", label: "Marca alvo", value: brandValue }
   }
 
-  if (!segments.length && legacyTarget) {
-    segments.push(legacyTarget)
+  if (productValue && brandValue) {
+    return { kind: "PRODUCT_OR_BRAND", label: "Produto ou marca", value: `Produto ${productValue} | Marca ${brandValue}` }
   }
 
-  return segments.length ? segments.join(" | ") : null
+  if (productValue) {
+    return { kind: "PRODUCT", label: "Produto alvo", value: productValue }
+  }
+
+  if (brandValue) {
+    return { kind: "BRAND", label: "Marca alvo", value: brandValue }
+  }
+
+  const legacyValue = String(config.targetValue ?? "").trim()
+  if (!legacyValue) return null
+
+  return {
+    kind: "PRODUCT_OR_BRAND",
+    label: "Produto ou marca",
+    value: legacyValue,
+  }
+}
+
+export function getChallengeMetaFocusLabel(meta: Pick<ChallengeMeta, "tipoMeta" | "config">) {
+  const target = getChallengeMetaTargetSummary(meta)
+  if (!target) return null
+
+  if (target.kind === "PRODUCT") return `Produto ${target.value}`
+  if (target.kind === "BRAND") return `Marca ${target.value}`
+  return target.value
 }
 
 export function hasChallengeMetaTarget(meta: Pick<ChallengeMeta, "tipoMeta" | "config">) {
@@ -391,7 +554,17 @@ function normalizeChallengeBrandName(value: unknown) {
 }
 
 function extractChallengeBrandNames(metas?: Array<Pick<ChallengeMeta, "config">> | null, brandNames?: Array<string | null | undefined>) {
-  const configuredBrandNames = (metas ?? []).map((meta) => String(meta.config?.brandName ?? "").trim())
+  const configuredBrandNames = (metas ?? []).map((meta) => {
+    const directBrandName = String(meta.config?.brandName ?? "").trim()
+    if (directBrandName) return directBrandName
+
+    const target = getChallengeMetaTargetSummary({ tipoMeta: "PRODUTO_OU_MARCA", config: meta.config })
+    if (!target) return ""
+    if (target.kind === "BRAND") return target.value
+
+    const combinedBrandMatch = target.value.match(/Marca\s+(.+)$/i)
+    return combinedBrandMatch?.[1]?.trim() ?? ""
+  })
   return [...(brandNames ?? []), ...configuredBrandNames]
     .map(normalizeChallengeBrandName)
     .filter(Boolean)
@@ -437,11 +610,13 @@ export function getSellerCampaignParticipantStatus(challenge: Pick<SellerCampaig
   return String(challenge.participant?.statusParticipacao ?? challenge.participantStatus ?? "").toUpperCase()
 }
 
-export function shouldShowSellerCampaignBanner(challenge: Pick<SellerCampaignSurfaceItem, "status" | "participantStatus" | "participant">) {
-  const status = String(challenge.status ?? "").toUpperCase()
+export function shouldShowSellerCampaignBanner(
+  challenge: Pick<SellerCampaignSurfaceItem, "status" | "dataInicio" | "dataFim" | "participantStatus" | "participant">
+) {
+  const status = getChallengeLifecycleStatus(challenge as Pick<Challenge, "status" | "dataInicio" | "dataFim">)
   const participantStatus = getSellerCampaignParticipantStatus(challenge)
 
-  return (!status || ["ATIVO", "AGENDADO"].includes(status)) && participantStatus !== "RECUSADO"
+  return ["ATIVO", "AGENDADO"].includes(status) && participantStatus !== "RECUSADO"
 }
 
 export function getSellerCampaignNotificationId(
@@ -486,9 +661,10 @@ export function aggregateChallengesSummary(items: Challenge[]): ChallengesRespon
       accumulator.realizedOrdersTotal += Number(impact?.realizedOrders ?? 0)
       accumulator.estimatedClientsTotal += Number(impact?.estimatedClients ?? 0)
       accumulator.realizedClientsTotal += Number(impact?.realizedClients ?? 0)
-      accumulator.activeChallenges += challenge.status === "ATIVO" ? 1 : 0
-      accumulator.completedChallenges += challenge.status === "ENCERRADO" ? 1 : 0
-      accumulator.newChallenges += challenge.status === "RASCUNHO" || challenge.status === "AGENDADO" ? 1 : 0
+      const lifecycleStatus = getChallengeLifecycleStatus(challenge)
+      accumulator.activeChallenges += lifecycleStatus === "ATIVO" ? 1 : 0
+      accumulator.completedChallenges += isEndedChallengeStatus(lifecycleStatus) ? 1 : 0
+      accumulator.newChallenges += lifecycleStatus === "RASCUNHO" || lifecycleStatus === "AGENDADO" ? 1 : 0
       accumulator.completionRateSum += Number(stats?.completionRate ?? 0)
 
       return accumulator
@@ -605,7 +781,10 @@ export async function updateChallenge(id: number | string, payload: ChallengeFor
   })
 }
 
-export async function closeChallenge(id: number | string, status: "ENCERRADO" | "CANCELADO" = "ENCERRADO") {
+export async function closeChallenge(
+  id: number | string,
+  status: "ENCERRADO" | "ENCERRADO_MANUAL" | "CANCELADO" = "ENCERRADO_MANUAL"
+) {
   const params = new URLSearchParams({ status })
   return request<Challenge>(`/api/desafios/${id}?${params.toString()}`, { method: "DELETE" })
 }

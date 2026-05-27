@@ -19,8 +19,10 @@ import {
   formatCurrencyBRL,
   getChallengeCampaignKind,
   getChallengeCampaignKindLabel,
+  getChallengeLifecycleStatus,
   getSellerCampaignNotificationId,
   getSellerCampaignNotificationPrefixes,
+  isClosedChallengeStatus,
   isSellerBonus,
   isSellerChallengeAccepted,
   isSellerChallengeAvailable,
@@ -123,8 +125,8 @@ function VendedorDesafiosContent() {
     () =>
       [...allItems]
         .filter(isSellerBonus)
-        .filter((item) => !["ENCERRADO", "CANCELADO"].includes(item.status))
-        .sort((left, right) => getChallengeStatusWeight(right.status) - getChallengeStatusWeight(left.status)),
+        .filter((item) => !isClosedChallengeStatus(getChallengeLifecycleStatus(item)))
+        .sort((left, right) => getChallengeStatusWeight(getChallengeLifecycleStatus(right)) - getChallengeStatusWeight(getChallengeLifecycleStatus(left))),
     [allItems]
   )
 
@@ -544,6 +546,8 @@ function getChallengeStatusWeight(status: Challenge["status"]) {
     AGENDADO: 3,
     RASCUNHO: 2,
     ENCERRADO: 1,
+    ENCERRADO_AUTOMATICO: 1,
+    ENCERRADO_MANUAL: 1,
     CANCELADO: 0,
   }
 

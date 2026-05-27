@@ -55,7 +55,7 @@ export function ChallengeParticipantsTable({
 
 function isAcceptedParticipant(status: ChallengeParticipant["statusParticipacao"], requiresAcceptance: boolean) {
   if (!requiresAcceptance) return true
-  return ["ACEITO", "EM_ANDAMENTO", "CONCLUIDO"].includes(String(status ?? "").toUpperCase())
+  return ["ACEITO", "EM_ANDAMENTO", "CONCLUIDO", "EXPIRADO"].includes(String(status ?? "").toUpperCase())
 }
 
 function getAcceptanceWeight(status: ChallengeParticipant["statusParticipacao"], requiresAcceptance: boolean) {

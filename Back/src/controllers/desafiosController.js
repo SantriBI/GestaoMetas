@@ -119,7 +119,7 @@ export async function putDesafio(req, res) {
 
 export async function deleteDesafio(req, res) {
   try {
-    const data = await closeChallenge(req.params.id, req.query.status ?? "ENCERRADO")
+    const data = await closeChallenge(req.params.id, req.query.status ?? "ENCERRADO_MANUAL")
     return res.json(data)
   } catch (error) {
     return handleError(res, error, "Erro ao encerrar desafio.")
