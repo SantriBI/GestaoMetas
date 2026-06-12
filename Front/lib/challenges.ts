@@ -57,6 +57,7 @@ export interface SellerChallengeAlertItem {
   dataInicio?: string | Date | null
   dataFim?: string | Date | null
   brandNames?: string[]
+  metas?: ChallengeMeta[]
   exigeAceite?: boolean
   status?: string | null
   participantStatus?: ParticipantStatus | string | null
@@ -89,6 +90,8 @@ export interface ChallengeImpactPreviewResponse {
   }
 }
 
+export type ChallengeMetricType = 'VALOR' | 'QUANTIDADE'
+
 export interface ChallengeMeta {
   idMeta?: number
   idDesafio?: number
@@ -96,6 +99,7 @@ export interface ChallengeMeta {
   metaValor: number
   unidadeMeta: string
   recompensaValor: number
+  metricType?: ChallengeMetricType
   ordemExibicao: number
   config?: Record<string, unknown>
   progressoAtual?: number
@@ -103,6 +107,7 @@ export interface ChallengeMeta {
   concluidoEm?: string | Date | null
   premioLiberado?: boolean
   premioValor?: number
+  multiplier?: number
 }
 
 export interface ChallengeMetaTargetSummary {
@@ -228,7 +233,7 @@ export interface ChallengeBrandOption {
 
 export interface ChallengeFormPayload {
   titulo: string
-  descricao?: string
+  descricao?: string | null
   dataInicio: string
   dataFim: string
   exigeAceite?: boolean
@@ -445,12 +450,14 @@ export function getChallengeLifecycleLabel(
   return "Rascunho em configuracao"
 }
 
-export function formatMetaValue(meta: Pick<ChallengeMeta, "metaValor" | "unidadeMeta" | "tipoMeta">) {
+export function formatMetaValue(meta: Pick<ChallengeMeta, "metaValor" | "unidadeMeta" | "tipoMeta" | "metricType">) {
+  if (meta.metricType === "QUANTIDADE") return `${meta.metaValor} ${meta.unidadeMeta ?? "itens"}`.trim()
   if (meta.tipoMeta === "FATURAMENTO" || meta.tipoMeta === "PRODUTO_OU_MARCA") return formatCurrencyBRL(meta.metaValor)
   return `${meta.metaValor} ${meta.unidadeMeta ?? ""}`.trim()
 }
 
-export function formatMetaProgressValue(meta: Pick<ChallengeMeta, "progressoAtual" | "unidadeMeta" | "tipoMeta">) {
+export function formatMetaProgressValue(meta: Pick<ChallengeMeta, "progressoAtual" | "unidadeMeta" | "tipoMeta" | "metricType">) {
+  if (meta.metricType === "QUANTIDADE") return `${meta.progressoAtual ?? 0} ${meta.unidadeMeta ?? "itens"}`.trim()
   if (meta.tipoMeta === "FATURAMENTO" || meta.tipoMeta === "PRODUTO_OU_MARCA") {
     return formatCurrencyBRL(Number(meta.progressoAtual ?? 0))
   }
@@ -481,6 +488,7 @@ function resolveChallengeMetaTargetValue(config: Record<string, unknown>, kind: 
   const configuredId = String(kind === "PRODUCT" ? config.productId ?? "" : config.brandId ?? "").trim()
   const legacyValue = String(config.targetValue ?? "").trim()
 
+  if (configuredId && configuredName) return `${configuredId} - ${configuredName}`
   if (configuredName) return configuredName
   if (targetType === kind && legacyValue) {
     return extractLegacyChallengeTargetValue(legacyValue, kind)
@@ -595,7 +603,7 @@ export function getChallengeBannerAsset(input: {
 }
 
 export function isSellerChallengeAvailable(challenge: Pick<Challenge, "exigeAceite" | "participant">) {
-  return getChallengeCampaignKind(challenge) === "DESAFIO" && ["DISPONIVEL"].includes(String(challenge.participant?.statusParticipacao ?? "").toUpperCase())
+  return getChallengeCampaignKind(challenge) === "DESAFIO" && ["DISPONIVEL", "CONVIDADO"].includes(String(challenge.participant?.statusParticipacao ?? "").toUpperCase())
 }
 
 export function isSellerChallengeAccepted(challenge: Pick<Challenge, "exigeAceite" | "participant">) {
@@ -830,4 +838,48 @@ export async function markSellerChallengeSeen(id: number | string, skVendedor: n
     method: "POST",
     body: JSON.stringify({ skVendedor }),
   })
+}
+
+export function isChallengeExpiredByDate(
+  challenge: Pick<Challenge, "dataFim">,
+  now = new Date()
+): boolean {
+  const endValue = getChallengeDateInputValue(challenge.dataFim)
+  const end = endValue ? parseChallengeDateTime(endValue, "end") : null
+  return end !== null && now.getTime() > end.getTime()
+}
+
+export function isChallengeCurrentlyActive(
+  challenge: Pick<Challenge, "status" | "dataInicio" | "dataFim">,
+  now = new Date()
+): boolean {
+  return getChallengeLifecycleStatus(challenge, now) === "ATIVO"
+}
+
+export function isChallengeAvailableForSeller(
+  challenge: Pick<Challenge, "exigeAceite" | "participant" | "status" | "dataInicio" | "dataFim">,
+  now = new Date()
+): boolean {
+  return isSellerChallengeAvailable(challenge) && isChallengeCurrentlyActive(challenge, now)
+}
+
+export function isChallengeInProgressForSeller(
+  challenge: Pick<Challenge, "exigeAceite" | "participant" | "status" | "dataInicio" | "dataFim">,
+  now = new Date()
+): boolean {
+  const participantStatus = String(challenge.participant?.statusParticipacao ?? "").toUpperCase()
+  return (
+    getChallengeCampaignKind(challenge) === "DESAFIO" &&
+    ["ACEITO", "EM_ANDAMENTO"].includes(participantStatus) &&
+    isChallengeCurrentlyActive(challenge, now)
+  )
+}
+
+export function isChallengeClosedForSeller(
+  challenge: Pick<Challenge, "exigeAceite" | "participant" | "status" | "dataInicio" | "dataFim">,
+  now = new Date()
+): boolean {
+  const participantStatus = String(challenge.participant?.statusParticipacao ?? "").toUpperCase()
+  if (participantStatus === "CONCLUIDO" || participantStatus === "EXPIRADO") return true
+  return isClosedChallengeStatus(getChallengeLifecycleStatus(challenge, now))
 }

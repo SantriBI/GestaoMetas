@@ -56,6 +56,7 @@ export function ChallengeWizard({
   const impactRequestRef = useRef(0)
   const [step, setStep] = useState(0)
   const [titulo, setTitulo] = useState("")
+  const [descricao, setDescricao] = useState("")
   const [dataInicio, setDataInicio] = useState("")
   const [dataFim, setDataFim] = useState("")
   const [bonusMonth, setBonusMonth] = useState(getCurrentMonthValue())
@@ -71,10 +72,7 @@ export function ChallengeWizard({
   const eligibleSellers = metadata?.sellers.length ?? 0
   const draftPayload: ChallengeFormPayload = {
     titulo: titulo.trim(),
-    descricao:
-      effectiveKind === "BONUS"
-        ? "Bonus mensal automatico com metas comerciais e acompanhamento continuo do resultado."
-        : "Campanha comercial com prazo definido, aceite do time e acompanhamento por meta.",
+    descricao: descricao.trim() || null,
     dataInicio,
     dataFim,
     exigeAceite: effectiveKind === "DESAFIO",
@@ -99,6 +97,7 @@ export function ChallengeWizard({
       : []
 
     setTitulo(editingChallenge?.titulo ?? "")
+    setDescricao(editingChallenge?.descricao ?? "")
     setDataInicio(nextStart)
     setDataFim(nextEnd)
     setBonusMonth(nextMonth)
@@ -115,10 +114,7 @@ export function ChallengeWizard({
   useEffect(() => {
     const payload: ChallengeFormPayload = {
       titulo: titulo.trim(),
-      descricao:
-        effectiveKind === "BONUS"
-          ? "Bonus mensal automatico com metas comerciais e acompanhamento continuo do resultado."
-          : "Campanha comercial com prazo definido, aceite do time e acompanhamento por meta.",
+      descricao: descricao.trim() || null,
       dataInicio,
       dataFim,
       exigeAceite: effectiveKind === "DESAFIO",
@@ -155,7 +151,7 @@ export function ChallengeWizard({
     return () => {
       cancelled = true
     }
-  }, [createdBy, dataFim, dataInicio, editingChallenge?.empresaId, effectiveKind, metas, onEstimateImpact, step, titulo])
+  }, [createdBy, dataFim, dataInicio, descricao, editingChallenge?.empresaId, effectiveKind, metas, onEstimateImpact, step, titulo])
 
   const metasValidas =
     orderedMetas.length > 0 &&
@@ -243,7 +239,7 @@ export function ChallengeWizard({
                       </p>
                     </div>
 
-                    <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6">
+                    <div className="space-y-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6">
                       <Field label="Nome">
                         <Input
                           value={titulo}
@@ -251,6 +247,22 @@ export function ChallengeWizard({
                           className={wizardInputClass}
                           placeholder={effectiveKind === "BONUS" ? "Ex.: Bonus de Conversao de Abril" : "Ex.: Sprint de Reativacao da Semana"}
                         />
+                      </Field>
+
+                      <Field label="Descricao do desafio (opcional)">
+                        <div className="relative">
+                          <textarea
+                            value={descricao}
+                            onChange={(event) => setDescricao(event.target.value.slice(0, 500))}
+                            rows={3}
+                            maxLength={500}
+                            className={`${wizardInputClass} h-auto resize-none py-4 leading-6`}
+                            placeholder="Explique o objetivo, regras e contexto da campanha para os vendedores..."
+                          />
+                          <span className="absolute bottom-3 right-4 text-[11px] text-white/30">
+                            {descricao.length}/500
+                          </span>
+                        </div>
                       </Field>
                     </div>
                   </div>

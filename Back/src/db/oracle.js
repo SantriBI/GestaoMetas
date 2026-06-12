@@ -4,6 +4,7 @@ import dotenv from "dotenv"
 dotenv.config()
 
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
+oracledb.fetchAsString = [oracledb.CLOB]
 
 const TRANSIENT_ORACLE_ERROR_CODES = new Set([8103])
 const MAX_SELECT_RETRIES = 2
@@ -13,9 +14,9 @@ const pool = await oracledb.createPool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   connectString: process.env.DB_CONNECT_STRING,
-  poolMin: 2,
-  poolMax: 10,
-  poolIncrement: 1
+  poolMin: 4,
+  poolMax: 25,
+  poolIncrement: 2
 })
 
 function sleep(ms) {

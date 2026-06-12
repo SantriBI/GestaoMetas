@@ -91,23 +91,11 @@ interface OportunidadesData {
 
 type ActiveView = "jornada" | null
 const STARTUP_NOTIFICATION_DURATION_MS = 10000
+const CHALLENGE_NOTIFICATION_DURATION_MS = 10000
 const EMPTY_CHALLENGES: Challenge[] = []
 const EMPTY_ALERT_CAMPAIGNS: SellerChallengeAlertItem[] = []
 
-type DashboardCampaignBannerItem = {
-  id: number | string
-  titulo: string | null
-  descricao?: string | null
-  dataInicio?: string | Date | null
-  dataFim?: string | Date | null
-  brandNames?: string[]
-  exigeAceite?: boolean
-  status?: string | null
-  participantStatus?: string | null
-  participant?: {
-    statusParticipacao?: string | null
-  }
-}
+type DashboardCampaignBannerItem = SellerChallengeAlertItem & Pick<Partial<Challenge>, "metas" | "participant">
 
 function createFallbackVendedor(user?: AuthUser | null): VendedorData {
   return {
@@ -236,9 +224,28 @@ export default function VendedorDashboard() {
   } = useSellerChallenges(skVendedor)
   const sellerCampaignItems = sellerChallengesData?.items ?? EMPTY_CHALLENGES
   const alertCampaignItems = useMemo<DashboardCampaignBannerItem[]>(() => {
-    if (desafioAlert?.items?.length) return desafioAlert.items
-    return desafioAlert?.challenge ? [desafioAlert.challenge] : EMPTY_ALERT_CAMPAIGNS
-  }, [desafioAlert])
+    const sourceItems = desafioAlert?.items?.length
+      ? desafioAlert.items
+      : desafioAlert?.challenge
+        ? [desafioAlert.challenge]
+        : EMPTY_ALERT_CAMPAIGNS
+
+    if (!sourceItems.length) return sourceItems
+
+    const sellerChallengesById = new Map(sellerCampaignItems.map((item) => [String(item.id), item]))
+
+    return sourceItems.map((item) => {
+      const matchingChallenge = sellerChallengesById.get(String(item.id))
+      if (!matchingChallenge) return item
+
+      return {
+        ...matchingChallenge,
+        ...item,
+        metas: item.metas?.length ? item.metas : matchingChallenge.metas,
+        participant: matchingChallenge.participant,
+      }
+    })
+  }, [desafioAlert, sellerCampaignItems])
   const dashboardCampaignSourceItems: DashboardCampaignBannerItem[] = sellerCampaignItems.length
     ? sellerCampaignItems
     : alertCampaignItems
@@ -613,7 +620,7 @@ export default function VendedorDashboard() {
         dashboardCampaignIds.forEach((id) => next.add(id))
         return next
       })
-    }, STARTUP_NOTIFICATION_DURATION_MS)
+    }, CHALLENGE_NOTIFICATION_DURATION_MS)
 
     return () => window.clearTimeout(timeout)
     // The key tracks the concrete campaigns currently visible to the seller.
@@ -1025,39 +1032,33 @@ export default function VendedorDashboard() {
           ) : null}
 
           {dashboardCampaignBanners.length ? (
-            <div className="space-y-4">
-              {dashboardCampaignBanners.map((campaign) => {
-                const kind = getChallengeCampaignKind(campaign)
-                const isAvailable = isDashboardCampaignAvailable(campaign)
+            <section className="overflow-hidden rounded-[24px] border border-white/8 bg-[#07111f] shadow-[0_16px_48px_rgba(2,8,23,0.16)]">
+              <div className="border-b border-white/8 px-5 py-4">
+                <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-300">
+                  DESAFIOS ATIVOS
+                </h2>
+                <p className="mt-2 text-sm text-white/60">
+                  Campanhas disponiveis para aumentar sua premiacao hoje.
+                </p>
+              </div>
 
-                return (
-                  <ChallengeNotificationBanner
-                    key={campaign.id}
-                    title={campaign.titulo ?? (kind === "BONUS" ? "Bonus mensal criado" : "Desafio criado")}
-                    description={
-                      campaign.descricao ??
-                      (kind === "BONUS"
-                        ? "Um bonus mensal foi criado para acompanhar seu resultado e recompensar sua performance."
-                        : "Uma campanha foi criada para acelerar seu resultado comercial.")
-                    }
-                    dataInicio={campaign.dataInicio}
-                    dataFim={campaign.dataFim}
-                    href={`/vendedor/desafios?highlight=${campaign.id}`}
-                    onAccept={isAvailable ? () => handleAcceptCampaignBanner(campaign) : undefined}
-                    onDismiss={isAvailable ? () => handleDismissCampaignBanner(campaign) : undefined}
-                    onClose={() => dismissCampaignBanner(campaign.id)}
-                    loading={isActingSellerCampaign}
-                    compact
-                    eyebrow={kind === "BONUS" ? "Bonus mensal" : "Desafio publicado"}
-                    supportingLabel={
-                      kind === "BONUS"
-                        ? "Bonus criado para acompanhar seu mes"
-                        : "Campanha pronta para entrar em acao"
-                    }
-                  />
-                )
-              })}
-            </div>
+              <div className="divide-y divide-white/8 px-2 py-1 sm:px-3">
+                {dashboardCampaignBanners.map((campaign) => {
+                  const isAvailable = isDashboardCampaignAvailable(campaign)
+
+                  return (
+                    <ChallengeNotificationBanner
+                      key={campaign.id}
+                      campaign={campaign}
+                      href={`/vendedor/desafios?highlight=${campaign.id}`}
+                      onAccept={isAvailable ? () => handleAcceptCampaignBanner(campaign) : undefined}
+                      loading={isActingSellerCampaign}
+                      compact
+                    />
+                  )
+                })}
+              </div>
+            </section>
           ) : null}
 
           {!isMotivationClosed ? (

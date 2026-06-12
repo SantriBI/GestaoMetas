@@ -27,23 +27,23 @@ const OBJECT_SPECS = {
   },
   challengesTable: {
     type: "TABLE",
-    candidates: ["GM_TB_DESAFIOS_COMERCIAIS", "DESAFIOS_COMERCIAIS"],
+    candidates: ["DESAFIOS_COMERCIAIS", "GM_TB_DESAFIOS_COMERCIAIS"],
   },
   challengeGoalsTable: {
     type: "TABLE",
-    candidates: ["GM_TB_DESAFIOS_COMERCIAIS_METAS", "DESAFIOS_COMERCIAIS_METAS"],
+    candidates: ["DESAFIOS_COMERCIAIS_METAS", "GM_TB_DESAFIOS_COMERCIAIS_METAS"],
   },
   challengeParticipantsTable: {
     type: "TABLE",
-    candidates: ["GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES", "DESAFIOS_COMERCIAIS_VENDEDORES"],
+    candidates: ["DESAFIOS_COMERCIAIS_VENDEDORES", "GM_TB_DESAFIOS_COMERCIAIS_VENDEDORES"],
   },
   challengeProgressTable: {
     type: "TABLE",
-    candidates: ["GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO", "DESAFIOS_COMERCIAIS_PROGRESSO"],
+    candidates: ["DESAFIOS_COMERCIAIS_PROGRESSO", "GM_TB_DESAFIOS_COMERCIAIS_PROGRESSO"],
   },
   challengeLogTable: {
     type: "TABLE",
-    candidates: ["GM_TB_DESAFIOS_COMERCIAIS_LOG", "DESAFIOS_COMERCIAIS_LOG"],
+    candidates: ["DESAFIOS_COMERCIAIS_LOG", "GM_TB_DESAFIOS_COMERCIAIS_LOG"],
   },
   rankingVendorsView: {
     type: "VIEW",

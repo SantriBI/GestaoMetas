@@ -23,6 +23,7 @@ const typeOptions: ChallengeMetaType[] = ["FATURAMENTO", "PEDIDOS_FECHADOS", "CL
 
 type MetaDraft = {
   tipoMeta: ChallengeMetaType
+  metricType: 'VALOR' | 'QUANTIDADE'
   metaValor: string
   recompensaValor: string
   produto: ChallengeTargetAutocompleteOption | null
@@ -40,6 +41,7 @@ const unitByType: Record<ChallengeMetaType, string> = {
 function createMetaDraft(): MetaDraft {
   return {
     tipoMeta: "FATURAMENTO",
+    metricType: "VALOR",
     metaValor: "",
     recompensaValor: "",
     produto: null,
@@ -53,11 +55,14 @@ function buildMetaFromDraft(draft: MetaDraft, ordemExibicao: number): ChallengeM
     draft.marca ? `Marca ${formatTargetOption(draft.marca)}` : null,
   ].filter(Boolean)
 
+  const supportsMetricType = draft.tipoMeta === "FATURAMENTO" || draft.tipoMeta === "PRODUTO_OU_MARCA"
+
   return {
     tipoMeta: draft.tipoMeta,
     metaValor: Number(draft.metaValor),
-    unidadeMeta: unitByType[draft.tipoMeta],
+    unidadeMeta: draft.metricType === "QUANTIDADE" ? "itens" : unitByType[draft.tipoMeta],
     recompensaValor: Number(draft.recompensaValor),
+    metricType: supportsMetricType ? draft.metricType : "VALOR",
     ordemExibicao,
     config:
       draft.tipoMeta === "PRODUTO_OU_MARCA" && (draft.produto || draft.marca)
@@ -79,6 +84,7 @@ function createDraftFromMeta(meta: ChallengeMeta): MetaDraft {
 
   return {
     tipoMeta: meta.tipoMeta,
+    metricType: meta.metricType === "QUANTIDADE" ? "QUANTIDADE" : "VALOR",
     metaValor: String(Number(meta.metaValor) || ""),
     recompensaValor: String(Number(meta.recompensaValor) || ""),
     produto:
@@ -292,18 +298,18 @@ export function ChallengeMetaBuilder({
               </select>
             </Field>
 
-            <Field label={draft.tipoMeta === "PRODUTO_OU_MARCA" ? "Meta de venda" : "Valor da meta"}>
+            <Field label={draft.metricType === "QUANTIDADE" ? "Meta em itens" : (draft.tipoMeta === "PRODUTO_OU_MARCA" ? "Meta em R$" : "Valor da meta")}>
               <Input
                 type="number"
                 min={0}
                 value={draft.metaValor}
                 onChange={(event) => setDraft((current) => ({ ...current, metaValor: event.target.value }))}
                 className={builderFieldClass}
-                placeholder={draft.tipoMeta === "PRODUTO_OU_MARCA" ? "Ex.: 5000" : "Ex.: 10"}
+                placeholder={draft.metricType === "QUANTIDADE" ? "Ex.: 5" : (draft.tipoMeta === "PRODUTO_OU_MARCA" ? "Ex.: 5000" : "Ex.: 10")}
               />
             </Field>
 
-            <Field label="Recompensa">
+            <Field label={draft.metricType === "QUANTIDADE" ? "Recompensa por unidade (R$)" : "Recompensa (R$)"}>
               <Input
                 type="number"
                 min={0}
@@ -314,6 +320,31 @@ export function ChallengeMetaBuilder({
               />
             </Field>
           </div>
+
+          {(draft.tipoMeta === "FATURAMENTO" || draft.tipoMeta === "PRODUTO_OU_MARCA") ? (
+            <div className="mt-4 flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">Medir por</span>
+              <div className="flex overflow-hidden rounded-[14px] border border-white/10 bg-black/20">
+                <button
+                  type="button"
+                  onClick={() => setDraft((current) => ({ ...current, metricType: "VALOR" }))}
+                  className={`px-4 py-2 text-xs font-semibold transition ${draft.metricType === "VALOR" ? "bg-cyan-400/20 text-cyan-100" : "text-white/50 hover:text-white/80"}`}
+                >
+                  Por valor (R$)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraft((current) => ({ ...current, metricType: "QUANTIDADE" }))}
+                  className={`px-4 py-2 text-xs font-semibold transition ${draft.metricType === "QUANTIDADE" ? "bg-cyan-400/20 text-cyan-100" : "text-white/50 hover:text-white/80"}`}
+                >
+                  Por quantidade (itens)
+                </button>
+              </div>
+              {draft.metricType === "QUANTIDADE" ? (
+                <span className="text-[11px] text-white/40">Ex.: meta = 2 itens, recompensa = R$5 → vender 4 itens = R$10</span>
+              ) : null}
+            </div>
+          ) : null}
 
           {draft.tipoMeta === "PRODUTO_OU_MARCA" ? (
             <div className="mt-5 grid gap-5 xl:grid-cols-2">
@@ -343,11 +374,13 @@ export function ChallengeMetaBuilder({
 
           <div className="mt-7 flex flex-col gap-4 border-t border-white/8 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <p className="max-w-2xl text-sm leading-7 text-white/48">
-              {draft.tipoMeta === "FATURAMENTO"
-                ? "Meta em reais para campanhas focadas em receita."
-                : draft.tipoMeta === "PRODUTO_OU_MARCA"
-                  ? "A meta mede o faturamento vendido no periodo do desafio considerando o produto, a marca ou ambos."
-                : `A unidade desta meta sera exibida como ${unitByType[draft.tipoMeta]}.`}
+              {draft.metricType === "QUANTIDADE"
+                ? "Meta acumulativa por itens. Cada vez que o vendedor bate a meta, multiplica o prêmio."
+                : draft.tipoMeta === "FATURAMENTO"
+                  ? "Meta em reais para campanhas focadas em receita."
+                  : draft.tipoMeta === "PRODUTO_OU_MARCA"
+                    ? "A meta mede o faturamento vendido no periodo do desafio considerando o produto, a marca ou ambos."
+                    : `A unidade desta meta sera exibida como ${unitByType[draft.tipoMeta]}.`}
             </p>
 
             <Button

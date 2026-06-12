@@ -1,4 +1,3 @@
-import Image from "next/image"
 import type { ReactNode } from "react"
 import Link from "next/link"
 import { ArrowRight, Award, Coins, TrendingUp, Users } from "lucide-react"
@@ -10,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import {
   formatCurrencyBRL,
   formatDateBR,
-  getChallengeBannerAsset,
   getChallengeCampaignKind,
   getChallengeCampaignKindLabel,
   getChallengeLifecycleStatus,
@@ -18,7 +16,6 @@ import {
 } from "@/lib/challenges"
 
 export function ChallengeDetailsPanel({ challenge }: { challenge: Challenge }) {
-  const challengeBanner = getChallengeBannerAsset({ title: challenge.titulo, metas: challenge.metas })
   const participant = challenge.participant
   const lifecycleStatus = getChallengeLifecycleStatus(challenge)
 
@@ -34,19 +31,6 @@ export function ChallengeDetailsPanel({ challenge }: { challenge: Challenge }) {
     return (
       <div className="space-y-6">
         <div className="overflow-hidden rounded-[34px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_24%),linear-gradient(145deg,rgba(8,13,24,0.98),rgba(15,23,42,0.96),rgba(24,24,52,0.92))] p-6 shadow-[0_28px_90px_rgba(2,6,23,0.28)] sm:p-7">
-          {challengeBanner ? (
-            <div className="mb-6 overflow-hidden rounded-[26px] border border-white/10 bg-black/20 shadow-[0_18px_50px_rgba(2,6,23,0.22)]">
-              <Image
-                src={challengeBanner.src}
-                alt={challengeBanner.alt}
-                width={1600}
-                height={520}
-                className="h-auto w-full object-cover"
-                sizes="(min-width: 1280px) 900px, (min-width: 640px) calc(100vw - 120px), calc(100vw - 72px)"
-              />
-            </div>
-          ) : null}
-
           <div className="flex flex-wrap items-center gap-3">
             {kind === "DESAFIO" ? <ChallengeStatusBadge status={participant.statusParticipacao} scope="participant" /> : null}
             {kind === "BONUS" ? (
@@ -126,19 +110,6 @@ export function ChallengeDetailsPanel({ challenge }: { challenge: Challenge }) {
   return (
     <div className="space-y-5">
       <div className="overflow-hidden rounded-[34px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_24%),linear-gradient(145deg,rgba(8,13,24,0.98),rgba(15,23,42,0.96),rgba(24,24,52,0.92))] p-6 shadow-[0_28px_90px_rgba(2,6,23,0.28)] sm:p-7">
-        {challengeBanner ? (
-          <div className="mb-6 overflow-hidden rounded-[26px] border border-white/10 bg-black/20 shadow-[0_18px_50px_rgba(2,6,23,0.22)]">
-            <Image
-              src={challengeBanner.src}
-              alt={challengeBanner.alt}
-              width={1600}
-              height={520}
-              className="h-auto w-full object-cover"
-              sizes="(min-width: 1280px) 900px, (min-width: 640px) calc(100vw - 120px), calc(100vw - 72px)"
-            />
-          </div>
-        ) : null}
-
         <div className="flex flex-wrap items-center gap-3">
           <span className="rounded-full border border-cyan-300/14 bg-cyan-300/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-50">
             {getChallengeCampaignKindLabel(kind)}

@@ -44,14 +44,18 @@ function getCurrentMonthWindow() {
 }
 
 function resolveMetricWindow(challenge) {
+  const dataInicio = normalizeChallengeDate(challenge?.dataInicio, "start")
+  const dataFim = normalizeChallengeDate(challenge?.dataFim, "end")
+
   if (challenge?.exigeAceite === false) {
+    const hasEnded = dataFim && dataFim.getTime() < Date.now()
+    if (hasEnded) {
+      return { dataInicio, dataFim }
+    }
     return getCurrentMonthWindow()
   }
 
-  return {
-    dataInicio: normalizeChallengeDate(challenge?.dataInicio, "start"),
-    dataFim: normalizeChallengeDate(challenge?.dataFim, "end"),
-  }
+  return { dataInicio, dataFim }
 }
 
 function signedRevenueSql(alias = "f") {
@@ -78,9 +82,13 @@ async function runMetric(sql, binds) {
 
 async function faturamento(meta, participant, challenge) {
   const window = resolveMetricWindow(challenge)
+  const isQuantidade = String(meta.metricType ?? 'VALOR').toUpperCase() === 'QUANTIDADE'
+  const metricExpr = isQuantidade
+    ? 'NVL(SUM(f.quantidade_item), 0)'
+    : `ROUND(NVL(SUM(${signedRevenueSql("f")}), 0), 2)`
   return runMetric(
     `
-    SELECT ROUND(NVL(SUM(${signedRevenueSql("f")}), 0), 2) AS valor
+    SELECT ${metricExpr} AS valor
     FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE f
     WHERE f.sk_vendedor = :sk_vendedor
       AND ${buildDateFilter()}
@@ -176,9 +184,31 @@ async function produtoOuMarca(meta, participant, challenge) {
     predicate = predicates[targetType] ?? predicates.BRAND
   }
 
+  const isQuantidade = String(meta.metricType ?? 'VALOR').toUpperCase() === 'QUANTIDADE'
+  const valueExpr = isQuantidade
+    ? 'NVL(SUM(f.quantidade_item), 0)'
+    : `ROUND(NVL(SUM(${signedRevenueSql("f")}), 0), 2)`
+
+  const binds = {
+    sk_vendedor: participant.skVendedor,
+    janela_inicio: window.dataInicio,
+    janela_fim: window.dataFim,
+  }
+
+  if (productId && brandId) {
+    binds.product_id = productId
+    binds.brand_id = brandId
+  } else if (productId) {
+    binds.product_id = productId
+  } else if (brandId) {
+    binds.brand_id = brandId
+  } else if (targetValue) {
+    binds.target_value = targetValue
+  }
+
   return runMetric(
     `
-    SELECT ROUND(NVL(SUM(${signedRevenueSql("f")}), 0), 2) AS valor
+    SELECT ${valueExpr} AS valor
     FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE f
     JOIN DM_VENDAS.DIM_PRODUTOS p
       ON p.sk_produto = f.sk_produto
@@ -186,14 +216,7 @@ async function produtoOuMarca(meta, participant, challenge) {
       AND ${buildDateFilter()}
       AND ${predicate}
     `,
-    {
-      sk_vendedor: participant.skVendedor,
-      janela_inicio: window.dataInicio,
-      janela_fim: window.dataFim,
-      product_id: productId,
-      brand_id: brandId,
-      target_value: targetValue,
-    }
+    binds
   )
 }
 
@@ -211,29 +234,35 @@ export async function calculateMetaProgress(meta, participant, challenge) {
   const percentualConclusao = meta.metaValor > 0
     ? Number(Math.min((progressoAtual / meta.metaValor) * 100, 100).toFixed(2))
     : 0
-  const concluido = meta.metaValor > 0 && progressoAtual >= meta.metaValor
+  const multiplier = meta.metaValor > 0
+    ? Math.floor(progressoAtual / meta.metaValor)
+    : 0
+  const concluido = multiplier >= 1
+  const premioValor = multiplier * numberValue(meta.recompensaValor)
 
   return {
     progressoAtual,
     percentualConclusao,
-    premioValor: meta.recompensaValor,
+    premioValor,
+    multiplier,
     concluido,
     concluidoEm: concluido ? new Date() : null,
   }
 }
 
 export async function calculateParticipantProgress(challenge, metas, participant) {
-  const metaProgress = []
-  for (const meta of metas) {
-    const progress = await calculateMetaProgress(meta, participant, challenge)
-    metaProgress.push({ ...meta, progress })
-  }
+  const metaProgress = await Promise.all(
+    metas.map(async (meta) => {
+      const progress = await calculateMetaProgress(meta, participant, challenge)
+      return { ...meta, progress }
+    })
+  )
 
   const completedMetas = metaProgress.filter((item) => item.progress.concluido).length
   const progressAverage = metaProgress.length
     ? Number((metaProgress.reduce((sum, item) => sum + item.progress.percentualConclusao, 0) / metaProgress.length).toFixed(2))
     : 0
-  const totalReward = metaProgress.reduce((sum, item) => sum + (item.progress.concluido ? numberValue(item.recompensaValor) : 0), 0)
+  const totalReward = metaProgress.reduce((sum, item) => sum + numberValue(item.progress.premioValor), 0)
   const hasAccepted = !!participant.aceitoEm
   const hasProgress = metaProgress.some((item) => item.progress.progressoAtual > 0)
   const requiresAcceptance = challenge.exigeAceite !== false

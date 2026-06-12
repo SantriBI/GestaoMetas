@@ -1,16 +1,21 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { ArrowRight, CalendarRange, ChevronUp, Coins, LoaderCircle, Target, TrendingUp, Users } from "lucide-react"
+import { ArrowRight, CalendarRange, ChevronUp, LoaderCircle, Target, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import { ChallengeStatusBadge } from "@/components/challenges/ChallengeStatusBadge"
 import {
   formatCurrencyBRL,
   formatDateBR,
   getChallengeCampaignKind,
   getChallengeCampaignKindLabel,
+  getChallengeLifecycleLabel,
   getChallengeLifecycleStatus,
+  getChallengeMetaFocusLabel,
   getMetaTypeLabel,
+  isClosedChallengeStatus,
   type Challenge,
+  type ChallengeMeta,
 } from "@/lib/challenges"
 
 export function ChallengeCard({
@@ -20,6 +25,7 @@ export function ChallengeCard({
   onAccept,
   onDismiss,
   detailsState = "closed",
+  inlineExpansion,
 }: {
   challenge: Challenge
   mode: "manager" | "seller"
@@ -27,6 +33,7 @@ export function ChallengeCard({
   onAccept?: (challenge: Challenge) => void
   onDismiss?: (challenge: Challenge) => void
   detailsState?: "closed" | "loading" | "open"
+  inlineExpansion?: ReactNode
 }) {
   const metas = challenge.participant?.metas ?? challenge.metas ?? []
   const participant = challenge.participant
@@ -41,10 +48,7 @@ export function ChallengeCard({
   const participantProgress = Math.round(Number(participant?.resumo?.percentualGeral ?? 0))
   const completedMetas = Number(participant?.resumo?.metasConcluidas ?? 0)
   const totalMetas = Number(participant?.resumo?.totalMetas ?? metas.length)
-  const isSellerAvailable = mode === "seller" && kind === "DESAFIO" && ["DISPONIVEL"].includes(participant?.statusParticipacao ?? "")
-  const metaHighlights = metas.slice(0, 2).map((meta) => getMetaTypeLabel(meta.tipoMeta))
-  const remainingMetaCount = Math.max(metas.length - metaHighlights.length, 0)
-  const detailsButtonLabel = detailsState === "loading" ? "Abrindo..." : detailsState === "open" ? "Fechar detalhes" : "Ver detalhes"
+  const isSellerAvailable = mode === "seller" && kind === "DESAFIO" && ["DISPONIVEL", "CONVIDADO"].includes(String(participant?.statusParticipacao ?? "").toUpperCase())
   const detailsButtonIcon = detailsState === "loading"
     ? <LoaderCircle className="ml-2 h-4 w-4 animate-spin" />
     : detailsState === "open"
@@ -52,91 +56,115 @@ export function ChallengeCard({
       : <ArrowRight className="ml-2 h-4 w-4" />
 
   if (mode === "seller") {
+    const progressBarClass = kind === "BONUS"
+      ? "bg-gradient-to-r from-amber-400 to-orange-400"
+      : participantProgress >= 100
+        ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
+        : "bg-gradient-to-r from-cyan-400 via-blue-400 to-emerald-400"
+
+    const participantStatus = String(participant?.statusParticipacao ?? "").toUpperCase()
+    const isClosed = ["CONCLUIDO", "EXPIRADO"].includes(participantStatus) || isClosedChallengeStatus(lifecycleStatus)
+    const isInProgress = ["ACEITO", "EM_ANDAMENTO"].includes(participantStatus)
+    const openActionLabel = isClosed ? "Ver resultado" : isInProgress ? "Acompanhar agora" : "Ver detalhes"
+    const detailsButtonLabel = detailsState === "loading" ? "Abrindo..." : detailsState === "open" ? "Fechar" : openActionLabel
+
+    const lifecycleLabel = getChallengeLifecycleLabel(challenge)
+    const isLifecycleClosed = isClosedChallengeStatus(lifecycleStatus)
+    const isUrgent = lifecycleLabel.includes("24h")
+
+    const metaHighlights = metas.slice(0, 2).map((meta) => {
+      const typeLabel = getMetaTypeLabel(meta.tipoMeta)
+      const focusLabel = getChallengeMetaFocusLabel(meta)
+      return focusLabel ? `${typeLabel}: ${focusLabel}` : typeLabel
+    })
+    const remainingMetaCount = Math.max(metas.length - metaHighlights.length, 0)
+
     return (
       <article
-        className={`rounded-[30px] border p-6 shadow-[0_26px_90px_rgba(0,0,0,0.22)] ${
+        className={`rounded-[24px] border p-5 sm:p-6 transition-shadow duration-200 ${
           kind === "BONUS"
-            ? "border-amber-300/14 bg-[linear-gradient(145deg,rgba(17,24,39,0.96),rgba(8,13,24,0.98),rgba(120,53,15,0.16))]"
+            ? "border-amber-300/15 bg-[linear-gradient(160deg,rgba(14,18,30,0.98),rgba(10,13,21,0.98),rgba(100,45,12,0.10))]"
             : isSellerAvailable
-              ? "border-cyan-300/18 bg-[linear-gradient(145deg,rgba(17,24,39,0.96),rgba(8,13,24,0.98),rgba(8,145,178,0.18))]"
-              : "border-white/10 bg-[linear-gradient(145deg,rgba(17,24,39,0.96),rgba(8,13,24,0.98),rgba(6,78,59,0.18))]"
+              ? "border-cyan-300/20 bg-[linear-gradient(160deg,rgba(14,18,30,0.98),rgba(10,13,21,0.98),rgba(8,130,165,0.10))]"
+              : "border-white/[0.08] bg-[linear-gradient(160deg,rgba(14,18,30,0.98),rgba(10,13,21,0.98))]"
         }`}
       >
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <span
-                className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                  kind === "BONUS"
-                    ? "border-amber-200/18 bg-amber-200/10 text-amber-50"
-                    : "border-cyan-300/18 bg-cyan-300/10 text-cyan-50"
-                }`}
-              >
-                {kind === "BONUS" ? "Bonus mensal" : "Desafio"}
+        {/* Tags + data + lifecycle label */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-widest ${
+            kind === "BONUS"
+              ? "border-amber-300/22 bg-amber-300/[0.08] text-amber-100"
+              : "border-cyan-300/20 bg-cyan-300/[0.07] text-cyan-100"
+          }`}>
+            {kind === "BONUS" ? "Bônus" : "Desafio"}
+          </span>
+          {participant && kind === "DESAFIO" ? (
+            <ChallengeStatusBadge status={participant.statusParticipacao} scope="participant" />
+          ) : null}
+          <div className="ml-auto flex items-center gap-2">
+            <span className="text-[11px] text-white/28">
+              {formatDateBR(challenge.dataInicio)} – {formatDateBR(challenge.dataFim)}
+            </span>
+            {lifecycleLabel ? (
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+                isLifecycleClosed
+                  ? "border-white/10 bg-white/5 text-white/35"
+                  : isUrgent
+                    ? "border-amber-400/20 bg-amber-400/10 text-amber-300"
+                    : "border-cyan-400/20 bg-cyan-400/10 text-cyan-300"
+              }`}>
+                {lifecycleLabel}
               </span>
-              {participant && kind === "DESAFIO" ? <ChallengeStatusBadge status={participant.statusParticipacao} scope="participant" /> : null}
-              <span className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white/60">
-                {formatDateBR(challenge.dataInicio)} ate {formatDateBR(challenge.dataFim)}
-              </span>
-            </div>
-
-            <h3 className="mt-4 text-2xl font-black tracking-tight text-white">{challenge.titulo}</h3>
-            <p className="mt-3 max-w-3xl text-sm leading-7 text-white/62">
-              {challenge.descricao || (kind === "BONUS" ? "Meta mensal automatica para acompanhar seu ritmo comercial." : "Campanha comercial pronta para voce entrar em acao.")}
-            </p>
-          </div>
-
-          <div className="rounded-[24px] border border-emerald-300/14 bg-emerald-300/[0.07] px-5 py-4 xl:min-w-[260px] xl:text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-100/68">
-              {kind === "BONUS" ? "Bonus do mes" : "Recompensa"}
-            </p>
-            <p className="mt-2 text-3xl font-black tracking-tight text-white">{participantPotentialReward}</p>
-            <p className="mt-2 text-sm text-white/58">Ja liberado: {participantUnlockedReward}</p>
+            ) : null}
           </div>
         </div>
 
-        <div className="mt-6 rounded-[24px] border border-white/10 bg-black/20 p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/42">Progresso</p>
-              <p className="mt-2 text-sm text-white/64">
-                {metaHighlights.length
-                  ? `${metaHighlights.join(" | ")}${remainingMetaCount > 0 ? ` | +${remainingMetaCount} meta(s)` : ""}`
-                  : "As metas desta campanha aparecem assim que o cadastro for concluido."}
-              </p>
-            </div>
-            <div className="text-sm font-semibold text-white">
-              {participantProgress}% | {completedMetas}/{totalMetas} meta(s)
-            </div>
+        {/* Título + Prêmio */}
+        <div className="mt-4 flex items-start justify-between gap-5">
+          <div className="min-w-0">
+            <h3 className="text-xl font-bold tracking-tight text-white leading-snug">{challenge.titulo}</h3>
+            {challenge.descricao ? (
+              <p className="mt-1.5 text-[13px] leading-6 text-white/42 line-clamp-2">{challenge.descricao}</p>
+            ) : null}
           </div>
+          <div className="shrink-0 text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/32">Prêmio</p>
+            <p className="mt-0.5 text-[22px] font-black tracking-tight text-white">{participantPotentialReward}</p>
+            {Number(participant?.premioTotalLiberado ?? 0) > 0 ? (
+              <p className="mt-0.5 text-[11px] font-semibold text-emerald-400">{participantUnlockedReward} liberados</p>
+            ) : null}
+          </div>
+        </div>
 
-          <div className="mt-4 h-2.5 rounded-full bg-white/10">
+        {/* Progresso */}
+        <div className="mt-5 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[12px] text-white/38">
+              {metaHighlights.length
+                ? `${metaHighlights.join(" · ")}${remainingMetaCount > 0 ? ` · +${remainingMetaCount}` : ""}`
+                : "Metas no detalhe"}
+            </span>
+            <span className="text-sm font-bold text-white tabular-nums">{participantProgress}%</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
             <div
-              className={`h-2.5 rounded-full ${
-                kind === "BONUS"
-                  ? "bg-[linear-gradient(90deg,#f59e0b,#f97316,#fb7185)]"
-                  : "bg-[linear-gradient(90deg,#22d3ee,#60a5fa,#34d399)]"
-              }`}
+              className={`h-full rounded-full transition-[width] duration-500 ${progressBarClass}`}
               style={{ width: `${Math.min(Math.max(participantProgress, 0), 100)}%` }}
             />
           </div>
-
-          <div className="mt-4 flex flex-wrap gap-3 text-sm text-white/58">
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-              <Target className="h-4 w-4 text-cyan-200" />
-              {totalMetas} meta(s)
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">
-              <TrendingUp className="h-4 w-4 text-emerald-200" />
-              Faturamento: {formatCurrencyBRL(impact?.realizedRevenue ?? 0)}
-            </span>
-          </div>
+          <p className="text-[11px] text-white/22">
+            {completedMetas}/{totalMetas} metas concluídas · {formatCurrencyBRL(impact?.realizedRevenue ?? 0)} faturados
+          </p>
         </div>
 
-        <div className="mt-6 flex flex-wrap gap-3">
+        {/* Ações */}
+        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-white/[0.05] pt-4">
           {isSellerAvailable && onAccept ? (
-            <Button className="rounded-2xl bg-[linear-gradient(135deg,#34d399,#22d3ee)] text-black hover:opacity-95" onClick={() => onAccept(challenge)}>
-              Participar
+            <Button
+              className="h-8 rounded-full bg-cyan-500 px-4 text-[13px] font-bold text-black hover:bg-cyan-400 active:scale-[0.98]"
+              onClick={() => onAccept(challenge)}
+            >
+              Participar do desafio
             </Button>
           ) : null}
 
@@ -145,26 +173,16 @@ export function ChallengeCard({
               key={`${challenge.id}-${cta.label}`}
               asChild
               variant="outline"
-              className="rounded-2xl border-white/15 bg-white/6 text-white hover:bg-white/10"
+              className="h-8 rounded-[12px] border-white/10 bg-white/[0.04] text-[13px] text-white hover:bg-white/[0.07]"
             >
               <Link href={cta.href}>{cta.label}</Link>
             </Button>
           ))}
 
-          {isSellerAvailable && onDismiss ? (
-            <Button
-              variant="outline"
-              className="rounded-2xl border-white/15 bg-white/6 text-white hover:bg-white/10"
-              onClick={() => onDismiss(challenge)}
-            >
-              Nao participar
-            </Button>
-          ) : null}
-
           <Button
             variant="outline"
-            className={`rounded-2xl border-white/15 text-white hover:bg-white/10 ${
-              detailsState === "open" ? "bg-white/10" : "bg-white/6"
+            className={`ml-auto h-8 rounded-full border-white/10 text-[13px] text-white/65 hover:bg-white/[0.04] hover:text-white ${
+              detailsState === "open" ? "bg-white/[0.05]" : "bg-transparent"
             }`}
             disabled={detailsState === "loading"}
             aria-expanded={detailsState === "open"}
@@ -173,12 +191,46 @@ export function ChallengeCard({
             {detailsButtonLabel}
             {detailsButtonIcon}
           </Button>
+
+          {isSellerAvailable && onDismiss ? (
+            <Button
+              variant="ghost"
+              className="h-8 rounded-full border border-white/10 px-3 text-[13px] text-white/50 hover:border-white/20 hover:bg-white/[0.03] hover:text-white/70"
+              onClick={() => onDismiss(challenge)}
+            >
+              Recusar
+            </Button>
+          ) : null}
         </div>
+
+        {/* Expansão inline — detalhe abre dentro do próprio card */}
+        <Collapsible open={detailsState !== "closed"}>
+          <CollapsibleContent
+            forceMount
+            className="overflow-hidden data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down"
+          >
+            <div className="mt-5 border-t border-white/[0.07] pt-5">
+              {detailsState === "loading" ? (
+                <div className="space-y-4">
+                  <div className="h-28 animate-pulse rounded-[24px] border border-white/8 bg-white/5" />
+                  <div className="h-52 animate-pulse rounded-[24px] border border-white/8 bg-white/5" />
+                </div>
+              ) : (
+                inlineExpansion ?? null
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </article>
     )
   }
 
-  const managerMetaHighlights = challenge.metas.slice(0, 3).map((meta) => getMetaTypeLabel(meta.tipoMeta))
+  const detailsButtonLabel = detailsState === "loading" ? "Abrindo..." : detailsState === "open" ? "Fechar detalhes" : "Ver detalhes"
+  const managerMetaHighlights = challenge.metas.slice(0, 3).map((meta: ChallengeMeta) => {
+    const typeLabel = getMetaTypeLabel(meta.tipoMeta)
+    const focusLabel = getChallengeMetaFocusLabel(meta)
+    return focusLabel ? `${typeLabel}: ${focusLabel}` : typeLabel
+  })
   const managerRemainingMetaCount = Math.max(challenge.metas.length - managerMetaHighlights.length, 0)
 
   return (

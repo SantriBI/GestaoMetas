@@ -38,6 +38,24 @@ export function ChallengeExpandableCard({
 }) {
   const expanded = isOpen || isLoading
 
+  // Modo seller: o detalhe expande dentro do próprio card, sem bloco externo separado
+  if (mode === "seller") {
+    return (
+      <div id={anchorId}>
+        <ChallengeCard
+          challenge={challenge}
+          mode={mode}
+          onOpen={onToggle}
+          onAccept={onAccept}
+          onDismiss={onDismiss}
+          detailsState={isLoading ? "loading" : isOpen ? "open" : "closed"}
+          inlineExpansion={detailContent}
+        />
+      </div>
+    )
+  }
+
+  // Modo manager: painel separado abaixo do card (comportamento original)
   return (
     <Collapsible open={expanded}>
       <div id={anchorId} className="space-y-3">
@@ -45,8 +63,6 @@ export function ChallengeExpandableCard({
           challenge={challenge}
           mode={mode}
           onOpen={onToggle}
-          onAccept={onAccept}
-          onDismiss={onDismiss}
           detailsState={isLoading ? "loading" : isOpen ? "open" : "closed"}
         />
 

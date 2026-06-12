@@ -265,8 +265,19 @@ function buildImpactPayload({
   realizedOperations,
   baseline,
 }) {
+  const participantCount = numberValue(eligibleParticipants)
   const bonusPotential = roundCurrency(
-    (metas ?? []).reduce((sum, meta) => sum + numberValue(meta?.recompensaValor), 0) * numberValue(eligibleParticipants)
+    (metas ?? []).reduce((sum, meta) => {
+      const metaValor = numberValue(meta?.metaValor)
+      const recompensa = numberValue(meta?.recompensaValor)
+      const perParticipantRevenue = participantCount > 0
+        ? numberValue(potentialOperations?.directRevenuePotential) / participantCount
+        : metaValor
+      const multiplierEstimate = metaValor > 0
+        ? Math.max(1, Math.floor(perParticipantRevenue / metaValor))
+        : 1
+      return sum + recompensa * multiplierEstimate
+    }, 0) * participantCount
   )
 
   const potentialRevenue = resolveRevenueProjection({

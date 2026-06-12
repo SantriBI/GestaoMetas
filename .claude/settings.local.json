@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(Select-String \"desafios\")",
+      "PowerShell(netstat -ano)",
+      "PowerShell(Get-Process -Id 21740 -ErrorAction SilentlyContinue)",
+      "Bash(xargs grep -l \"area-ataque\\\\|assistente-vendas\\\\|areaAtaque\\\\|assistenteVendas\")"
+    ]
+  }
+}
