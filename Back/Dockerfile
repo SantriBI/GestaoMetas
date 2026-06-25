@@ -13,7 +13,7 @@ RUN npm ci
 FROM deps AS dev
 ENV NODE_ENV=development
 COPY . .
-EXPOSE 3007
+EXPOSE 3001
 CMD ["npm", "run", "dev"]
 
 # Imagem final de producao, mais simples e previsivel.
@@ -22,5 +22,5 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY . .
-EXPOSE 3007
+EXPOSE 3001
 CMD ["npm", "start"]

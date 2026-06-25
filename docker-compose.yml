@@ -5,6 +5,9 @@ services:
       context: ./Front
       dockerfile: Dockerfile
       target: prod
+      args:
+        NEXT_PUBLIC_API_URL: http://backend:${BACKEND_PORT:-3001}
+        BACKEND_PORT: ${BACKEND_PORT:-3001}
     environment:
       # Dentro da rede do Compose o frontend deve falar com o servico backend.
       NEXT_PUBLIC_API_URL: http://backend:${BACKEND_PORT:-3001}
@@ -122,7 +125,12 @@ services:
 
 networks:
   app_net:
+    name: gestao_metas_app_net
     driver: bridge
+    ipam:
+      config:
+        - subnet: 10.100.10.0/24
+          gateway: 10.100.10.1
 
 volumes:
   mysql_data:

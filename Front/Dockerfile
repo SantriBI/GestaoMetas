@@ -20,6 +20,12 @@ CMD ["sh", "-c", "npm run dev -- --hostname 0.0.0.0 --port ${PORT:-3000}"]
 # Build de producao com saida standalone do Next.js.
 FROM deps AS builder
 ENV NODE_ENV=production
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_BACKEND_PORT
+ARG BACKEND_PORT
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_BACKEND_PORT=${NEXT_PUBLIC_BACKEND_PORT}
+ENV BACKEND_PORT=${BACKEND_PORT}
 COPY . .
 RUN npm run build
 

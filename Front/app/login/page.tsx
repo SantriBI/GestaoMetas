@@ -33,10 +33,10 @@ export default function LoginPage() {
         }),
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => null)
 
       if (!response.ok) {
-        setError(data.error || "Erro ao realizar login")
+        setError(data?.error || `Erro ao realizar login (${response.status})`)
         setIsLoading(false)
         return
       }
