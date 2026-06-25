@@ -81,7 +81,7 @@ services:
     container_name: gestao-metas-mysql
     image: mysql:8.4
     environment:
-      # Banco base para desenvolvimento local. 
+      # Banco base para desenvolvimento local.
       MYSQL_DATABASE: ${MYSQL_DATABASE:-gestao_metas}
       MYSQL_USER: ${MYSQL_USER:-app_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me}

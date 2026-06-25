@@ -24,6 +24,18 @@ function tenantDbName(empresaId, orgNome) {
   return `org_${empresaId}_${slugify(orgNome)}`
 }
 
+function mysqlStringLiteral(value) {
+  return `'${String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`
+}
+
+function mysqlUserAccount(user, host) {
+  return `${mysqlStringLiteral(user)}@${mysqlStringLiteral(host)}`
+}
+
+function mysqlIdentifier(value) {
+  return `\`${String(value).replace(/`/g, "``")}\``
+}
+
 function getAdminConfig() {
   return {
     host: process.env.MYSQL_ADMIN_HOST ?? process.env.MYSQL_HOST ?? "localhost",
@@ -179,6 +191,33 @@ async function ensureTenantUsuariosAuthColumn(empresaId, columnName, definition)
   await ensureUsuariosAuthColumn(pool, dbName, columnName, definition)
 }
 
+async function ensureGrantUserExists(conn, grantUser, userHost) {
+  const password = process.env.MYSQL_PASSWORD
+  if (!password) {
+    throw new Error("MYSQL_PASSWORD e obrigatorio para criar o usuario MySQL do tenant.")
+  }
+
+  const account = mysqlUserAccount(grantUser, userHost)
+  const passwordLiteral = mysqlStringLiteral(password)
+  await conn.query(`CREATE USER IF NOT EXISTS ${account} IDENTIFIED BY ${passwordLiteral}`)
+  await conn.query(`ALTER USER ${account} IDENTIFIED BY ${passwordLiteral}`)
+
+  const centralDb = process.env.MYSQL_DATABASE ?? process.env.MYSQL_DB_NAME ?? process.env.DB_NAME
+  if (centralDb) {
+    await conn.query(`GRANT ALL PRIVILEGES ON ${mysqlIdentifier(centralDb)}.* TO ${account}`)
+  }
+
+  const [tenantDbs] = await conn.query(
+    "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME LIKE 'org\\_%' ESCAPE '\\\\'"
+  )
+  for (const row of tenantDbs) {
+    const dbName = row.SCHEMA_NAME ?? row.schema_name
+    if (dbName) {
+      await conn.query(`GRANT ${TENANT_GRANT_PRIVS} ON ${mysqlIdentifier(dbName)}.* TO ${account}`)
+    }
+  }
+}
+
 export async function ensureTenantDatabaseForOrg(empresaId, orgNome) {
   const grantUser = process.env.MYSQL_GRANT_USER ?? process.env.MYSQL_USER
   const userHost = process.env.MYSQL_USER_HOST ?? "%"
@@ -191,12 +230,20 @@ export async function ensureTenantDatabaseForOrg(empresaId, orgNome) {
   const adminCfg = getAdminConfig()
   const conn = await mysql.createConnection(adminCfg)
 
+  let dbAlreadyExisted = true
   try {
+    const [existingDbs] = await conn.query(
+      "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?",
+      [dbName]
+    )
+    dbAlreadyExisted = existingDbs.length > 0
+
     await conn.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`)
     await conn.query(`USE \`${dbName}\``)
     await conn.query(TENANT_SCHEMA_DDL)
 
     if (grantUser && grantUser !== adminCfg.user) {
+      await ensureGrantUserExists(conn, grantUser, userHost)
       await conn.query(
         `GRANT ${TENANT_GRANT_PRIVS} ON \`${dbName}\`.* TO '${grantUser}'@'${userHost}'`
       )
@@ -209,6 +256,11 @@ export async function ensureTenantDatabaseForOrg(empresaId, orgNome) {
     )
 
     return dbName
+  } catch (error) {
+    if (!dbAlreadyExisted) {
+      await conn.query(`DROP DATABASE IF EXISTS \`${dbName}\``).catch(() => {})
+    }
+    throw error
   } finally {
     await conn.end()
   }
