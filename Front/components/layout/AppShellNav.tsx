@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Home, LayoutDashboard, LogOut, MessageSquareMore, PiggyBank, UserRound } from "lucide-react"
+import { Building2, Home, LayoutDashboard, LogOut, MessageSquareMore, PiggyBank, UserCog, UserRound } from "lucide-react"
 import Image from "next/image"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { NotificationBell } from "@/components/notifications/NotificationBell"
@@ -40,13 +40,22 @@ export function AppShellNav({ user }: AppShellNavProps) {
   }
 
   const lifeGoalHref = "/vendedor/minha-meta-de-vida"
-  const navItems = [
-    { href: dashboardHref, label: "Home", icon: Home },
-    { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
-    ...(user?.role === "VENDEDOR" ? [{ href: lifeGoalHref, label: "Meta de Vida", icon: PiggyBank }] : []),
-    { href: "/feed", label: "Feed", icon: MessageSquareMore },
-    { href: "/perfil", label: "Perfil", icon: UserRound },
-  ]
+
+  const isAdmin = user?.role === "ADMIN"
+
+  const navItems = isAdmin
+    ? [
+        { href: "/admin/organizacoes", label: "Organizações", icon: Building2 },
+        { href: "/perfil", label: "Perfil", icon: UserRound },
+      ]
+    : [
+        { href: dashboardHref, label: "Home", icon: Home },
+        { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
+        ...(user?.role === "VENDEDOR" ? [{ href: lifeGoalHref, label: "Meta de Vida", icon: PiggyBank }] : []),
+        { href: "/feed", label: "Feed", icon: MessageSquareMore },
+        ...(user?.role === "GERENTE" ? [{ href: "/usuarios", label: "Usuarios", icon: UserCog }] : []),
+        { href: "/perfil", label: "Perfil", icon: UserRound },
+      ]
 
   useEffect(() => {
     if (!user) return
@@ -137,6 +146,10 @@ export function AppShellNav({ user }: AppShellNavProps) {
               const isActive =
                 item.label === "Perfil"
                   ? pathname === "/perfil"
+                  : item.label === "Usuarios"
+                    ? pathname.startsWith("/usuarios")
+                  : item.label === "Organizações"
+                    ? pathname.startsWith("/admin/organizacoes")
                   : item.label === "Meta de Vida"
                     ? pathname.startsWith("/vendedor/minha-meta-de-vida")
                   : item.label === "Feed"
@@ -145,6 +158,7 @@ export function AppShellNav({ user }: AppShellNavProps) {
                     ? !pathname.startsWith("/perfil")
                       && !pathname.startsWith("/vendedor/minha-meta-de-vida")
                       && !pathname.startsWith("/feed")
+                      && !pathname.startsWith("/usuarios")
                     : false
 
               return (
@@ -188,7 +202,9 @@ export function AppShellNav({ user }: AppShellNavProps) {
               <span className="block max-w-[180px] truncate text-xs font-semibold uppercase tracking-[0.08em]">
                 {user?.nome ?? "Usuario"}
               </span>
-              <span className={cn("block text-xs", palette.role)}>{user?.role === "VENDEDOR" ? "Vendedor" : "Gerente"}</span>
+              <span className={cn("block text-xs", palette.role)}>
+                {user?.role === "VENDEDOR" ? "Vendedor" : user?.role === "ADMIN" ? "Administrador" : "Gerente"}
+              </span>
             </span>
           </button>
 

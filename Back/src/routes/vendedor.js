@@ -1,10 +1,13 @@
-﻿import express from "express"
+import express from "express"
 import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import {
   getRankingVendorsDayViewName,
   getRankingVendorsViewName,
-  getUsersTableName,
 } from "../db/oracleObjectNames.js"
+import { findAuthUserBySkVendedor } from "../services/authUsersService.js"
+import { requireAuth } from "../middleware/auth.js"
+import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
 
 const router = express.Router()
 
@@ -27,21 +30,51 @@ function normalizarClassificacao(value) {
     .replace(/[\u0300-\u036f]/g, "")
 }
 
-async function resolverVendedorId(sk_vendedor) {
+function getEmpresaScope(req, res) {
+  const empresaId = getScopedEmpresaId(req)
+  if (!empresaId && !canUseGlobalEmpresaScope(req)) {
+    res.status(403).json({ error: "Empresa do usuario nao encontrada." })
+    return { allowed: false, empresaId: null }
+  }
+
+  return { allowed: true, empresaId }
+}
+
+async function getQueryContext(empresaId) {
+  if (empresaId) {
+    return {
+      query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
+      rankingView: "VW_RANKING_VENDEDORES",
+      rankingDayView: "VW_RANKING_VENDEDORES_DIA",
+      orcamentosView: "VW_ORCAMENTOS_GESTAO_METAS",
+    }
+  }
+
   const [rankingView, rankingDayView] = await Promise.all([
     getRankingVendorsViewName(),
     getRankingVendorsDayViewName(),
   ])
-  const vendedorRows = await query(
+
+  return {
+    query,
+    rankingView,
+    rankingDayView,
+    orcamentosView: "DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS",
+  }
+}
+
+async function resolverVendedorId(sk_vendedor, context = null) {
+  const ctx = context ?? await getQueryContext(null)
+  const vendedorRows = await ctx.query(
     `
     SELECT vendedor_id
     FROM (
       SELECT vendedor_id
-      FROM ${rankingView}
+      FROM ${ctx.rankingView}
       WHERE sk_vendedor = :sk_vendedor
       UNION ALL
       SELECT vendedor_id
-      FROM ${rankingDayView}
+      FROM ${ctx.rankingDayView}
       WHERE sk_vendedor = :sk_vendedor
     )
     WHERE ROWNUM = 1
@@ -57,30 +90,19 @@ async function resolverVendedorId(sk_vendedor) {
 }
 
 async function carregarUsuarioFallback(sk_vendedor) {
-  const userTable = await getUsersTableName()
-  const rows = await query(
-    `
-    SELECT nome, empresa_id, sk_vendedor
-    FROM ${userTable}
-    WHERE sk_vendedor = :sk_vendedor
-    FETCH FIRST 1 ROWS ONLY
-    `,
-    { sk_vendedor }
-  )
-
-  return rows[0] ? normalizeRow(rows[0]) : null
+  return findAuthUserBySkVendedor(sk_vendedor)
 }
 
-router.get("/vendedor/:sk_vendedor", async (req, res) => {
+router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
   try {
     const { sk_vendedor } = req.params
-    const [rankingView, rankingDayView] = await Promise.all([
-      getRankingVendorsViewName(),
-      getRankingVendorsDayViewName(),
-    ])
+    const scope = getEmpresaScope(req, res)
+    if (!scope.allowed) return
+
+    const context = await getQueryContext(scope.empresaId)
 
     const [mensalRows, diarioRows, totalVendedoresRows, usuarioFallback] = await Promise.all([
-      query(
+      context.query(
         `
         SELECT *
         FROM (
@@ -92,14 +114,14 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
             perc_atingimento,
             ranking_atingimento,
             clientes_mes
-          FROM ${rankingView}
+          FROM ${context.rankingView}
           WHERE sk_vendedor = :sk_vendedor
         )
         WHERE ROWNUM = 1
         `,
         { sk_vendedor }
       ),
-      query(
+      context.query(
         `
         SELECT *
         FROM (
@@ -112,17 +134,17 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
             dias_restantes,
             status_dia,
             perc_performance_dia
-          FROM ${rankingDayView}
+          FROM ${context.rankingDayView}
           WHERE sk_vendedor = :sk_vendedor
         )
         WHERE ROWNUM = 1
         `,
         { sk_vendedor }
       ),
-      query(
+      context.query(
         `
         SELECT COUNT(*) AS total_vendedores
-        FROM ${rankingView}
+        FROM ${context.rankingView}
         `
       ),
       carregarUsuarioFallback(sk_vendedor),
@@ -164,10 +186,13 @@ router.get("/vendedor/:sk_vendedor", async (req, res) => {
   }
 })
 
-router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
+router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
   try {
     const { sk_vendedor } = req.params
-    const rankingView = await getRankingVendorsViewName()
+    const scope = getEmpresaScope(req, res)
+    if (!scope.allowed) return
+
+    const context = await getQueryContext(scope.empresaId)
 
     // Parte das consultas depende apenas de sk_vendedor.
     // Elas rodam em paralelo enquanto resolvemos o vendedor_id usado nos orcamentos.
@@ -180,8 +205,8 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
       rfvRows,
       ultimasVendasRows,
     ] = await Promise.all([
-      resolverVendedorId(sk_vendedor),
-      query(
+      resolverVendedorId(sk_vendedor, context),
+      context.query(
         `
         SELECT
           nome_vendedor,
@@ -189,13 +214,13 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
           meta_mes,
           perc_atingimento,
           clientes_mes
-        FROM ${rankingView}
+        FROM ${context.rankingView}
         WHERE sk_vendedor = :sk_vendedor
         FETCH FIRST 1 ROWS ONLY
         `,
         { sk_vendedor }
       ),
-      query(
+      context.query(
         `
         WITH base AS (
           SELECT
@@ -227,7 +252,7 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
         `,
         { sk_vendedor }
       ),
-      query(
+      context.query(
         `
         WITH base AS (
           SELECT
@@ -262,7 +287,7 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
         `,
         { sk_vendedor }
       ),
-      query(
+      context.query(
         `
         SELECT
           nome_cliente,
@@ -298,7 +323,7 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
         `,
         { sk_vendedor }
       ),
-      query(
+      context.query(
         `
         SELECT classificacao, COUNT(*) AS total
         FROM DM_VENDAS.FATO_RFV_VENDEDOR
@@ -307,7 +332,7 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
         `,
         { sk_vendedor }
       ),
-      query(
+      context.query(
         `
         SELECT
           nome_cliente,
@@ -344,7 +369,7 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
       ),
     ])
 
-    const orcamentosRows = await query(
+    const orcamentosRows = await context.query(
       `
       SELECT
         -- Conta quantos orcamentos ainda podem virar venda.
@@ -353,7 +378,7 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
         -- representam oportunidades comerciais abertas.
         COUNT(*) AS orcamentos_abertos,
         NVL(SUM(valor), 0) AS valor_orcamentos
-      FROM DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS
+      FROM ${context.orcamentosView}
       WHERE vendedor_id = :vendedor_id
         AND agrupamento = 'Possiveis Vendas'
       `,
@@ -439,13 +464,17 @@ router.get("/vendedor-panorama/:sk_vendedor", async (req, res) => {
   }
 })
 
-router.get("/vendedor/:sk_vendedor/oportunidades", async (req, res) => {
+router.get("/vendedor/:sk_vendedor/oportunidades", requireAuth, async (req, res) => {
   try {
     const { sk_vendedor } = req.params
-    const vendedor_id = await resolverVendedorId(sk_vendedor)
+    const scope = getEmpresaScope(req, res)
+    if (!scope.allowed) return
+
+    const context = await getQueryContext(scope.empresaId)
+    const vendedor_id = await resolverVendedorId(sk_vendedor, context)
 
     const [resumoRows, orcamentosRows] = await Promise.all([
-      query(
+      context.query(
         `
         WITH base AS (
           SELECT
@@ -460,7 +489,7 @@ router.get("/vendedor/:sk_vendedor/oportunidades", async (req, res) => {
                 )
               )
             ) AS status_norm
-          FROM DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS
+          FROM ${context.orcamentosView}
           WHERE vendedor_id = :vendedor_id
         )
         SELECT
@@ -473,7 +502,7 @@ router.get("/vendedor/:sk_vendedor/oportunidades", async (req, res) => {
         `,
         { vendedor_id }
       ),
-      query(
+      context.query(
         `
         SELECT
           id,
@@ -481,7 +510,7 @@ router.get("/vendedor/:sk_vendedor/oportunidades", async (req, res) => {
           valor,
           data,
           telefone
-        FROM DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS
+        FROM ${context.orcamentosView}
         WHERE vendedor_id = :vendedor_id
         ORDER BY data DESC
         `,

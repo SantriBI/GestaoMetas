@@ -16,7 +16,7 @@ const pool = mysql.createPool({
   host: process.env.MYSQL_HOST ?? process.env.DB_HOST,
   user: process.env.MYSQL_USER ?? process.env.DB_USER,
   password: process.env.MYSQL_PASSWORD ?? process.env.DB_PASSWORD,
-  database: process.env.MYSQL_DB_NAME ?? process.env.DB_NAME,
+  database: process.env.MYSQL_DATABASE ?? process.env.MYSQL_DB_NAME ?? process.env.DB_NAME ?? "gestao_metas",
   port: Number(process.env.MYSQL_PORT ?? 3306),
   waitForConnections: true,
   connectionLimit: 10

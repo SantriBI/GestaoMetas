@@ -1,9 +1,12 @@
 import express from "express"
 import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import {
   getRankingVendorsDayViewName,
   getRankingVendorsViewName,
 } from "../db/oracleObjectNames.js"
+import { requireAuth } from "../middleware/auth.js"
+import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
 
 const router = express.Router()
 
@@ -23,31 +26,54 @@ function normalizeRow(row) {
   }
 }
 
-router.get("/ranking-vendedores", async (req, res) => {
+async function getQueryContext(empresaId) {
+  if (empresaId) {
+    return {
+      query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
+      rankingView: "VW_RANKING_VENDEDORES",
+      rankingDayView: "VW_RANKING_VENDEDORES_DIA",
+    }
+  }
+
+  const [rankingView, rankingDayView] = await Promise.all([
+    getRankingVendorsViewName(),
+    getRankingVendorsDayViewName(),
+  ])
+
+  return {
+    query,
+    rankingView,
+    rankingDayView,
+  }
+}
+
+router.get("/ranking-vendedores", requireAuth, async (req, res) => {
   try {
     const modo = req.query.modo || "mensal"
-    const [rankingView, rankingDayView] = await Promise.all([
-      getRankingVendorsViewName(),
-      getRankingVendorsDayViewName(),
-    ])
+    const empresaId = getScopedEmpresaId(req)
+    if (!empresaId && !canUseGlobalEmpresaScope(req)) {
+      return res.status(403).json({ error: "Empresa do usuario nao encontrada." })
+    }
+
+    const context = await getQueryContext(empresaId)
 
     let sql = ""
 
     if (modo === "diario") {
       sql = `
         SELECT *
-        FROM ${rankingDayView}
+        FROM ${context.rankingDayView}
         ORDER BY ranking_dia
       `
     } else {
       sql = `
         SELECT *
-        FROM ${rankingView}
+        FROM ${context.rankingView}
         ORDER BY ranking_atingimento
       `
     }
 
-    const rows = await query(sql)
+    const rows = await context.query(sql)
 
     res.json(rows.map(normalizeRow))
 

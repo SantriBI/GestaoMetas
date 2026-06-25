@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs"
 import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 
 const DEFAULT_TEMPLATES = [
   {
@@ -121,7 +122,16 @@ const SEGMENTS = [
   },
 ]
 
-let cachedCampanhaAtivacaoConfirmationSupport = null
+const cachedCampanhaAtivacaoConfirmationSupport = new Map()
+
+function getScopedQuery(empresaId) {
+  if (!empresaId) return query
+  return (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options)
+}
+
+function getScopeCacheKey(empresaId) {
+  return empresaId ? `empresa:${empresaId}` : "default"
+}
 
 function normalizarLinha(row) {
   return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key.toLowerCase(), value]))
@@ -225,7 +235,7 @@ function getSegmentConfig(segmento) {
   return item
 }
 
-function buildAccessScope({ role, sk_vendedor }) {
+function buildAccessScope({ role, sk_vendedor, empresa_id }) {
   const perfil = String(role ?? "").toUpperCase()
 
   if (perfil !== "VENDEDOR" && perfil !== "GERENTE") {
@@ -239,12 +249,14 @@ function buildAccessScope({ role, sk_vendedor }) {
   return {
     role: perfil,
     skVendedor: sk_vendedor ?? null,
+    empresaId: empresa_id ?? null,
     isGerente: perfil === "GERENTE",
+    query: getScopedQuery(empresa_id),
   }
 }
 
-async function tableExists(tableName) {
-  const rows = await query(
+async function tableExists(tableName, dbQuery = query) {
+  const rows = await dbQuery(
     `
     SELECT COUNT(*) AS total
     FROM USER_TABLES
@@ -256,18 +268,18 @@ async function tableExists(tableName) {
   return numero(rows[0]?.TOTAL ?? rows[0]?.total) > 0
 }
 
-async function nextTableId(tableName) {
-  const rows = await query(`SELECT NVL(MAX(id), 0) + 1 AS next_id FROM ${tableName}`)
+async function nextTableId(tableName, dbQuery = query) {
+  const rows = await dbQuery(`SELECT NVL(MAX(id), 0) + 1 AS next_id FROM ${tableName}`)
   return numero(rows[0]?.NEXT_ID ?? rows[0]?.next_id)
 }
 
-async function tableHasColumns(tableName, columnNames) {
+async function tableHasColumns(tableName, columnNames, dbQuery = query) {
   if (!columnNames.length) {
     return true
   }
 
   const normalizedColumns = columnNames.map((columnName) => `'${String(columnName).toUpperCase()}'`).join(", ")
-  const rows = await query(
+  const rows = await dbQuery(
     `
     SELECT COUNT(*) AS total
     FROM USER_TAB_COLUMNS
@@ -279,17 +291,19 @@ async function tableHasColumns(tableName, columnNames) {
   return numero(rows[0]?.TOTAL ?? rows[0]?.total) >= columnNames.length
 }
 
-async function campanhaAtivacaoSuportaConfirmacao() {
-  if (cachedCampanhaAtivacaoConfirmationSupport !== null) {
-    return cachedCampanhaAtivacaoConfirmationSupport
+async function campanhaAtivacaoSuportaConfirmacao(dbQuery = query, empresaId = null) {
+  const cacheKey = getScopeCacheKey(empresaId)
+  if (cachedCampanhaAtivacaoConfirmationSupport.has(cacheKey)) {
+    return cachedCampanhaAtivacaoConfirmationSupport.get(cacheKey)
   }
 
-  cachedCampanhaAtivacaoConfirmationSupport = await tableHasColumns("GM_TB_CAMPANHAS_ATIVACAO", [
+  const suportaConfirmacao = await tableHasColumns("CAMPANHAS_ATIVACAO", [
     "DATA_CONFIRMACAO",
     "ID_USUARIO_CONFIRMACAO",
     "NOME_USUARIO_CONFIRMACAO",
-  ])
-  return cachedCampanhaAtivacaoConfirmationSupport
+  ], dbQuery)
+  cachedCampanhaAtivacaoConfirmationSupport.set(cacheKey, suportaConfirmacao)
+  return suportaConfirmacao
 }
 
 function buildCampaignConfirmation(payload = {}) {
@@ -341,7 +355,7 @@ function classificacaoPredicate(segmentConfig) {
 async function fetchClientesRfv(segmentConfig, scope) {
   const source = buildRfvSource(scope)
 
-  const rows = await query(
+  const rows = await scope.query(
     `
     SELECT
       rfv.sk_cliente,
@@ -385,7 +399,7 @@ async function fetchClientesOrcamento(scope) {
     : "DM_VENDAS.FATO_RFV_VENDEDOR"
   const rfvBaseWhere = scope.isGerente ? "" : "WHERE sk_vendedor = :vendedor_id"
 
-  const rows = await query(
+  const rows = await scope.query(
     `
     WITH rfv_base AS (
       SELECT
@@ -542,12 +556,13 @@ async function getClientesBySegment({
   segmento,
   role,
   sk_vendedor,
+  empresa_id,
   messageBase,
   search,
   sortBy,
   sortDir,
 }) {
-  const scope = buildAccessScope({ role, sk_vendedor })
+  const scope = buildAccessScope({ role, sk_vendedor, empresa_id })
   const segmentConfig = getSegmentConfig(segmento)
   const templateBase = messageBase || getDefaultTemplateForSegment(segmentConfig.id).mensagem
 
@@ -602,12 +617,13 @@ export async function obterPreviewCampanha(params) {
 
 export async function listarTemplates({ role, sk_vendedor, empresa_id }) {
   const templates = [...DEFAULT_TEMPLATES]
+  const dbQuery = getScopedQuery(empresa_id)
 
-  if (!(await tableExists("GM_TB_TEMPLATES_MENSAGENS"))) {
+  if (!(await tableExists("TEMPLATES_MENSAGENS", dbQuery))) {
     return templates
   }
 
-  const rows = await query(
+  const rows = await dbQuery(
     `
     SELECT
       id,
@@ -619,7 +635,7 @@ export async function listarTemplates({ role, sk_vendedor, empresa_id }) {
       vendedor_id,
       empresa_id,
       data_criacao
-    FROM GM_TB_TEMPLATES_MENSAGENS
+    FROM TEMPLATES_MENSAGENS
     WHERE escopo = 'SISTEMA'
        OR (:empresa_id IS NOT NULL AND empresa_id = :empresa_id)
        OR (:role = 'VENDEDOR' AND vendedor_id = :sk_vendedor)
@@ -653,7 +669,9 @@ export async function listarTemplates({ role, sk_vendedor, empresa_id }) {
 }
 
 export async function criarTemplate(payload) {
-  if (!(await tableExists("GM_TB_TEMPLATES_MENSAGENS"))) {
+  const dbQuery = getScopedQuery(payload.empresa_id)
+
+  if (!(await tableExists("TEMPLATES_MENSAGENS", dbQuery))) {
     return {
       persisted: false,
       message: "Tabela TEMPLATES_MENSAGENS ainda não existe. Estrutura pronta para ativação.",
@@ -661,11 +679,11 @@ export async function criarTemplate(payload) {
     }
   }
 
-  const id = await nextTableId("GM_TB_TEMPLATES_MENSAGENS")
+  const id = await nextTableId("TEMPLATES_MENSAGENS", dbQuery)
 
-  await query(
+  await dbQuery(
     `
-    INSERT INTO GM_TB_TEMPLATES_MENSAGENS (
+    INSERT INTO TEMPLATES_MENSAGENS (
       id,
       nome_template,
       tipo,
@@ -703,7 +721,9 @@ export async function criarTemplate(payload) {
 }
 
 export async function atualizarTemplate(id, payload) {
-  if (!(await tableExists("GM_TB_TEMPLATES_MENSAGENS"))) {
+  const dbQuery = getScopedQuery(payload.empresa_id)
+
+  if (!(await tableExists("TEMPLATES_MENSAGENS", dbQuery))) {
     return {
       persisted: false,
       message: "Tabela TEMPLATES_MENSAGENS ainda não existe. Estrutura pronta para ativação.",
@@ -711,9 +731,9 @@ export async function atualizarTemplate(id, payload) {
     }
   }
 
-  await query(
+  await dbQuery(
     `
-    UPDATE GM_TB_TEMPLATES_MENSAGENS
+    UPDATE TEMPLATES_MENSAGENS
     SET nome_template = :nome_template,
         tipo = :tipo,
         classificacao_rfv = :classificacao_rfv,
@@ -739,6 +759,7 @@ export async function atualizarTemplate(id, payload) {
 }
 
 export async function criarCampanha(payload) {
+  const dbQuery = getScopedQuery(payload.empresa_id)
   const confirmation = buildCampaignConfirmation(payload)
   const templateId = normalizeCampaignTemplateId(payload.template_id)
   const clientes =
@@ -748,14 +769,15 @@ export async function criarCampanha(payload) {
           segmento: payload.segmento,
           role: payload.role,
           sk_vendedor: payload.sk_vendedor,
+          empresa_id: payload.empresa_id,
           messageBase: payload.mensagem_base,
         })
 
   const resumo = summarizeClientes(clientes)
 
   if (
-    !(await tableExists("GM_TB_CAMPANHAS_ATIVACAO")) ||
-    !(await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES"))
+    !(await tableExists("CAMPANHAS_ATIVACAO", dbQuery)) ||
+    !(await tableExists("CAMPANHAS_ATIVACAO_CLIENTES", dbQuery))
   ) {
     return {
       persisted: false,
@@ -773,8 +795,8 @@ export async function criarCampanha(payload) {
     }
   }
 
-  const campanhaId = await nextTableId("GM_TB_CAMPANHAS_ATIVACAO")
-  const suportaConfirmacao = await campanhaAtivacaoSuportaConfirmacao()
+  const campanhaId = await nextTableId("CAMPANHAS_ATIVACAO", dbQuery)
+  const suportaConfirmacao = await campanhaAtivacaoSuportaConfirmacao(dbQuery, payload.empresa_id)
 
   const insertColumns = [
     "id",
@@ -826,9 +848,9 @@ export async function criarCampanha(payload) {
     insertBinds.nome_usuario_confirmacao = confirmation.nome_usuario_confirmacao
   }
 
-  await query(
+  await dbQuery(
     `
-    INSERT INTO GM_TB_CAMPANHAS_ATIVACAO (
+    INSERT INTO CAMPANHAS_ATIVACAO (
       ${insertColumns.join(",\n      ")}
     ) VALUES (
       ${insertValues.join(",\n      ")}
@@ -838,9 +860,9 @@ export async function criarCampanha(payload) {
   )
 
   for (const [index, cliente] of clientes.entries()) {
-    await query(
+    await dbQuery(
       `
-      INSERT INTO GM_TB_CAMPANHAS_ATIVACAO_CLIENTES (
+      INSERT INTO CAMPANHAS_ATIVACAO_CLIENTES (
         id,
         campanha_id,
         sk_cliente,
@@ -966,12 +988,13 @@ export function gerarNomeArquivo(segmento) {
 }
 
 export async function enviarCampanha(campanhaId, payload = {}) {
+  const dbQuery = getScopedQuery(payload.empresa_id)
   let clientes = []
   let campanha = { id: campanhaId, segmento: payload.segmento ?? null }
   const confirmation = buildCampaignConfirmation(payload)
 
-  if (await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES")) {
-    const rows = await query(
+  if (await tableExists("CAMPANHAS_ATIVACAO_CLIENTES", dbQuery)) {
+    const rows = await dbQuery(
       `
       SELECT
         campanha_id,
@@ -983,7 +1006,7 @@ export async function enviarCampanha(campanhaId, payload = {}) {
         valor_orcamento,
         data_orcamento,
         mensagem_final
-      FROM GM_TB_CAMPANHAS_ATIVACAO_CLIENTES
+      FROM CAMPANHAS_ATIVACAO_CLIENTES
       WHERE campanha_id = :campanha_id
       ORDER BY id
       `,
@@ -1040,11 +1063,11 @@ export async function enviarCampanha(campanhaId, payload = {}) {
     }
   }
 
-  if (await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES")) {
+  if (await tableExists("CAMPANHAS_ATIVACAO_CLIENTES", dbQuery)) {
     const status = webhookStatus === "enviado" ? "ENVIADO_WEBHOOK" : "LINK_GERADO"
-    await query(
+    await dbQuery(
       `
-      UPDATE GM_TB_CAMPANHAS_ATIVACAO_CLIENTES
+      UPDATE CAMPANHAS_ATIVACAO_CLIENTES
       SET status_envio = :status_envio
       WHERE campanha_id = :campanha_id
       `,
@@ -1055,10 +1078,13 @@ export async function enviarCampanha(campanhaId, payload = {}) {
     )
   }
 
-  if ((await tableExists("GM_TB_CAMPANHAS_ATIVACAO")) && (await campanhaAtivacaoSuportaConfirmacao())) {
-    await query(
+  if (
+    (await tableExists("CAMPANHAS_ATIVACAO", dbQuery)) &&
+    (await campanhaAtivacaoSuportaConfirmacao(dbQuery, payload.empresa_id))
+  ) {
+    await dbQuery(
       `
-      UPDATE GM_TB_CAMPANHAS_ATIVACAO
+      UPDATE CAMPANHAS_ATIVACAO
       SET data_confirmacao = :data_confirmacao,
           id_usuario_confirmacao = :id_usuario_confirmacao,
           nome_usuario_confirmacao = :nome_usuario_confirmacao

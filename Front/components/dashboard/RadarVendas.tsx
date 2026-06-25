@@ -45,8 +45,21 @@ function getAlertStyle(tipo: RadarAlertaTipo): AlertStyle {
   }
 }
 
-async function fetchRadarVendas() {
-  const response = await fetch("/api/radar-vendas", { cache: "no-store" })
+type RadarVendasProps = {
+  empresaId?: string | number | null
+}
+
+async function fetchRadarVendas(empresaId?: string | number | null) {
+  const params = new URLSearchParams()
+  if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
+    params.set("empresa_id", String(empresaId))
+  }
+
+  const query = params.toString()
+  const response = await fetch(`/api/radar-vendas${query ? `?${query}` : ""}`, {
+    cache: "no-store",
+    credentials: "include",
+  })
 
   if (!response.ok) {
     throw new Error("Falha ao carregar radar de vendas")
@@ -107,7 +120,7 @@ function RadarAlertList({ alertas }: { alertas: RadarAlerta[] }) {
   )
 }
 
-export function RadarVendas() {
+export function RadarVendas({ empresaId }: RadarVendasProps) {
   const [alertas, setAlertas] = useState<RadarAlerta[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -120,7 +133,7 @@ export function RadarVendas() {
       setError(null)
 
       try {
-        const dados = await fetchRadarVendas()
+        const dados = await fetchRadarVendas(empresaId)
         if (ativo) {
           setAlertas(dados)
         }
@@ -140,7 +153,7 @@ export function RadarVendas() {
     return () => {
       ativo = false
     }
-  }, [])
+  }, [empresaId])
 
   return (
     <section className="h-full rounded-[28px] border bg-card p-4 shadow-[0_0_0_1px_rgba(15,23,42,0.06)] sm:p-6">

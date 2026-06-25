@@ -1,6 +1,10 @@
 import oracledb from "oracledb"
 import { query } from "../db/oracle.js"
-import { getUsersTableName, resolveOracleObjectNames } from "../db/oracleObjectNames.js"
+import { resolveOracleObjectNames } from "../db/oracleObjectNames.js"
+import {
+  findAuthUserForPrivateMessage,
+  searchAuthUsersForPrivateMessage,
+} from "./authUsersService.js"
 
 const MAX_POST_LENGTH = 1000
 const MAX_COMMENT_LENGTH = 500
@@ -213,29 +217,11 @@ async function findPrivateMessageRecipient(actor, destinatarioUsuarioId) {
     throw new FeedError("Escolha outro usuario para enviar a mensagem privada.", 400)
   }
 
-  const usersTable = await getUsersTableName()
-  const rows = await query(
-    `
-    SELECT
-      ID_USUARIO,
-      NOME,
-      LOGIN,
-      ROLE,
-      EMPRESA_ID,
-      SK_VENDEDOR,
-      ATIVO
-    FROM ${usersTable}
-    WHERE ID_USUARIO = :destinatarioUsuarioId
-      AND EMPRESA_ID = :empresaId
-    FETCH FIRST 1 ROWS ONLY
-    `,
-    {
-      destinatarioUsuarioId,
-      empresaId: actor.empresaId,
-    }
-  )
+  const destinatario = await findAuthUserForPrivateMessage({
+    idUsuario: destinatarioUsuarioId,
+    empresaId: actor.empresaId,
+  })
 
-  const destinatario = rows[0] ? normalizeRow(rows[0]) : null
   if (!destinatario || destinatario.ativo !== "S") {
     throw new FeedError("Nao foi possivel encontrar um destinatario ativo para a mensagem privada.", 400)
   }
@@ -424,34 +410,12 @@ export async function searchFeedRecipients(input) {
     return []
   }
 
-  const usersTable = await getUsersTableName()
-  const rows = await query(
-    `
-    SELECT
-      ID_USUARIO,
-      NOME,
-      LOGIN,
-      ROLE,
-      SK_VENDEDOR
-    FROM ${usersTable}
-    WHERE EMPRESA_ID = :empresaId
-      AND ATIVO = 'S'
-      AND ID_USUARIO <> :usuarioId
-      AND ROLE IN ('VENDEDOR', 'GERENTE')
-      AND (
-        UPPER(NOME) LIKE '%' || UPPER(:termo) || '%'
-        OR UPPER(LOGIN) LIKE '%' || UPPER(:termo) || '%'
-        OR UPPER(ROLE) LIKE '%' || UPPER(:termo) || '%'
-      )
-    ORDER BY NOME
-    FETCH FIRST ${RECIPIENT_SEARCH_LIMIT} ROWS ONLY
-    `,
-    {
-      empresaId: actor.empresaId,
-      usuarioId: actor.usuarioId,
-      termo,
-    }
-  )
+  const rows = await searchAuthUsersForPrivateMessage({
+    empresaId: actor.empresaId,
+    usuarioId: actor.usuarioId,
+    termo,
+    limit: RECIPIENT_SEARCH_LIMIT,
+  })
 
   return rows
     .map(mapRecipient)

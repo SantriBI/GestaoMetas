@@ -1,5 +1,6 @@
 import express from "express"
 import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import {
   getRankingVendorsDayViewName,
   getRankingVendorsViewName,
@@ -76,21 +77,49 @@ function extrairJson(texto) {
   }
 }
 
-async function resolverEscopoVendedor(codigoRecebido) {
+async function getQueryContext(empresaId) {
+  if (empresaId) {
+    return {
+      query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
+      rankingView: "VW_RANKING_VENDEDORES",
+      rankingDayView: "VW_RANKING_VENDEDORES_DIA",
+      orcamentosView: "VW_ORCAMENTOS_GESTAO_METAS",
+    }
+  }
+
   const [rankingView, rankingDayView] = await Promise.all([
     getRankingVendorsViewName(),
     getRankingVendorsDayViewName(),
   ])
-  const rows = await query(
+
+  return {
+    query,
+    rankingView,
+    rankingDayView,
+    orcamentosView: "DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS",
+  }
+}
+
+async function safeQuery(context, label, sql, binds = {}) {
+  try {
+    return await context.query(sql, binds)
+  } catch (err) {
+    console.warn(`Assistente de vendas: falha em ${label}:`, err?.message ?? err)
+    return []
+  }
+}
+
+async function resolverEscopoVendedor(codigoRecebido, context) {
+  const rows = await context.query(
     `
     SELECT *
     FROM (
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM ${rankingView}
+      FROM ${context.rankingView}
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
       UNION ALL
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM ${rankingDayView}
+      FROM ${context.rankingDayView}
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
     )
     WHERE ROWNUM = 1
@@ -107,11 +136,7 @@ async function resolverEscopoVendedor(codigoRecebido) {
   }
 }
 
-async function carregarDadosAssistente(vendedor) {
-  const [rankingView, rankingDayView] = await Promise.all([
-    getRankingVendorsViewName(),
-    getRankingVendorsDayViewName(),
-  ])
+async function carregarDadosAssistente(vendedor, context) {
   const [
     mensalRows,
     diarioRows,
@@ -121,29 +146,35 @@ async function carregarDadosAssistente(vendedor) {
     categoriaQuedaRows,
     categoriaOportunidadeRows,
   ] = await Promise.all([
-    query(
+    safeQuery(
+      context,
+      "ranking mensal",
       `
       SELECT
         nome_vendedor,
         receita_mes,
         meta_mes,
         perc_atingimento
-      FROM ${rankingView}
+      FROM ${context.rankingView}
       WHERE sk_vendedor = :sk_vendedor
       FETCH FIRST 1 ROWS ONLY
       `,
       { sk_vendedor: vendedor.skVendedor }
     ),
-    query(
+    safeQuery(
+      context,
+      "ranking diario",
       `
       SELECT dias_restantes
-      FROM ${rankingDayView}
+      FROM ${context.rankingDayView}
       WHERE sk_vendedor = :sk_vendedor
       FETCH FIRST 1 ROWS ONLY
       `,
       { sk_vendedor: vendedor.skVendedor }
     ),
-    query(
+    safeQuery(
+      context,
+      "clientes prioritarios",
       `
       SELECT *
       FROM (
@@ -162,7 +193,9 @@ async function carregarDadosAssistente(vendedor) {
       `,
       { sk_vendedor: vendedor.skVendedor }
     ),
-    query(
+    safeQuery(
+      context,
+      "orcamentos top",
       `
       SELECT *
       FROM (
@@ -170,7 +203,7 @@ async function carregarDadosAssistente(vendedor) {
           cliente,
           telefone,
           valor
-        FROM DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS
+        FROM ${context.orcamentosView}
         WHERE vendedor_id = :vendedor_id
         ORDER BY valor DESC NULLS LAST
       )
@@ -178,7 +211,9 @@ async function carregarDadosAssistente(vendedor) {
       `,
       { vendedor_id: vendedor.vendedorId }
     ),
-    query(
+    safeQuery(
+      context,
+      "categoria mais vendida",
       `
       SELECT grupo
       FROM (
@@ -202,7 +237,9 @@ async function carregarDadosAssistente(vendedor) {
       `,
       { sk_vendedor: vendedor.skVendedor }
     ),
-    query(
+    safeQuery(
+      context,
+      "categoria em queda",
       `
       WITH vendas_categoria AS (
         SELECT
@@ -256,7 +293,9 @@ async function carregarDadosAssistente(vendedor) {
       `,
       { sk_vendedor: vendedor.skVendedor }
     ),
-    query(
+    safeQuery(
+      context,
+      "categoria oportunidade",
       `
       WITH vendas_categoria AS (
         SELECT
@@ -426,12 +465,12 @@ function gerarInsightsHeuristicos(payload) {
   return acoes.slice(0, 4)
 }
 
-async function buscarCache(vendedorId) {
+async function buscarCache(vendedorId, context) {
   try {
-    const rows = await query(
+    const rows = await context.query(
       `
       SELECT insights_json, origem, atualizado_em
-      FROM GM_TB_INSIGHTS_VENDEDOR
+      FROM INSIGHTS_VENDEDOR
       WHERE vendedor_id = :vendedor_id
         AND TRUNC(data_referencia) = TRUNC(SYSDATE)
       ORDER BY atualizado_em DESC
@@ -460,7 +499,7 @@ async function buscarCache(vendedorId) {
   }
 }
 
-async function salvarCache(vendedorId, insights, origem, payload) {
+async function salvarCache(vendedorId, insights, origem, payload, context) {
   const binds = {
     vendedor_id: vendedorId,
     insights_json: JSON.stringify(insights),
@@ -469,9 +508,9 @@ async function salvarCache(vendedorId, insights, origem, payload) {
   }
 
   try {
-    await query(
+    await context.query(
       `
-      MERGE INTO GM_TB_INSIGHTS_VENDEDOR destino
+      MERGE INTO INSIGHTS_VENDEDOR destino
       USING (
         SELECT :vendedor_id AS vendedor_id, TRUNC(SYSDATE) AS data_referencia
         FROM dual
@@ -514,9 +553,9 @@ async function salvarCache(vendedorId, insights, origem, payload) {
     }
 
     if (getOracleErrorCode(err) === ORACLE_UNIQUE_CONSTRAINT) {
-      await query(
+      await context.query(
         `
-        UPDATE GM_TB_INSIGHTS_VENDEDOR
+        UPDATE INSIGHTS_VENDEDOR
         SET insights_json = :insights_json,
             origem = :origem,
             payload_json = :payload_json,
@@ -577,14 +616,22 @@ async function gerarInsightsOpenAI(payload) {
 router.post("/assistente-vendas", async (req, res) => {
   try {
     const vendedorIdRecebido = req.body?.vendedor_id
+    const context = await getQueryContext(req.body?.empresa_id ?? req.body?.empresaId ?? null)
 
     if (!vendedorIdRecebido) {
       return res.status(400).json({ error: "vendedor_id e obrigatorio" })
     }
 
-    const vendedor = await resolverEscopoVendedor(vendedorIdRecebido)
-    const payload = await carregarDadosAssistente(vendedor)
-    const cache = await buscarCache(vendedor.skVendedor)
+    const vendedor = await resolverEscopoVendedor(vendedorIdRecebido, context).catch((err) => {
+      console.warn("Assistente de vendas: falha ao resolver vendedor pelo ranking:", err?.message ?? err)
+      return {
+        skVendedor: vendedorIdRecebido,
+        vendedorId: vendedorIdRecebido,
+        nomeVendedor: null,
+      }
+    })
+    const payload = await carregarDadosAssistente(vendedor, context)
+    const cache = await buscarCache(vendedor.skVendedor, context)
 
     if (cache.insights.length) {
       return res.json({
@@ -614,7 +661,7 @@ router.post("/assistente-vendas", async (req, res) => {
       source = process.env.OPENAI_API_KEY ? "fallback-openai" : "fallback-sem-chave"
     }
 
-    const cacheDisponivel = await salvarCache(vendedor.skVendedor, insights, source, payload)
+    const cacheDisponivel = await salvarCache(vendedor.skVendedor, insights, source, payload, context)
 
     res.json({
       insights,

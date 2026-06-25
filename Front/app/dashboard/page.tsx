@@ -139,6 +139,15 @@ export default function DashboardPage() {
     return null
   }
 
+  function buildRankingUrl(modo: "mensal" | "diario") {
+    const params = new URLSearchParams({ modo })
+    if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
+      params.set("empresa_id", String(empresaId))
+    }
+
+    return `/api/ranking-vendedores?${params.toString()}`
+  }
+
   useEffect(() => {
     const userStr = sessionStorage.getItem("user")
 
@@ -164,9 +173,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function fetchData() {
+      if (!authUser) return
+
       setIsLoading(true)
       try {
-        const response = await fetch(`/api/ranking-vendedores?modo=${viewMode}`)
+        const response = await fetch(buildRankingUrl(viewMode))
 
         if (!response.ok) {
           throw new Error("Falha ao carregar dados")
@@ -182,7 +193,7 @@ export default function DashboardPage() {
           setFallbackDataReferencia(dataRef)
         } else if (viewMode === "mensal") {
           try {
-            const dailyResponse = await fetch("/api/ranking-vendedores?modo=diario")
+            const dailyResponse = await fetch(buildRankingUrl("diario"))
             if (dailyResponse.ok) {
               const dailyJson = await dailyResponse.json()
               const dailyRef = extractDataReferencia(dailyJson)
@@ -201,7 +212,7 @@ export default function DashboardPage() {
     }
 
     fetchData()
-  }, [viewMode])
+  }, [viewMode, empresaId, authUser])
 
   const nomeFinal = pareceCpf(nomeUsuario) ? "" : nomeUsuario
   const fraseSaudacao = nomeFinal
@@ -412,7 +423,7 @@ export default function DashboardPage() {
                         <Activity className="h-4 w-4 text-emerald-300" />
                         Radar e leitura tatica dos ultimos movimentos da equipe
                       </div>
-                      <RadarVendas />
+                      <RadarVendas empresaId={empresaId} />
                     </div>
                     <div className="space-y-3 xl:flex xl:flex-col">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -435,7 +446,7 @@ export default function DashboardPage() {
                         Toque em um vendedor para abrir o panorama detalhado e entender ritmo, receita e potencial.
                       </p>
                     </div>
-                    <RankingTable vendedores={vendedores} viewMode={viewMode} />
+                    <RankingTable vendedores={vendedores} viewMode={viewMode} empresaId={empresaId} />
                   </section>
                 </div>
               </section>
@@ -468,6 +479,7 @@ export default function DashboardPage() {
                   </div>
                 </section>
               </section>
+
             </div>
           )}
         </main>

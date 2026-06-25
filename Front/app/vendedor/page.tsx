@@ -186,6 +186,16 @@ function isDashboardCampaignAvailable(challenge: DashboardCampaignBannerItem) {
   return challenge.exigeAceite !== false && (!participantStatus || ["DISPONIVEL", "CONVIDADO"].includes(participantStatus))
 }
 
+function buildEmpresaQuery(empresaId?: string | number | null) {
+  const params = new URLSearchParams()
+  if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
+    params.set("empresa_id", String(empresaId))
+  }
+
+  const query = params.toString()
+  return query ? `?${query}` : ""
+}
+
 export default function VendedorDashboard() {
   const router = useRouter()
   const { addNotification, notifications, removeNotifications } = useNotifications()
@@ -297,10 +307,11 @@ export default function VendedorDashboard() {
       ...user,
       nome: String(user.nome ?? "").trim(),
     }
+    const currentEmpresaId = user.empresa_id ?? user.sk_empresa ?? null
 
     setAuthUser(normalizedUser)
     setStoredUser(normalizedUser)
-    setEmpresaId(user.empresa_id ?? user.sk_empresa ?? null)
+    setEmpresaId(currentEmpresaId)
     setSkVendedor(user.sk_vendedor ?? null)
     setVendedor(createFallbackVendedor(normalizedUser))
 
@@ -313,7 +324,7 @@ export default function VendedorDashboard() {
 
       try {
         const response = await fetch(
-          `/api/vendedor/${user.sk_vendedor}`,
+          `/api/vendedor/${user.sk_vendedor}${buildEmpresaQuery(currentEmpresaId)}`,
           { cache: "no-store" }
         )
 
@@ -346,7 +357,7 @@ export default function VendedorDashboard() {
       try {
         setIsLoadingOportunidades(true)
         const res = await fetch(
-          `/api/vendedor/${skVendedorParam}/oportunidades`,
+          `/api/vendedor/${skVendedorParam}/oportunidades${buildEmpresaQuery(currentEmpresaId)}`,
           { cache: "no-store" }
         )
         if (!res.ok) {

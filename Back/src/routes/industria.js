@@ -5,7 +5,7 @@ import { query } from "../db/oracle.js"
 const router = express.Router()
 const ORACLE_TABLE_NOT_FOUND = 942
 const FORNECEDOR_TABLE = "GM_TB_FORNECEDORES_LOGIN"
-const FORNECEDOR_SQL_PATH = "Back/sql/fornecedores_login.sql"
+const FORNECEDOR_SQL_PATH = "Back/sql/ddl_gestao_metas.sql"
 const CHALLENGES_TABLE = "desafios_comerciais"
 const CHALLENGE_GOALS_TABLE = "desafios_comerciais_metas"
 const CHALLENGE_PROGRESS_TABLE = "desafios_comerciais_progresso"

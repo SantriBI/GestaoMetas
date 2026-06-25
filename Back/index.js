@@ -1,10 +1,12 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 
-import rankingVendedoresRoutes from './src/routes/rankingVendedores.js';
 import authRoutes from './src/routes/auth.js';
-import vendedorRoutes from './src/routes/vendedor.js'
+import superadminRoutes from './src/routes/superadmin.js';
+import rankingVendedoresRoutes from './src/routes/rankingVendedores.js';
+import vendedorRoutes from './src/routes/vendedor.js';
 import alertasRankingRoutes from './src/routes/alertasRanking.js';
 import areaAtaqueRoutes from './src/routes/areaAtaque.js';
 import investigarClienteRoutes from './src/routes/investigarCliente.js';
@@ -17,16 +19,27 @@ import desafiosRoutes from './src/routes/desafios.js';
 import objetivoVendedorRoutes from './src/routes/objetivoVendedor.js';
 import perfilVendedorRoutes from './src/routes/perfilVendedor.js';
 import industriaRoutes from './src/routes/industria.js';
-
-
+import organizacoesRoutes from './src/routes/organizacoes.js';
+import { ensureCentralSchema } from './src/db/mysql-tenants.js';
 
 dotenv.config();
 
 const app = express();
-app.use(cors());
+
+const corsOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
+  .split(',')
+  .map((s) => s.trim())
+
+app.use(cors({
+  origin: corsOrigins,
+  credentials: true,
+}));
 app.use(express.json({ limit: '8mb' }));
-app.use('/api', rankingVendedoresRoutes);
+app.use(cookieParser());
+
 app.use('/api', authRoutes);
+app.use('/api', superadminRoutes);
+app.use('/api', rankingVendedoresRoutes);
 app.use('/api', vendedorRoutes);
 app.use('/api', alertasRankingRoutes);
 app.use('/api', areaAtaqueRoutes);
@@ -40,18 +53,24 @@ app.use('/api', desafiosRoutes);
 app.use('/api', objetivoVendedorRoutes);
 app.use('/api', perfilVendedorRoutes);
 app.use('/api', industriaRoutes);
+app.use('/api', organizacoesRoutes);
 
-
-// ============================
-// Rota de teste
-// ============================
-app.get('/api/health', async (req, res) => {
-  res.json({ status: 'ok', message: 'API funcionando 🚀' });
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'API funcionando' });
 });
 
-
-// ============================
 const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, () => {
-  console.log(`🚀 API rodando em http://localhost:${PORT}`);
-});
+
+ensureCentralSchema()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`API rodando em http://localhost:${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('Falha ao inicializar schema central MySQL:', err.message);
+    // Inicia mesmo assim para nao derrubar Oracle se MySQL estiver fora
+    app.listen(PORT, () => {
+      console.log(`API rodando em http://localhost:${PORT} (sem MySQL central)`);
+    });
+  });

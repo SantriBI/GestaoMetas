@@ -1,6 +1,6 @@
 "use client"
 
-export type UserRole = "VENDEDOR" | "GERENTE" | "INDUSTRIA"
+export type UserRole = "VENDEDOR" | "GERENTE" | "INDUSTRIA" | "ADMIN" | "SUPERADMIN"
 
 export interface AuthUser {
   id_usuario: number | string
@@ -61,6 +61,8 @@ export function onStoredUserChange(callback: () => void) {
 }
 
 export function getDashboardRoute(role?: string | null) {
+  if (role === "SUPERADMIN") return "/admin"
+  if (role === "ADMIN") return "/admin/organizacoes"
   if (role === "VENDEDOR") return "/vendedor"
   if (role === "INDUSTRIA") return "/industria"
   return "/dashboard"
