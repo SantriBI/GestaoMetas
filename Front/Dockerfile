@@ -7,12 +7,16 @@ WORKDIR /app
 # Dependencias completas para permitir build e modo dev.
 FROM base AS deps
 COPY package*.json ./
-RUN npm config set fetch-retries 5 \
-  && npm config set fetch-retry-factor 2 \
-  && npm config set fetch-retry-mintimeout 20000 \
-  && npm config set fetch-retry-maxtimeout 120000 \
-  && npm ci \
-  && npm cache clean --force
+RUN --mount=type=cache,target=/root/.npm \
+  npm ci \
+    --fetch-retries=5 \
+    --fetch-retry-factor=2 \
+    --fetch-retry-mintimeout=20000 \
+    --fetch-retry-maxtimeout=120000 \
+    --fetch-timeout=600000 \
+    --prefer-offline \
+    --no-audit \
+    --fund=false
 
 # Container voltado para desenvolvimento local com hot reload.
 FROM deps AS dev
