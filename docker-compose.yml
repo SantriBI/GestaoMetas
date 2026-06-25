@@ -53,7 +53,7 @@ services:
       MYSQL_ADMIN_USER: ${MYSQL_ROOT_USER:-root}
       MYSQL_ADMIN_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
       MYSQL_GRANT_USER: ${MYSQL_USER:-app_user}
-      MYSQL_USER_HOST: "%"
+      MYSQL_USER_HOST: ${MYSQL_USER_HOST:-10.100.10.%}
       # Auth JWT
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-sip-auth-secret-2026-troque-em-producao}
       AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-sip_auth}

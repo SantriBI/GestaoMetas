@@ -1,3 +1,5 @@
 Back/node_modules/
 Front/node_modules/
 Front/.next/
+.env
+Back/.env
