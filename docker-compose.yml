@@ -55,14 +55,7 @@ services:
       MYSQL_ADMIN_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
       MYSQL_GRANT_USER: ${MYSQL_USER:-app_user}
       MYSQL_USER_HOST: ${MYSQL_USER_HOST:-10.100.10.%}
-      # Auth JWT — defina AUTH_TOKEN_SECRET no ambiente antes de subir
-      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET}
       AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-sip_auth}
-      # Criptografia — defina APP_ENCRYPTION_KEY no ambiente antes de subir
-      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
-      # Superadmin inicial — defina no ambiente antes do primeiro boot
-      SUPERADMIN_INITIAL_LOGIN: ${SUPERADMIN_INITIAL_LOGIN}
-      SUPERADMIN_INITIAL_PASSWORD: ${SUPERADMIN_INITIAL_PASSWORD}
       ALLOW_DESTRUCTIVE_ORG_DELETE: ${ALLOW_DESTRUCTIVE_ORG_DELETE:-false}
     ports:
       - "${BACKEND_HOST_PORT:-3001}:${BACKEND_PORT:-3001}"
@@ -98,30 +91,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-    restart: unless-stopped
-    networks:
-      - app_net
-
-
-  prefect-worker:
-    container_name: gestao-metas-prefect
-    build:
-      context: ./Back
-      dockerfile: jobs/Dockerfile
-    env_file:
-      - path: ./Back/.env
-        required: false
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-app_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-gestao_metas}
-      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
-      PREFECT_VALIDATION_INTERVAL_SECONDS: ${PREFECT_VALIDATION_INTERVAL_SECONDS:-1800}
-    depends_on:
-      mysql:
-        condition: service_healthy
     restart: unless-stopped
     networks:
       - app_net
