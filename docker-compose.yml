@@ -41,19 +41,12 @@ services:
       NODE_ENV: production
       PORT: ${BACKEND_PORT:-3001}
 
-      # Oracle legado vem de Back/.env. Nao defina placeholders aqui,
-      # senao o Compose sobrescreve as credenciais reais do env_file.
-      # MySQL Central (multi-tenant)
+      # Credenciais e secrets vem de Back/.env. Nao defina placeholders aqui,
+      # senao o Compose sobrescreve os valores reais do env_file.
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
-      MYSQL_USER: ${MYSQL_USER:-app_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-gestao_metas}
       MYSQL_ADMIN_HOST: mysql
       MYSQL_ADMIN_PORT: 3306
-      MYSQL_ADMIN_USER: ${MYSQL_ROOT_USER:-root}
-      MYSQL_ADMIN_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
-      MYSQL_GRANT_USER: ${MYSQL_USER:-app_user}
       MYSQL_USER_HOST: ${MYSQL_USER_HOST:-10.100.10.%}
       AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-sip_auth}
       ALLOW_DESTRUCTIVE_ORG_DELETE: ${ALLOW_DESTRUCTIVE_ORG_DELETE:-false}
@@ -75,11 +68,12 @@ services:
   mysql:
     container_name: gestao-metas-mysql
     image: mysql:8.4
+    env_file:
+      - path: ./Back/.env
+        required: false
     environment:
-      # Banco base para desenvolvimento local.
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-gestao_metas}
-      MYSQL_USER: ${MYSQL_USER:-app_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me}
+      # O MySQL oficial exige MYSQL_ROOT_PASSWORD. Mantenha este valor
+      # alinhado com MYSQL_ADMIN_PASSWORD no Back/.env.
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
     ports:
       - "${MYSQL_HOST_PORT:-3307}:3306"

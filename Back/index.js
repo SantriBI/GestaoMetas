@@ -1,7 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import dotenv from 'dotenv';
 
 import authRoutes from './src/routes/auth.js';
 import superadminRoutes from './src/routes/superadmin.js';
@@ -21,8 +21,6 @@ import perfilVendedorRoutes from './src/routes/perfilVendedor.js';
 import industriaRoutes from './src/routes/industria.js';
 import organizacoesRoutes from './src/routes/organizacoes.js';
 import { ensureCentralSchema } from './src/db/mysql-tenants.js';
-
-dotenv.config();
 
 const app = express();
 
