@@ -1,6 +1,6 @@
 import oracledb from "oracledb"
 import centralPool from "./mysql.js"
-import { decryptSecret } from "../security/secrets.js"
+import { decryptSecret, encryptSecret, SecretDecryptError } from "../security/secrets.js"
 
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
 oracledb.fetchAsString = [oracledb.CLOB]
@@ -25,7 +25,7 @@ function isRetryableSelectError(err, isDml) {
 
 async function getOracleConfigByEmpresaId(empresaId) {
   const [rows] = await centralPool.query(
-    `SELECT oracle_user, oracle_password, oracle_connect_string
+    `SELECT id_organizacao, oracle_user, oracle_password, oracle_connect_string
      FROM organizacoes_auth
      WHERE id_organizacao = ?
      LIMIT 1`,
@@ -39,8 +39,39 @@ async function getOracleConfigByEmpresaId(empresaId) {
 
   return {
     user: org.oracle_user,
-    password: decryptSecret(org.oracle_password),
+    password: await decryptOraclePassword(org),
     connectString: org.oracle_connect_string,
+  }
+}
+
+async function decryptOraclePassword(org) {
+  try {
+    return decryptSecret(org.oracle_password)
+  } catch (error) {
+    const fallback = process.env.ORACLE_TENANT_PASSWORD_FALLBACK
+
+    if (!(error instanceof SecretDecryptError) || !fallback) {
+      throw error
+    }
+
+    console.warn(
+      `[oracle-tenants] Falha ao decriptar oracle_password da organizacao ${org.id_organizacao}. ` +
+      "Usando ORACLE_TENANT_PASSWORD_FALLBACK e regravando com a APP_ENCRYPTION_KEY atual."
+    )
+
+    try {
+      await centralPool.query(
+        "UPDATE organizacoes_auth SET oracle_password = ? WHERE id_organizacao = ?",
+        [encryptSecret(fallback), org.id_organizacao]
+      )
+    } catch (updateError) {
+      console.warn(
+        `[oracle-tenants] Nao foi possivel regravar oracle_password da organizacao ${org.id_organizacao}:`,
+        updateError?.message ?? updateError
+      )
+    }
+
+    return fallback
   }
 }
 
