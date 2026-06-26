@@ -37,7 +37,8 @@ type UserManagementPanelProps = {
 const inputCls =
   "w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-emerald-400/45"
 const selectCls =
-  `${inputCls} [color-scheme:dark] [&>option]:bg-slate-900 [&>option]:text-slate-100`
+  `${inputCls} bg-slate-950/70 text-slate-100 [color-scheme:dark] [&>option]:bg-slate-950 [&>option]:text-slate-100`
+const optionStyle = { backgroundColor: "#020617", color: "#f8fafc" }
 const btnBase =
   "inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
 
@@ -257,9 +258,9 @@ export function UserManagementPanel({
               value={selectedEmpresaId}
               onChange={(event) => setSelectedEmpresaId(event.target.value)}
             >
-              <option value="">Todas as organizacoes</option>
+              <option value="" style={optionStyle}>Todas as organizacoes</option>
               {activeOrganizations.map((org) => (
-                <option key={org.id_organizacao} value={org.id_organizacao}>{org.nome}</option>
+                <option key={org.id_organizacao} value={org.id_organizacao} style={optionStyle}>{org.nome}</option>
               ))}
             </select>
           ) : null}
