@@ -131,9 +131,11 @@ async function loadTargetUser(req, res) {
 }
 
 async function alterarSenha(req, res) {
+  // id_usuario e empresa_id vêm do token autenticado, nunca do body
+  const id_usuario = req.auth.id_usuario
+  const empresa_id = req.auth.empresa_id
+
   const {
-    id_usuario,
-    empresa_id,
     senha_atual,
     senhaAtual,
     nova_senha,
@@ -146,9 +148,9 @@ async function alterarSenha(req, res) {
   const novaSenhaFinal = nova_senha ?? novaSenha
   const confirmarSenhaFinal = confirmar_senha ?? confirmarSenha ?? novaSenhaFinal
 
-  if (!id_usuario || !senhaAtualFinal || !novaSenhaFinal) {
+  if (!senhaAtualFinal || !novaSenhaFinal) {
     return res.status(400).json({
-      error: "Usuario, senha atual e nova senha sao obrigatorios",
+      error: "Senha atual e nova senha sao obrigatorios",
     })
   }
 
@@ -179,7 +181,16 @@ async function alterarSenha(req, res) {
   }
 }
 
-router.get("/usuarios/perfil/:id_usuario", async (req, res) => {
+router.get("/usuarios/perfil/:id_usuario", requireAuth, async (req, res) => {
+  const callerRole = actorRole(req)
+  const callerId = String(req.auth?.id_usuario ?? "")
+  const targetId = String(req.params.id_usuario)
+  const isAdmin = ["ADMIN", "SUPERADMIN", "GERENTE"].includes(callerRole)
+
+  if (!isAdmin && callerId !== targetId) {
+    return res.status(403).json({ error: "Acesso negado." })
+  }
+
   try {
     const usuario = await findAuthUserById(req.params.id_usuario, req.query.empresa_id)
 
@@ -320,13 +331,20 @@ router.get("/usuarios/foto/:arquivo", async (req, res) => {
   }
 })
 
-router.post("/usuarios/upload-foto", async (req, res) => {
+router.post("/usuarios/upload-foto", requireAuth, async (req, res) => {
   const { id_usuario, empresa_id, arquivo_base64, arquivoBase64, mime_type, mimeType } = req.body
   const conteudoBase64 = arquivo_base64 ?? arquivoBase64
   const tipoMime = mime_type ?? mimeType
 
   if (!id_usuario || !conteudoBase64 || !tipoMime) {
     return res.status(400).json({ error: "Usuario, arquivo e tipo da imagem sao obrigatorios" })
+  }
+
+  const callerRole = actorRole(req)
+  const callerId = String(req.auth?.id_usuario ?? "")
+  const isAdmin = ["ADMIN", "SUPERADMIN"].includes(callerRole)
+  if (!isAdmin && callerId !== String(id_usuario)) {
+    return res.status(403).json({ error: "Acesso negado." })
   }
 
   const extensao = obterExtensao(tipoMime)
@@ -369,7 +387,6 @@ router.put("/usuarios/atualizar-cpf", async (req, res) => {
   })
 })
 
-router.put("/usuarios/alterar-senha", alterarSenha)
-router.post("/alterar-senha", alterarSenha)
+router.put("/usuarios/alterar-senha", requireAuth, alterarSenha)
 
 export default router

@@ -1,7 +1,14 @@
 import crypto from "node:crypto"
 
 const VALID_ROLES = new Set(["SUPERADMIN", "ADMIN", "GERENTE", "VENDEDOR", "PAINEL", "INDUSTRIA"])
-const SECRET = process.env.AUTH_TOKEN_SECRET ?? "insecure-default-change-in-production"
+const SECRET = process.env.AUTH_TOKEN_SECRET
+
+if (!SECRET || SECRET.length < 32) {
+  throw new Error(
+    "AUTH_TOKEN_SECRET ausente ou muito curto (minimo 32 caracteres). " +
+    "Gere com: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
+  )
+}
 const TTL_SECONDS = Number(process.env.AUTH_TOKEN_TTL_SECONDS ?? 43200)
 const TTL_MS = TTL_SECONDS * 1000
 const IS_PROD = process.env.NODE_ENV === "production"
@@ -45,7 +52,9 @@ export function verifyAuthToken(token) {
   const parts = token.split(".")
   if (parts.length !== 3) return null
   const [header, payload, sig] = parts
-  if (sign(`${header}.${payload}`) !== sig) return null
+  const expected = Buffer.from(sign(`${header}.${payload}`))
+  const given = Buffer.from(sig)
+  if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) return null
 
   let claims
   try {

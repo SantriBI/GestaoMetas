@@ -39,20 +39,3 @@ export function requireRole(...roles) {
   }
 }
 
-export function isSuperAdmin(req) {
-  const cookieToken = req.cookies?.[AUTH_COOKIE_NAME]
-  const bearerToken = req.headers?.authorization?.replace(/^Bearer\s+/i, "")
-  const token = cookieToken ?? bearerToken ?? null
-
-  if (token) {
-    const claims = verifyAuthToken(token)
-    if (claims?.role === "SUPERADMIN") {
-      req.auth = claims
-      return true
-    }
-  }
-
-  // Fallback: header x-user-role (para compatibilidade com cliente existente)
-  const roleHeader = String(req.headers?.["x-user-role"] ?? "").trim().toUpperCase()
-  return roleHeader === "SUPERADMIN"
-}

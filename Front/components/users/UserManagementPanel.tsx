@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { CheckCircle2, KeyRound, Loader2, LogOut, Power, PowerOff, RefreshCw, Users } from "lucide-react"
+import { CheckCircle2, KeyRound, Loader2, LogOut, Power, PowerOff, RefreshCw, Search, Users, X } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -13,6 +13,7 @@ type ManagedUser = {
   role: string
   empresa_id: number | string | null
   organizacao_nome?: string | null
+  cpf?: string | null
   ativo: "S" | "N"
   ultimo_login?: string | null
 }
@@ -35,6 +36,8 @@ type UserManagementPanelProps = {
 
 const inputCls =
   "w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-emerald-400/45"
+const selectCls =
+  `${inputCls} [color-scheme:dark] [&>option]:bg-slate-900 [&>option]:text-slate-100`
 const btnBase =
   "inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
 
@@ -65,6 +68,35 @@ function displayName(user: ManagedUser) {
   return String(user.nome_completo ?? user.nome ?? user.login ?? "Usuario").trim()
 }
 
+function onlyDigits(value: string | number | null | undefined) {
+  return String(value ?? "").replace(/\D/g, "")
+}
+
+function normalizeSearch(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+}
+
+function matchesUserSearch(user: ManagedUser, search: string) {
+  const text = normalizeSearch(search)
+  const digits = onlyDigits(search)
+  if (!text && !digits) return true
+
+  const name = normalizeSearch(`${user.nome ?? ""} ${user.nome_completo ?? ""}`)
+  const cpf = onlyDigits(user.cpf ?? user.login)
+
+  return (!!text && name.includes(text)) || (!!digits && cpf.includes(digits))
+}
+
+function formatCpf(value: string | number | null | undefined) {
+  const digits = onlyDigits(value)
+  if (digits.length !== 11) return String(value ?? "").trim()
+  return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
+}
+
 function statusClass(ativo: "S" | "N") {
   return ativo === "S"
     ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200"
@@ -86,12 +118,17 @@ export function UserManagementPanel({
   const [actionKey, setActionKey] = useState<string | null>(null)
   const [passwordUserId, setPasswordUserId] = useState<string | null>(null)
   const [newPassword, setNewPassword] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
 
   const effectiveEmpresaId = allowOrganizationSelect ? selectedEmpresaId : empresaId
   const canGlobalLogoff = allowGlobalLogoff && !!effectiveEmpresaId
   const activeOrganizations = useMemo(
     () => organizations.filter((org) => !org.ativo || org.ativo === "S"),
     [organizations]
+  )
+  const filteredUsers = useMemo(
+    () => users.filter((user) => matchesUserSearch(user, searchTerm)),
+    [users, searchTerm]
   )
 
   async function loadUsers() {
@@ -193,9 +230,30 @@ export function UserManagementPanel({
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">{description}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <div className="relative min-w-[240px] flex-1 sm:w-[280px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <input
+              type="search"
+              className={cn(inputCls, "h-full pl-9 pr-9")}
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Pesquisar nome ou CPF"
+              aria-label="Pesquisar usuario por nome ou CPF"
+            />
+            {searchTerm ? (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-slate-200"
+                aria-label="Limpar pesquisa"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
           {allowOrganizationSelect ? (
             <select
-              className={cn(inputCls, "w-[260px]")}
+              className={cn(selectCls, "w-[260px]")}
               value={selectedEmpresaId}
               onChange={(event) => setSelectedEmpresaId(event.target.value)}
             >
@@ -253,13 +311,21 @@ export function UserManagementPanel({
                     Nenhum usuario encontrado.
                   </td>
                 </tr>
-              ) : users.map((user) => {
+              ) : filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={allowOrganizationSelect ? 5 : 4} className="px-4 py-10 text-center text-slate-400">
+                    Nenhum usuario encontrado para a pesquisa.
+                  </td>
+                </tr>
+              ) : filteredUsers.map((user) => {
                 const editingPassword = passwordUserId === String(user.id_usuario)
+                const cpf = formatCpf(user.cpf ?? user.login)
                 return (
                   <tr key={`${user.empresa_id}-${user.id_usuario}`} className="align-top">
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-100">{displayName(user)}</p>
                       <p className="mt-1 text-xs text-slate-500">Login: {user.login}</p>
+                      {cpf ? <p className="mt-1 text-xs text-slate-500">CPF: {cpf}</p> : null}
                       {editingPassword ? (
                         <div className="mt-3 flex gap-2">
                           <input

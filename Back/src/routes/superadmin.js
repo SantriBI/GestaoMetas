@@ -1,7 +1,7 @@
 import express from "express"
 import bcrypt from "bcrypt"
 import oracledb from "oracledb"
-import { isSuperAdmin } from "../middleware/auth.js"
+import { requireAuth } from "../middleware/auth.js"
 import { auditAction } from "../audit.js"
 import { encryptSecret, decryptSecret } from "../security/secrets.js"
 import { dropOracleProvisionedViews, provisionOracleViews } from "../services/oracleProvisioningService.js"
@@ -14,14 +14,18 @@ import {
   migrateGlobalVendedoresToTenant,
   describeTenantProvisioningError,
 } from "../db/mysql-tenants.js"
+import { findEmployeeNameByCpf, resolveAuthUserDisplayName } from "../services/authUsersService.js"
 
 const router = express.Router()
+
+router.use(requireAuth)
+
 const IS_PROD = process.env.NODE_ENV === "production"
 const ALLOW_DESTRUCTIVE = process.env.ALLOW_DESTRUCTIVE_ORG_DELETE === "true"
 const VENDOR_DEFAULT_PASSWORD = "sip123"
 
 function guard(req, res) {
-  if (!isSuperAdmin(req)) {
+  if (req.auth?.role !== "SUPERADMIN") {
     res.status(403).json({ error: "Acesso restrito a SUPERADMIN." })
     return false
   }
@@ -75,6 +79,31 @@ async function testOracleConnection(oracleUser, oraclePassword, oracleConnectStr
 }
 
 // ── Sync vendedores de Oracle para tenant MySQL ────────────────────────────────
+async function tryDropOracleViewsForDelete(org) {
+  if (!org?.oracle_user || !org?.oracle_password || !org?.oracle_connect_string) {
+    return { skipped: true, reason: "Organizacao sem credenciais Oracle completas." }
+  }
+
+  try {
+    return await dropOracleProvisionedViews({
+      user: org.oracle_user,
+      password: decryptSecret(org.oracle_password),
+      connectString: org.oracle_connect_string,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn("Cleanup Oracle ignorado ao excluir organizacao:", {
+      id_organizacao: org.id_organizacao,
+      error: message,
+    })
+    return {
+      skipped: true,
+      warning: "Nao foi possivel limpar as views Oracle; a organizacao foi removida do sistema.",
+      error: message,
+    }
+  }
+}
+
 async function syncVendedoresOrg(org) {
   const { id_organizacao, oracle_user, oracle_password, oracle_connect_string, db_name } = org
 
@@ -364,11 +393,7 @@ router.delete("/superadmin/organizacoes/:id", async (req, res) => {
       }
     }
 
-    const oracleCleanup = await dropOracleProvisionedViews({
-      user: org.oracle_user,
-      password: decryptSecret(org.oracle_password),
-      connectString: org.oracle_connect_string,
-    })
+    const oracleCleanup = await tryDropOracleViewsForDelete(org)
 
     const [removedUsers] = await centralPool.query(
       "DELETE FROM usuarios_auth WHERE empresa_id = ?",
@@ -411,10 +436,16 @@ router.get("/superadmin/gerentes", async (req, res) => {
       try {
         const gerentes = await queryTenantByEmpresaId(
           org.id_organizacao,
-          "SELECT id_usuario, nome_completo, login, cpf, ativo, empresa_id, ultimo_login FROM usuarios_auth WHERE role = 'GERENTE' ORDER BY nome_completo"
+          "SELECT id_usuario, nome, nome_completo, login, cpf, ativo, empresa_id, ultimo_login FROM usuarios_auth WHERE role = 'GERENTE' ORDER BY COALESCE(nome_completo, nome, login)"
         )
         for (const g of gerentes) {
-          result.push({ ...g, empresa_id: org.id_organizacao, organizacao_nome: org.nome })
+          const gerente = await resolveAuthUserDisplayName({
+            ...g,
+            role: "GERENTE",
+            empresa_id: org.id_organizacao,
+            source: "tenant",
+          })
+          result.push({ ...gerente, empresa_id: org.id_organizacao, organizacao_nome: org.nome })
         }
       } catch {}
     }
@@ -516,7 +547,7 @@ router.post("/superadmin/funcionario-lookup", async (req, res) => {
 // POST /superadmin/gerentes
 router.post("/superadmin/gerentes", async (req, res) => {
   if (!guard(req, res)) return
-  const { cpf, senha, empresaId } = req.body
+  const { cpf, senha, empresaId, nome } = req.body
   const cpfNorm = normalizeCPF(cpf)
 
   if (cpfNorm.length !== 11) return res.status(400).json({ error: "CPF deve ter 11 digitos" })
@@ -541,13 +572,14 @@ router.post("/superadmin/gerentes", async (req, res) => {
     )
 
     const hash = await bcrypt.hash(senha, 10)
+    const nomeGerente = String(nome ?? "").trim() || await findEmployeeNameByCpf(empresaId, cpfNorm) || null
 
     if (dup.length) {
       // Converte para GERENTE se tiver outra role
       await queryTenantByEmpresaId(
         empresaId,
-        "UPDATE usuarios_auth SET role = 'GERENTE', senha_hash = ?, ativo = 'S', senha_temporaria = 'N' WHERE id_usuario = ?",
-        [hash, dup[0].id_usuario]
+        "UPDATE usuarios_auth SET role = 'GERENTE', senha_hash = ?, nome = COALESCE(?, nome), nome_completo = COALESCE(?, nome_completo), ativo = 'S', senha_temporaria = 'N' WHERE id_usuario = ?",
+        [hash, nomeGerente, nomeGerente, dup[0].id_usuario]
       )
       auditAction(req, "PROMOTE_GERENTE", `cpf:${cpfNorm} empresa:${empresaId}`)
       return res.json({ message: "Usuario promovido a GERENTE com sucesso.", role: "GERENTE", empresa_id: empresaId, database_destino: dbName })
@@ -555,8 +587,8 @@ router.post("/superadmin/gerentes", async (req, res) => {
 
     await queryTenantByEmpresaId(
       empresaId,
-      "INSERT INTO usuarios_auth (login, senha_hash, role, empresa_id, cpf, nome, ativo, senha_temporaria) VALUES (?, ?, 'GERENTE', ?, ?, ?, 'S', 'N')",
-      [cpfNorm, hash, empresaId, cpfNorm, cpfNorm]
+      "INSERT INTO usuarios_auth (login, senha_hash, role, empresa_id, cpf, nome, nome_completo, ativo, senha_temporaria) VALUES (?, ?, 'GERENTE', ?, ?, ?, ?, 'S', 'N')",
+      [cpfNorm, hash, empresaId, cpfNorm, nomeGerente ?? cpfNorm, nomeGerente ?? cpfNorm]
     )
 
     auditAction(req, "CREATE_GERENTE", `cpf:${cpfNorm} empresa:${empresaId}`)

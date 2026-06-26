@@ -1,7 +1,8 @@
+import crypto from "node:crypto"
 import express from "express"
 import bcrypt from "bcrypt"
 import { issueAuthToken, setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME, verifyAuthToken } from "../auth/token.js"
-import { requireAuth } from "../middleware/auth.js"
+import { requireAuth, requireRole } from "../middleware/auth.js"
 import centralPool from "../db/mysql.js"
 import { queryTenantByEmpresaId } from "../db/mysql-tenants.js"
 
@@ -204,19 +205,11 @@ router.post("/alterar-senha", requireAuth, async (req, res) => {
   }
 })
 
-// Mantém compatibilidade: POST /api/resetar-senhas-temporarias (Oracle)
-router.post("/resetar-senhas-temporarias", async (req, res) => {
-  const { adminToken } = req.body
-
-  if (!process.env.ADMIN_RESET_TOKEN) {
-    return res.status(500).json({ error: "ADMIN_RESET_TOKEN nao configurado" })
-  }
-  if (adminToken !== process.env.ADMIN_RESET_TOKEN) {
-    return res.status(403).json({ error: "Token invalido" })
-  }
-
+router.post("/resetar-senhas-temporarias", requireAuth, requireRole("SUPERADMIN"), async (req, res) => {
   try {
-    const hashTemporario = "$2a$12$1cXgi9XcQ0GF8NH9PaEtN.adhzylBin.SvRgd0dqv2S1nOysgsWJy"
+    const senhaTemporaria = crypto.randomBytes(10).toString("base64url").slice(0, 14)
+    const hashTemporario = await bcrypt.hash(senhaTemporaria, 12)
+
     const [centralResult] = await centralPool.query(
       "UPDATE usuarios_auth SET senha_hash = ?, senha_temporaria = 'S'",
       [hashTemporario]
@@ -242,6 +235,7 @@ router.post("/resetar-senhas-temporarias", async (req, res) => {
 
     return res.json({
       message: "Senhas redefinidas com sucesso para senha temporaria",
+      senha_temporaria: senhaTemporaria,
       usuarios_atualizados: (centralResult?.affectedRows ?? 0) + tenantsAtualizados,
     })
   } catch (error) {

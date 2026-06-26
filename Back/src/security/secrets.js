@@ -1,7 +1,15 @@
 import crypto from "node:crypto"
 
 const ALGORITHM = "aes-256-gcm"
-const KEY_HEX = process.env.APP_ENCRYPTION_KEY ?? "0".repeat(64)
+const KEY_HEX = process.env.APP_ENCRYPTION_KEY
+
+if (!KEY_HEX || !/^[0-9a-f]{64}$/i.test(KEY_HEX) || /^0+$/.test(KEY_HEX)) {
+  throw new Error(
+    "APP_ENCRYPTION_KEY ausente ou insegura. " +
+    "Defina uma chave hex de 64 caracteres (32 bytes) gerada com: " +
+    "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
+  )
+}
 
 function getKey() {
   return Buffer.from(KEY_HEX, "hex")
@@ -17,7 +25,10 @@ export function encryptSecret(plaintext) {
 }
 
 export function decryptSecret(ciphertext) {
-  if (!ciphertext || !String(ciphertext).includes(":")) return ciphertext ?? ""
+  if (!ciphertext || !String(ciphertext).includes(":")) {
+    console.warn("SECURITY: decryptSecret recebeu um valor nao-criptografado")
+    return ciphertext ?? ""
+  }
   const [ivHex, tagHex, dataHex] = String(ciphertext).split(":")
   const key = getKey()
   const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, "hex"))

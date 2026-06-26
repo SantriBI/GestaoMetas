@@ -22,7 +22,7 @@ export function ChallengeParticipantsTable({
 
   return (
     <div className="overflow-x-auto rounded-[28px] border border-white/10 bg-white/4">
-      <div className="grid grid-cols-[minmax(0,1.3fr)_minmax(150px,0.8fr)_minmax(100px,0.6fr)_minmax(150px,0.8fr)_minmax(160px,0.8fr)] gap-3 border-b border-white/8 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">
+      <div className="grid min-w-[820px] grid-cols-[minmax(180px,1.3fr)_minmax(150px,0.8fr)_minmax(100px,0.6fr)_minmax(150px,0.8fr)_minmax(160px,0.8fr)] gap-3 border-b border-white/8 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">
         <span>Vendedor</span>
         <span>Aceite</span>
         <span>Multiplicador</span>
@@ -35,9 +35,9 @@ export function ChallengeParticipantsTable({
           return (
             <div
               key={`${participant.skVendedor}-${participant.id ?? "p"}`}
-              className="grid grid-cols-[minmax(0,1.3fr)_minmax(150px,0.8fr)_minmax(100px,0.6fr)_minmax(150px,0.8fr)_minmax(160px,0.8fr)] gap-3 px-4 py-4 text-sm text-white/80"
+              className="grid min-w-[820px] grid-cols-[minmax(180px,1.3fr)_minmax(150px,0.8fr)_minmax(100px,0.6fr)_minmax(150px,0.8fr)_minmax(160px,0.8fr)] items-center gap-3 px-4 py-4 text-sm text-white/80"
             >
-              <span className="font-semibold text-white">{participant.nomeVendedor}</span>
+              <span className="min-w-0 whitespace-normal break-words font-semibold leading-5 text-white">{participant.nomeVendedor}</span>
               <span className="inline-flex items-center">
                 <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
                   isAcceptedParticipant(participant.statusParticipacao, requiresAcceptance)
@@ -80,7 +80,7 @@ export function ChallengeParticipantsTable({
       </div>
 
       {orderedParticipants.length > 0 ? (
-        <div className="grid grid-cols-[minmax(0,1.3fr)_minmax(150px,0.8fr)_minmax(100px,0.6fr)_minmax(150px,0.8fr)_minmax(160px,0.8fr)] gap-3 border-t border-white/8 bg-white/[0.02] px-4 py-3">
+        <div className="grid min-w-[820px] grid-cols-[minmax(180px,1.3fr)_minmax(150px,0.8fr)_minmax(100px,0.6fr)_minmax(150px,0.8fr)_minmax(160px,0.8fr)] gap-3 border-t border-white/8 bg-white/[0.02] px-4 py-3">
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-white/40">Total</span>
           <span />
           <span />

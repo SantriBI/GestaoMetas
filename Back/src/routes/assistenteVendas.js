@@ -5,6 +5,7 @@ import {
   getRankingVendorsDayViewName,
   getRankingVendorsViewName,
 } from "../db/oracleObjectNames.js"
+import { requireAuth } from "../middleware/auth.js"
 
 const router = express.Router()
 const ORACLE_TABLE_NOT_FOUND = 942
@@ -613,10 +614,26 @@ async function gerarInsightsOpenAI(payload) {
   return insights.length ? insights : null
 }
 
-router.post("/assistente-vendas", async (req, res) => {
+router.post("/assistente-vendas", requireAuth, async (req, res) => {
   try {
     const vendedorIdRecebido = req.body?.vendedor_id
-    const context = await getQueryContext(req.body?.empresa_id ?? req.body?.empresaId ?? null)
+    const callerRole = String(req.auth?.role ?? "").toUpperCase()
+    const isSuperOrAdmin = ["SUPERADMIN", "ADMIN"].includes(callerRole)
+
+    // empresa_id always comes from the token for non-admin roles to prevent cross-tenant access
+    const empresaId = isSuperOrAdmin
+      ? (req.body?.empresa_id ?? req.body?.empresaId ?? null)
+      : (req.auth?.empresa_id ?? null)
+
+    const context = await getQueryContext(empresaId)
+
+    const isAdminOrGerente = ["SUPERADMIN", "ADMIN", "GERENTE"].includes(callerRole)
+    if (!isAdminOrGerente) {
+      const callerVendedor = String(req.auth?.sk_vendedor ?? req.auth?.id_usuario ?? "")
+      if (callerVendedor !== String(vendedorIdRecebido)) {
+        return res.status(403).json({ error: "Acesso negado." })
+      }
+    }
 
     if (!vendedorIdRecebido) {
       return res.status(400).json({ error: "vendedor_id e obrigatorio" })
@@ -639,7 +656,6 @@ router.post("/assistente-vendas", async (req, res) => {
         source: cache.origem ?? "cache",
         cached: true,
         cache_table_available: cache.disponivel,
-        payload,
         updated_at: cache.atualizadoEm,
       })
     }
@@ -668,7 +684,6 @@ router.post("/assistente-vendas", async (req, res) => {
       source,
       cached: false,
       cache_table_available: cache.disponivel || cacheDisponivel,
-      payload,
       updated_at: new Date().toISOString(),
     })
   } catch (err) {

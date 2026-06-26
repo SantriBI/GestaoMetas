@@ -1,4 +1,5 @@
 import express from "express"
+import { requireAuth, requireRole } from "../middleware/auth.js"
 import {
   deleteOrganizacaoHandler,
   getOrganizacao,
@@ -10,15 +11,7 @@ import {
 
 const router = express.Router()
 
-function requireAdmin(req, res, next) {
-  const role = String(req.headers["x-user-role"] ?? "").trim().toUpperCase()
-  if (role !== "ADMIN") {
-    return res.status(403).json({ error: "Acesso restrito a administradores." })
-  }
-  next()
-}
-
-router.use("/organizacoes", requireAdmin)
+router.use("/organizacoes", requireAuth, requireRole("ADMIN", "SUPERADMIN"))
 
 router.get("/organizacoes", getOrganizacoes)
 router.post("/organizacoes/testar-conexao", postTestarConexao)

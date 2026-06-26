@@ -36,6 +36,7 @@ function normalizeRow(row, source = "central", empresaId = null) {
     ativo: row.ativo,
     senha_temporaria: row.senha_temporaria ?? "N",
     foto_url: row.foto_url ?? null,
+    ultimo_login: row.ultimo_login ?? null,
     token_version: Number(row.token_version ?? 0),
     vendedor_id: row.vendedor_id ?? null,
     funcionario_id: row.funcionario_id ?? null,
@@ -43,7 +44,7 @@ function normalizeRow(row, source = "central", empresaId = null) {
   }
 }
 
-async function findEmployeeNameByCpf(empresaId, cpf) {
+export async function findEmployeeNameByCpf(empresaId, cpf) {
   const cpfNorm = normalizeCpf(cpf)
   if (!empresaId || cpfNorm.length !== 11) return null
 
@@ -320,7 +321,11 @@ export async function listManagedUsersByEmpresaId(empresaId, { roles = null, org
     allowedRoles
   )
 
-  return rows.map((row) => normalizePublicManagedUser(row, empresaId, organizacaoNome))
+  const resolvedUsers = await Promise.all(
+    rows.map((row) => resolveAuthUserDisplayName(normalizeRow(row, "tenant", empresaId)))
+  )
+
+  return resolvedUsers.map((user) => normalizePublicManagedUser(user, empresaId, organizacaoNome))
 }
 
 export async function findManagedUserById({ idUsuario, empresaId }) {

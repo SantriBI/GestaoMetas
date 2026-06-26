@@ -54,13 +54,14 @@ services:
       MYSQL_ADMIN_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
       MYSQL_GRANT_USER: ${MYSQL_USER:-app_user}
       MYSQL_USER_HOST: ${MYSQL_USER_HOST:-10.100.10.%}
-      # Auth JWT
-      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-sip-auth-secret-2026-troque-em-producao}
+      # Auth JWT — defina AUTH_TOKEN_SECRET no ambiente antes de subir
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET}
       AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-sip_auth}
-      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2}
-      # Superadmin inicial
-      SUPERADMIN_INITIAL_LOGIN: ${SUPERADMIN_INITIAL_LOGIN:-admin}
-      SUPERADMIN_INITIAL_PASSWORD: ${SUPERADMIN_INITIAL_PASSWORD:-Admin@2026}
+      # Criptografia — defina APP_ENCRYPTION_KEY no ambiente antes de subir
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
+      # Superadmin inicial — defina no ambiente antes do primeiro boot
+      SUPERADMIN_INITIAL_LOGIN: ${SUPERADMIN_INITIAL_LOGIN}
+      SUPERADMIN_INITIAL_PASSWORD: ${SUPERADMIN_INITIAL_PASSWORD}
       ALLOW_DESTRUCTIVE_ORG_DELETE: ${ALLOW_DESTRUCTIVE_ORG_DELETE:-false}
     ports:
       - "${BACKEND_HOST_PORT:-3001}:${BACKEND_PORT:-3001}"
@@ -114,7 +115,7 @@ services:
       MYSQL_USER: ${MYSQL_USER:-app_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-gestao_metas}
-      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY}
       PREFECT_VALIDATION_INTERVAL_SECONDS: ${PREFECT_VALIDATION_INTERVAL_SECONDS:-1800}
     depends_on:
       mysql:

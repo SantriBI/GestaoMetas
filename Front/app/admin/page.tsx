@@ -363,7 +363,7 @@ export default function AdminPage() {
     e.preventDefault()
     setSavingGerente(true)
     try {
-      await apiFetch("/api/superadmin/gerentes", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf, senha: gerenteSenha, empresaId: Number(gerenteEmpresaId) }) })
+      await apiFetch("/api/superadmin/gerentes", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf, senha: gerenteSenha, empresaId: Number(gerenteEmpresaId), nome: funcionarioPreview?.nome }) })
       toast.success("Gerente cadastrado com sucesso!")
       setGerenteCpf(""); setGerenteSenha(""); setGerenteEmpresaId(""); setFuncionarioPreview(null); setShowGerenteForm(false)
       void fetchData()
