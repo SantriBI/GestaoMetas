@@ -35,7 +35,8 @@ services:
       dockerfile: Dockerfile
       target: prod
     env_file:
-      - ./Back/.env
+      - path: ./Back/.env
+        required: false
     environment:
       NODE_ENV: production
       PORT: ${BACKEND_PORT:-3001}
@@ -108,7 +109,8 @@ services:
       context: ./Back
       dockerfile: jobs/Dockerfile
     env_file:
-      - ./Back/.env
+      - path: ./Back/.env
+        required: false
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
