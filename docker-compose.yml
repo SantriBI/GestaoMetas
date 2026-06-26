@@ -35,8 +35,7 @@ services:
       dockerfile: Dockerfile
       target: prod
     env_file:
-      - path: ./Back/.env
-        required: false
+      - ./Back/.env
     environment:
       NODE_ENV: production
       PORT: ${BACKEND_PORT:-3001}
@@ -69,12 +68,7 @@ services:
     container_name: gestao-metas-mysql
     image: mysql:8.4
     env_file:
-      - path: ./Back/.env
-        required: false
-    environment:
-      # O MySQL oficial exige MYSQL_ROOT_PASSWORD. Mantenha este valor
-      # alinhado com MYSQL_ADMIN_PASSWORD no Back/.env.
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_change_me}
+      - ./Back/.env
     ports:
       - "${MYSQL_HOST_PORT:-3307}:3306"
     volumes:
