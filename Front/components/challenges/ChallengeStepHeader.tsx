@@ -6,7 +6,7 @@ import { Check } from "lucide-react"
 const steps = [
   { label: "Identidade", hint: "Defina o nome, o contexto e o escopo da campanha." },
   { label: "Metas", hint: "Estruture metas claras para o time executar com foco." },
-  { label: "Prazo", hint: "Escolha a janela ideal para gerar ritmo e urgencia." },
+  { label: "Prazo", hint: "Escolha a janela ideal para gerar ritmo e urgência." },
   { label: "Impacto", hint: "Entenda custo, retorno e revise tudo antes de publicar." },
 ]
 
@@ -51,7 +51,7 @@ export function ChallengeStepHeader({
                     style={{ width: progressWidth }}
                   />
                 </div>
-                <p className="mt-3 text-sm text-white/52">Estado salvo entre etapas para voce ajustar tudo com calma.</p>
+                <p className="mt-3 text-sm text-white/52">Estado salvo entre etapas para você ajustar tudo com calma.</p>
               </div>
 
               <div className="rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4">
@@ -96,7 +96,7 @@ export function ChallengeStepHeader({
                           {step.label}
                         </p>
                         <p className="mt-1 text-xs uppercase tracking-[0.16em] text-white/34">
-                          {isActive ? "Em andamento" : isDone ? "Concluida" : "A seguir"}
+                          {isActive ? "Em andamento" : isDone ? "Concluída" : "A seguir"}
                         </p>
                       </div>
                     </div>

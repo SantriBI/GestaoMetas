@@ -13,6 +13,8 @@ import {
   Sparkles,
   Swords,
   Trophy,
+  X,
+  Zap,
 } from "lucide-react"
 import { Vendedor, VendedorProcessado, processVendedor, formatCurrency } from "@/lib/types"
 import { KPICards } from "@/components/dashboard/kpi-cards"
@@ -43,6 +45,9 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<"mensal" | "diario">("mensal")
   const [activeView, setActiveView] = useState<ActiveView>(null)
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
+  const [feedbackTexto, setFeedbackTexto] = useState("")
+  const [feedbackStatus, setFeedbackStatus] = useState<"idle" | "sending" | "success" | "error">("idle")
   const resumoDiario = viewMode === "diario" ? gerarResumoDiario(vendedores) : null
   const hasMetaHerdada = vendedores.some((v) => v.metaHerdada === 1)
   const textoResumoDiario =
@@ -287,6 +292,35 @@ export default function DashboardPage() {
     setActiveView((current) => (current === nextView ? null : nextView))
   }
 
+  function closeFeedback() {
+    setIsFeedbackOpen(false)
+    setFeedbackStatus("idle")
+    setFeedbackTexto("")
+  }
+
+  async function handleEnviarFeedback() {
+    if (!feedbackTexto.trim()) return
+    setFeedbackStatus("sending")
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sk_vendedor: null,
+          nome: authUser?.nome ?? null,
+          feedback: feedbackTexto.trim(),
+          tipo_usuario: "GERENTE",
+        }),
+      })
+      if (!res.ok) throw new Error()
+      setFeedbackStatus("success")
+      setFeedbackTexto("")
+      window.setTimeout(() => closeFeedback(), 2500)
+    } catch {
+      setFeedbackStatus("error")
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <AppShellNav user={authUser} />
@@ -481,6 +515,69 @@ export default function DashboardPage() {
           />
         ) : null}
       </div>
+
+      {/* FEEDBACK FLUTUANTE */}
+      {isFeedbackOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          onClick={closeFeedback}
+        />
+      )}
+      {isFeedbackOpen && (
+        <div className="fixed bottom-24 right-6 z-50 w-80 rounded-2xl border border-white/10 bg-zinc-900/95 p-5 shadow-2xl backdrop-blur-md">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Sugestão de melhoria</h3>
+              <p className="text-xs text-white/45">Sua opinião é muito importante!</p>
+            </div>
+            <button
+              type="button"
+              onClick={closeFeedback}
+              className="rounded-lg p-1.5 text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {feedbackStatus === "success" ? (
+            <div className="flex flex-col items-center gap-2 py-4 text-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
+                <Zap className="h-5 w-5" />
+              </div>
+              <p className="text-sm font-medium text-emerald-300">Feedback enviado!</p>
+              <p className="text-xs text-white/45">Obrigado pela sugestão 🙏</p>
+            </div>
+          ) : (
+            <>
+              <textarea
+                value={feedbackTexto}
+                onChange={(e) => setFeedbackTexto(e.target.value)}
+                placeholder="Conte o que poderia ser melhor no sistema..."
+                rows={4}
+                className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
+              />
+              {feedbackStatus === "error" && (
+                <p className="mt-1.5 text-xs text-red-400">Erro ao enviar. Tente novamente.</p>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleEnviarFeedback()}
+                disabled={feedbackStatus === "sending" || !feedbackTexto.trim()}
+                className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {feedbackStatus === "sending" ? "Enviando..." : "Enviar sugestão"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setIsFeedbackOpen((prev) => !prev)}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition-all hover:scale-105 hover:bg-emerald-500 active:scale-95"
+      >
+        <MessageCircle className="h-4 w-4" />
+        Feedback
+      </button>
     </div>
   )
 }

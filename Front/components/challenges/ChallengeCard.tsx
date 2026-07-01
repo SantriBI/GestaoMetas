@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { ArrowRight, CalendarRange, ChevronUp, LoaderCircle, Target, Users } from "lucide-react"
+import { ArrowRight, CalendarRange, ChevronUp, LoaderCircle, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
 import { ChallengeStatusBadge } from "@/components/challenges/ChallengeStatusBadge"
@@ -37,7 +37,6 @@ export function ChallengeCard({
 }) {
   const metas = challenge.participant?.metas ?? challenge.metas ?? []
   const participant = challenge.participant
-  const impact = challenge.impact
   const kind = getChallengeCampaignKind(challenge)
   const lifecycleStatus = getChallengeLifecycleStatus(challenge)
   const ctas = challenge.ctas ?? []
@@ -46,8 +45,6 @@ export function ChallengeCard({
   )
   const participantUnlockedReward = formatCurrencyBRL(Number(participant?.premioTotalLiberado ?? 0))
   const participantProgress = Math.round(Number(participant?.resumo?.percentualGeral ?? 0))
-  const completedMetas = Number(participant?.resumo?.metasConcluidas ?? 0)
-  const totalMetas = Number(participant?.resumo?.totalMetas ?? metas.length)
   const isSellerAvailable = mode === "seller" && kind === "DESAFIO" && ["DISPONIVEL", "CONVIDADO"].includes(String(participant?.statusParticipacao ?? "").toUpperCase())
   const detailsButtonIcon = detailsState === "loading"
     ? <LoaderCircle className="ml-2 h-4 w-4 animate-spin" />
@@ -62,6 +59,11 @@ export function ChallengeCard({
         ? "bg-gradient-to-r from-emerald-400 to-emerald-500"
         : "bg-gradient-to-r from-cyan-400 via-blue-400 to-emerald-400"
 
+    const unlockedAmount = Number(participant?.premioTotalLiberado ?? 0)
+    const totalMultiplier = metas.reduce((sum, m) => sum + (Number(m.multiplier) || 0), 0)
+    const primaryMeta = metas[0] ?? null
+    const isMissingTarget = primaryMeta?.tipoMeta === "PRODUTO_OU_MARCA" && !getChallengeMetaTargetSummary(primaryMeta)
+
     const participantStatus = String(participant?.statusParticipacao ?? "").toUpperCase()
     const isClosed = ["CONCLUIDO", "EXPIRADO"].includes(participantStatus) || isClosedChallengeStatus(lifecycleStatus)
     const isInProgress = ["ACEITO", "EM_ANDAMENTO"].includes(participantStatus)
@@ -72,16 +74,9 @@ export function ChallengeCard({
     const isLifecycleClosed = isClosedChallengeStatus(lifecycleStatus)
     const isUrgent = lifecycleLabel.includes("24h")
 
-    const metaHighlights = metas.slice(0, 2).map((meta) => {
-      const typeLabel = getMetaTypeLabel(meta.tipoMeta)
-      const focusLabel = getChallengeMetaFocusLabel(meta)
-      return focusLabel ? `${typeLabel}: ${focusLabel}` : typeLabel
-    })
-    const remainingMetaCount = Math.max(metas.length - metaHighlights.length, 0)
-
     return (
       <article
-        className={`rounded-[24px] border p-5 sm:p-6 transition-shadow duration-200 ${
+        className={`rounded-[24px] border p-5 sm:p-6 ${
           kind === "BONUS"
             ? "border-amber-300/15 bg-[linear-gradient(160deg,rgba(14,18,30,0.98),rgba(10,13,21,0.98),rgba(100,45,12,0.10))]"
             : isSellerAvailable
@@ -128,34 +123,40 @@ export function ChallengeCard({
             ) : null}
           </div>
           <div className="shrink-0 text-right">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/32">Prêmio</p>
-            <p className="mt-0.5 text-[22px] font-black tracking-tight text-white">{participantPotentialReward}</p>
-            {Number(participant?.premioTotalLiberado ?? 0) > 0 ? (
-              <p className="mt-0.5 text-[11px] font-semibold text-emerald-400">{participantUnlockedReward} liberados</p>
-            ) : null}
+            {unlockedAmount > 0 ? (
+              <>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-400/70">Ganhos</p>
+                <p className="mt-0.5 text-[22px] font-black tracking-tight text-emerald-300">{participantUnlockedReward}</p>
+                <p className="mt-0.5 text-[11px] text-white/38">
+                  {participantPotentialReward} por ciclo{totalMultiplier > 1 ? ` · ${totalMultiplier}×` : ""}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/32">Por ciclo</p>
+                <p className="mt-0.5 text-[22px] font-black tracking-tight text-white">{participantPotentialReward}</p>
+              </>
+            )}
           </div>
         </div>
 
         {/* Progresso */}
-        <div className="mt-5 space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-[12px] text-white/38">
-              {metaHighlights.length
-                ? `${metaHighlights.join(" · ")}${remainingMetaCount > 0 ? ` · +${remainingMetaCount}` : ""}`
-                : "Metas no detalhe"}
-            </span>
-            <span className="text-sm font-bold text-white tabular-nums">{participantProgress}%</span>
+        {isMissingTarget ? (
+          <p className="mt-5 text-[12px] text-white/38">Em configuração pelo gerente</p>
+        ) : (
+          <div className="mt-5 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[12px] text-white/38">Progresso</span>
+              <span className="text-sm font-bold text-white tabular-nums">{participantProgress}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
+              <div
+                className={`h-full rounded-full transition-[width] duration-500 ${progressBarClass}`}
+                style={{ width: `${Math.min(Math.max(participantProgress, 0), 100)}%` }}
+              />
+            </div>
           </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.07]">
-            <div
-              className={`h-full rounded-full transition-[width] duration-500 ${progressBarClass}`}
-              style={{ width: `${Math.min(Math.max(participantProgress, 0), 100)}%` }}
-            />
-          </div>
-          <p className="text-[11px] text-white/22">
-            {completedMetas}/{totalMetas} metas concluídas · {formatCurrencyBRL(impact?.realizedRevenue ?? 0)} faturados
-          </p>
-        </div>
+        )}
 
         {/* Ações */}
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-white/[0.05] pt-4">
@@ -234,51 +235,42 @@ export function ChallengeCard({
   const managerRemainingMetaCount = Math.max(challenge.metas.length - managerMetaHighlights.length, 0)
 
   return (
-    <article className="overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(145deg,rgba(17,24,39,0.98),rgba(8,13,24,0.98),rgba(15,23,42,0.94))] p-5 shadow-[0_22px_70px_rgba(0,0,0,0.22)]">
-      <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+    <article className="overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(145deg,rgba(17,24,39,0.98),rgba(8,13,24,0.98),rgba(15,23,42,0.94))] p-5 shadow-[0_22px_70px_rgba(0,0,0,0.22)]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <span className="rounded-full border border-cyan-300/14 bg-cyan-300/[0.08] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-50">
               {getChallengeCampaignKindLabel(kind)}
             </span>
             <ChallengeStatusBadge status={lifecycleStatus} />
-            <CampaignPill icon={<CalendarRange className="h-4 w-4 text-cyan-200" />} label={`${formatDateBR(challenge.dataInicio)} ate ${formatDateBR(challenge.dataFim)}`} />
+            <CampaignPill icon={<CalendarRange className="h-4 w-4 text-cyan-200" />} label={`${formatDateBR(challenge.dataInicio)} até ${formatDateBR(challenge.dataFim)}`} />
           </div>
 
           <h3 className="mt-3 text-xl font-black tracking-tight text-white">{challenge.titulo}</h3>
 
           <div className="mt-3 flex flex-wrap gap-3 text-sm text-white/60">
             <CampaignPill icon={<Users className="h-4 w-4 text-emerald-200" />} label={`${challenge.stats.totalParticipants} participante(s)`} />
-            <CampaignPill icon={<Target className="h-4 w-4 text-amber-200" />} label={`${challenge.metas.length} meta(s)`} />
           </div>
 
           <p className="mt-3 text-sm leading-6 text-white/58">
             {managerMetaHighlights.length
-              ? `${managerMetaHighlights.join(" | ")}${managerRemainingMetaCount > 0 ? ` | +${managerRemainingMetaCount} meta(s)` : ""}`
-              : "As metas aparecem aqui assim que o cadastro for concluido."}
+              ? managerMetaHighlights.join(" | ")
+              : "A meta aparece aqui assim que o cadastro for concluído."}
           </p>
         </div>
 
-        <div className="flex flex-col gap-4 xl:min-w-[420px] xl:items-end">
-          <div className="grid gap-3 sm:grid-cols-3 xl:w-full">
-            <ValueCard label="Bonus potencial" value={formatCurrencyBRL(impact?.bonusPotential ?? 0)} />
-            <ValueCard label="Bonus pago" value={formatCurrencyBRL(impact?.bonusPaid ?? 0)} />
-            <ValueCard label="Faturamento gerado" value={formatCurrencyBRL(impact?.realizedRevenue ?? 0)} />
-          </div>
-
-          <Button
-            variant="outline"
-            className={`rounded-2xl border-white/15 text-white hover:bg-white/10 ${
-              detailsState === "open" ? "bg-white/10" : "bg-white/6"
-            }`}
-            disabled={detailsState === "loading"}
-            aria-expanded={detailsState === "open"}
-            onClick={() => onOpen(challenge)}
-          >
-            {detailsButtonLabel}
-            {detailsButtonIcon}
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          className={`shrink-0 rounded-2xl border-white/15 text-white hover:bg-white/10 ${
+            detailsState === "open" ? "bg-white/10" : "bg-white/6"
+          }`}
+          disabled={detailsState === "loading"}
+          aria-expanded={detailsState === "open"}
+          onClick={() => onOpen(challenge)}
+        >
+          {detailsButtonLabel}
+          {detailsButtonIcon}
+        </Button>
       </div>
     </article>
   )
@@ -296,20 +288,5 @@ function CampaignPill({
       {icon}
       {label}
     </span>
-  )
-}
-
-function ValueCard({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}) {
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/40">{label}</p>
-      <p className="mt-3 text-lg font-semibold text-white">{value}</p>
-    </div>
   )
 }

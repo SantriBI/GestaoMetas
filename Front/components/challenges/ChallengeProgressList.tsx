@@ -3,6 +3,7 @@ import {
   formatMetaProgressValue,
   formatMetaValue,
   getChallengeMetaFocusLabel,
+  getChallengeMetaTargetSummary,
   getMetaTypeLabel,
   type ChallengeMeta,
 } from "@/lib/challenges"
@@ -23,6 +24,11 @@ export function ChallengeProgressList({
           const pct = Math.min(Math.max(Number(meta.percentualConclusao ?? 0), 0), 100)
           const isCompleted = pct >= 100 || meta.premioLiberado === true
           const hasProgress = Number(meta.progressoAtual ?? 0) > 0
+          const multiplier = Number(meta.multiplier ?? 0)
+          const earnedAmount = Number(meta.premioValor ?? 0)
+          const baseReward = Number(meta.recompensaValor ?? 0)
+          const hasMultiplier = multiplier > 1
+          const isMissingTarget = meta.tipoMeta === "PRODUTO_OU_MARCA" && !getChallengeMetaTargetSummary(meta)
           const metaStatusLabel = isCompleted ? "Concluída" : hasProgress ? "Em andamento" : "Pendente"
           const metaStatusClass = isCompleted
             ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
@@ -46,37 +52,51 @@ export function ChallengeProgressList({
                       {metaStatusLabel}
                     </span>
                   </div>
-                  <p className="mt-1 text-sm text-white/55">Meta: {formatMetaValue(meta)}</p>
-                  {getChallengeMetaFocusLabel(meta) ? (
-                    <p className="mt-1 text-sm text-cyan-100/72">Escopo: {getChallengeMetaFocusLabel(meta)}</p>
-                  ) : null}
-                  <p className="mt-1 text-sm text-white/55">Atual: {formatMetaProgressValue(meta)}</p>
-                  {showGap ? (
-                    <p className="mt-1 text-sm font-medium text-white/50">Falta: {gapFormatted}</p>
-                  ) : null}
-                  {isCompleted ? (
-                    <p className="mt-1 text-sm font-medium text-emerald-300/80">Meta atingida</p>
-                  ) : null}
+                  {isMissingTarget ? (
+                    <p className="mt-1 text-sm text-white/40">Em configuração pelo gerente</p>
+                  ) : (
+                    <>
+                      <p className="mt-1 text-sm text-white/55">
+                        {hasMultiplier ? "Meta por ciclo" : "Meta"}: {formatMetaValue(meta)}
+                      </p>
+                      {getChallengeMetaFocusLabel(meta) ? (
+                        <p className="mt-1 text-sm text-cyan-100/72">Escopo: {getChallengeMetaFocusLabel(meta)}</p>
+                      ) : null}
+                      <p className="mt-1 text-sm text-white/55">Vendido: {formatMetaProgressValue(meta)}</p>
+                      {showGap ? (
+                        <p className="mt-1 text-sm font-medium text-white/50">Falta: {gapFormatted}</p>
+                      ) : null}
+                      {isCompleted ? (
+                        <p className="mt-1 text-sm font-medium text-emerald-300/80">
+                          {hasMultiplier ? `${multiplier} ciclos completos` : "Meta atingida"}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
                 </div>
 
                 {showReward ? (
                   <div className="self-start rounded-full border border-amber-200/14 bg-amber-200/10 px-3 py-1.5 text-sm font-semibold text-amber-100">
-                    {formatCurrencyBRL(meta.recompensaValor)}
+                    {hasMultiplier && earnedAmount > 0
+                      ? `${formatCurrencyBRL(earnedAmount)} ganhos`
+                      : formatCurrencyBRL(baseReward)}
                   </div>
                 ) : null}
               </div>
 
-              <div className="mt-4 flex items-center gap-3">
-                <div className="h-2.5 flex-1 rounded-full bg-white/10">
-                  <div
-                    className={`h-2.5 rounded-full transition-[width] duration-500 ${isCompleted ? "bg-gradient-to-r from-emerald-400 to-emerald-500" : "bg-[linear-gradient(90deg,#22d3ee,#60a5fa,#34d399)]"}`}
-                    style={{ width: `${pct}%` }}
-                  />
+              {!isMissingTarget ? (
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="h-2.5 flex-1 rounded-full bg-white/10">
+                    <div
+                      className={`h-2.5 rounded-full transition-[width] duration-500 ${isCompleted ? "bg-gradient-to-r from-emerald-400 to-emerald-500" : "bg-[linear-gradient(90deg,#22d3ee,#60a5fa,#34d399)]"}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-white/58">
+                    {Math.round(pct)}%
+                  </span>
                 </div>
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-white/58">
-                  {Math.round(pct)}%
-                </span>
-              </div>
+              ) : null}
             </div>
           )
         })}
@@ -106,8 +126,8 @@ export function ChallengeProgressList({
           </div>
 
           <div className="mt-4 flex flex-col gap-3 text-sm text-white/58 sm:flex-row sm:items-center sm:justify-between">
-            <span className="min-w-0">Atual: {formatMetaProgressValue(meta)}</span>
-            <span className="text-sm font-semibold text-white">{Math.round(meta.percentualConclusao ?? 0)}% concluido</span>
+            <span className="min-w-0">Vendido: {formatMetaProgressValue(meta)}</span>
+            <span className="text-sm font-semibold text-white">{Math.round(meta.percentualConclusao ?? 0)}% concluído</span>
           </div>
         </div>
       ))}

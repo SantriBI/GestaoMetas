@@ -1,0 +1,24 @@
+-- Tabela de feedback/sugestões enviados pelos usuários do SIP.
+-- Executar como DM_VENDAS (mesmo schema usado pela API em runtime).
+
+CREATE TABLE TB_FEEDBACK (
+  ID_FEEDBACK    NUMBER(18)          PRIMARY KEY,
+  SK_VENDEDOR    NUMBER(18)          NULL,
+  NOME_VENDEDOR  VARCHAR2(150 CHAR)  NULL,
+  TIPO_USUARIO   VARCHAR2(20 CHAR)   DEFAULT 'VENDEDOR' NOT NULL,
+  FEEDBACK       VARCHAR2(2000 CHAR) NOT NULL,
+  DT_CRIACAO     DATE                DEFAULT SYSDATE NOT NULL,
+  CONSTRAINT ck_feedback_tipo CHECK (TIPO_USUARIO IN ('VENDEDOR', 'GERENTE'))
+);
+
+CREATE SEQUENCE TB_FEEDBACK_SEQ START WITH 1 INCREMENT BY 1 NOCACHE;
+
+CREATE INDEX IDX_FEEDBACK_VENDEDOR ON TB_FEEDBACK (SK_VENDEDOR, DT_CRIACAO DESC);
+CREATE INDEX IDX_FEEDBACK_DATA     ON TB_FEEDBACK (DT_CRIACAO DESC);
+
+COMMENT ON TABLE  TB_FEEDBACK               IS 'Sugestões e feedback enviados pelos usuários do SIP.';
+COMMENT ON COLUMN TB_FEEDBACK.SK_VENDEDOR   IS 'Identificador do vendedor (nulo quando enviado pelo gerente).';
+COMMENT ON COLUMN TB_FEEDBACK.NOME_VENDEDOR IS 'Nome do usuário no momento do envio.';
+COMMENT ON COLUMN TB_FEEDBACK.TIPO_USUARIO  IS 'Perfil do remetente: VENDEDOR ou GERENTE.';
+COMMENT ON COLUMN TB_FEEDBACK.FEEDBACK      IS 'Texto da sugestão (até 2000 caracteres).';
+COMMENT ON COLUMN TB_FEEDBACK.DT_CRIACAO    IS 'Data e hora do envio (UTC, fuso do servidor).';

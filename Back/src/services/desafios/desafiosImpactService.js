@@ -255,18 +255,9 @@ function summarizeParticipantState(participantsDetailed) {
   }
 }
 
-function buildImpactPayload({
-  metas,
-  eligibleParticipants,
-  acceptedParticipants = 0,
-  completedParticipants = 0,
-  bonusPaid = 0,
-  potentialOperations,
-  realizedOperations,
-  baseline,
-}) {
+function computeBonusPotential(metas, eligibleParticipants, potentialOperations) {
   const participantCount = numberValue(eligibleParticipants)
-  const bonusPotential = roundCurrency(
+  return roundCurrency(
     (metas ?? []).reduce((sum, meta) => {
       const metaValor = numberValue(meta?.metaValor)
       const recompensa = numberValue(meta?.recompensaValor)
@@ -279,6 +270,19 @@ function buildImpactPayload({
       return sum + recompensa * multiplierEstimate
     }, 0) * participantCount
   )
+}
+
+function buildImpactPayload({
+  metas,
+  eligibleParticipants,
+  acceptedParticipants = 0,
+  completedParticipants = 0,
+  bonusPaid = 0,
+  potentialOperations,
+  realizedOperations,
+  baseline,
+}) {
+  const bonusPotential = computeBonusPotential(metas, eligibleParticipants, potentialOperations)
 
   const potentialRevenue = resolveRevenueProjection({
     directRevenue: potentialOperations.directRevenuePotential,
@@ -346,6 +350,47 @@ export async function calculateDraftChallengeImpact(payload, targetSellers) {
     },
     baseline,
   })
+}
+
+// Versao rapida usada em listChallenges(): so multiplica metaValor/recompensaValor
+// e soma premioTotalLiberado ja calculado por calculateParticipantProgress.
+// Nao dispara loadSellerBaseline (query pesada em FATO_VENDAS_LUCRATIVIDADE),
+// entao nao preenche estimatedRevenue/realizedRevenue (use calculateChallengeImpact
+// para isso, na tela de detalhe de uma campanha).
+export function calculateBonusSummary({ metas, participantsDetailed }) {
+  const participantSummary = summarizeParticipantState(participantsDetailed)
+  const potentialOperations = aggregatePotentialOperations(metas ?? [], participantSummary.eligibleParticipants)
+  const bonusPotential = computeBonusPotential(metas, participantSummary.eligibleParticipants, potentialOperations)
+  const bonusPaid = participantSummary.bonusPaid
+
+  return {
+    eligibleParticipants: participantSummary.eligibleParticipants,
+    acceptedParticipants: participantSummary.acceptedParticipants,
+    completedParticipants: participantSummary.completedParticipants,
+    bonusPotential,
+    bonusPaid,
+    bonusRemainingPotential: roundCurrency(Math.max(bonusPotential - bonusPaid, 0)),
+    estimatedRevenue: 0,
+    realizedRevenue: 0,
+    estimatedOrders: 0,
+    realizedOrders: 0,
+    estimatedClients: 0,
+    realizedClients: 0,
+    estimatedRecoveredClients: 0,
+    realizedRecoveredClients: 0,
+    returnPerBonusPotential: 0,
+    returnPerBonusRealized: 0,
+    costPercentPotential: 0,
+    costPercentRealized: 0,
+    revenueCaptureRate: 0,
+    bonusBurnRate: bonusPotential > 0 ? roundPercent((bonusPaid / bonusPotential) * 100) : 0,
+    estimationBasis: "NAO_CALCULADO_NA_LISTAGEM",
+    realizationBasis: "NAO_CALCULADO_NA_LISTAGEM",
+    referenceTicketMedio: 0,
+    referenceReceitaPorCliente: 0,
+    referenceWindowDays: 0,
+    generatedAt: new Date().toISOString(),
+  }
 }
 
 export async function calculateChallengeImpact({ metas, participantsDetailed }) {

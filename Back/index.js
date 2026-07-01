@@ -17,6 +17,8 @@ import desafiosRoutes from './src/routes/desafios.js';
 import objetivoVendedorRoutes from './src/routes/objetivoVendedor.js';
 import perfilVendedorRoutes from './src/routes/perfilVendedor.js';
 import industriaRoutes from './src/routes/industria.js';
+import whatsappAdminRoutes from './src/routes/whatsappAdmin.js';
+import feedbackRoutes from './src/routes/feedback.js';
 
 
 
@@ -40,6 +42,8 @@ app.use('/api', desafiosRoutes);
 app.use('/api', objetivoVendedorRoutes);
 app.use('/api', perfilVendedorRoutes);
 app.use('/api', industriaRoutes);
+app.use('/api', whatsappAdminRoutes);
+app.use('/api', feedbackRoutes);
 
 
 // ============================

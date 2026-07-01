@@ -57,9 +57,6 @@ export function ChallengePayoutReport({
   const totalPayout = rows.reduce((sum, row) => sum + row.payout, 0)
   const rewardedCount = rows.filter((row) => row.payout > 0).length
   const maxPayout = rows.reduce((highest, row) => Math.max(highest, row.payout), 0)
-  const realizedReturn = totalPayout > 0
-    ? challenge.impact.realizedRevenue / totalPayout
-    : Number(challenge.impact.returnPerBonusRealized ?? 0)
   const reportTone = getReportTone(challenge)
   const reportFileName = buildReportFileName(challenge, kind)
 
@@ -108,8 +105,8 @@ export function ChallengePayoutReport({
         <ReportMetric label="Vendedores premiados" value={`${rewardedCount}/${rows.length}`} icon={<Receipt className="h-4 w-4 text-cyan-200" />} />
         <ReportMetric label="Maior pagamento" value={formatCurrencyBRL(maxPayout)} icon={<Wallet className="h-4 w-4 text-amber-200" />} />
         <ReportMetric
-          label="Retorno por bonus"
-          value={Number.isFinite(realizedReturn) && realizedReturn > 0 ? `${realizedReturn.toFixed(2)}x` : "0,00x"}
+          label="Bônus restante"
+          value={formatCurrencyBRL(challenge.impact.bonusRemainingPotential ?? 0)}
           icon={<TrendingUp className="h-4 w-4 text-sky-200" />}
         />
       </div>
@@ -118,9 +115,9 @@ export function ChallengePayoutReport({
         <div className={`overflow-hidden rounded-[26px] border border-white/10 bg-black/20 ${compact ? "mt-4" : "mt-5"}`}>
           <div className="hidden gap-4 border-b border-white/8 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45 md:grid md:grid-cols-[minmax(0,1.5fr)_minmax(130px,0.85fr)_minmax(132px,0.8fr)_minmax(150px,0.9fr)]">
             <span>Vendedor</span>
-            <span className="text-right">Valor vendido</span>
+            <span className="text-right">Progresso</span>
             <span className="text-right">Atingimento</span>
-            <span className="text-right">Premiacao</span>
+            <span className="text-right">Premiação</span>
           </div>
 
           <div className="divide-y divide-white/6">
@@ -139,7 +136,7 @@ export function ChallengePayoutReport({
                     </div>
                   </div>
 
-                  <CompactReportValue label="Valor vendido" value={row.soldValueLabel} align="right" />
+                  <CompactReportValue label="Progresso" value={row.soldValueLabel} align="right" />
 
                   <div className="min-w-0 md:text-right">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/36 md:hidden">Atingimento</p>
@@ -153,7 +150,7 @@ export function ChallengePayoutReport({
                   </div>
 
                   <CompactReportValue
-                    label="Premiacao"
+                    label="Premiação"
                     value={formatCurrencyBRL(row.payout)}
                     helper={row.payout > 0 ? "Liberado" : "Sem premio"}
                     align="right"
@@ -167,7 +164,7 @@ export function ChallengePayoutReport({
         <div className={`overflow-x-auto rounded-[26px] border border-white/10 bg-black/20 ${compact ? "mt-4" : "mt-5"}`}>
           <div className="grid min-w-[1080px] grid-cols-[minmax(0,1.2fr)_minmax(160px,0.7fr)_minmax(120px,0.5fr)_minmax(150px,0.6fr)_minmax(170px,0.7fr)_minmax(0,1.7fr)] gap-4 border-b border-white/8 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">
             <span>Vendedor</span>
-            <span>Situacao</span>
+            <span>Situação</span>
             <span>Metas</span>
             <span>Atingimento</span>
             <span>Valor a pagar</span>
@@ -190,14 +187,14 @@ export function ChallengePayoutReport({
                     <ChallengeStatusBadge status={row.participant.statusParticipacao} scope="participant" />
                   ) : (
                     <span className="inline-flex rounded-full border border-cyan-300/18 bg-cyan-400/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-100">
-                      Participacao automatica
+                      Participação automática
                     </span>
                   )}
                 </div>
 
                 <div>
                   <p className="font-semibold text-white">{row.metasConcluidas}/{row.totalMetas}</p>
-                  <p className="mt-1 text-xs text-white/45">metas concluidas</p>
+                  <p className="mt-1 text-xs text-white/45">metas concluídas</p>
                 </div>
 
                 <div>
@@ -277,15 +274,15 @@ function buildParticipantSummary(
   const status = String(participant.statusParticipacao ?? "").toUpperCase()
 
   if (status === "RECUSADO") {
-    return "Nao entrou na campanha e nao gera pagamento."
+    return "Não entrou na campanha e não gera pagamento."
   }
 
   if (payout > 0) {
-    return `Liberou ${formatCurrencyBRL(payout)} com ${metasConcluidas}/${totalMetas} meta(s) concluida(s).`
+    return `Liberou ${formatCurrencyBRL(payout)} com ${metasConcluidas}/${totalMetas} meta(s) concluída(s).`
   }
 
   if (["DISPONIVEL", "CONVIDADO"].includes(status) && isClosedChallengeStatus(challengeStatus)) {
-    return "Ficou sem adesao efetiva ate o fechamento e nao gera pagamento."
+    return "Ficou sem adesão efetiva até o fechamento e não gera pagamento."
   }
 
   return `Fechou com ${metasConcluidas}/${totalMetas} meta(s) e sem valor liberado.`
@@ -298,18 +295,17 @@ function buildMetaLine(meta: ChallengeMeta) {
 }
 
 function buildParticipantSoldValueLabel(metas: ChallengeMeta[]) {
-  const monetaryMetas = metas.filter((meta) => ["FATURAMENTO", "PRODUTO_OU_MARCA"].includes(String(meta.tipoMeta ?? "").toUpperCase()))
-  if (monetaryMetas.length > 0) {
-    const totalSold = monetaryMetas.reduce((sum, meta) => sum + Number(meta.progressoAtual ?? 0), 0)
-    return formatCurrencyBRL(totalSold)
-  }
+  const relevantMetas = metas.filter((meta) => ["FATURAMENTO", "PRODUTO_OU_MARCA"].includes(String(meta.tipoMeta ?? "").toUpperCase()))
+  if (!relevantMetas.length) return "Sem valor"
 
-  return "Sem valor"
+  // Cada meta usa seu proprio metricType (VALOR ou QUANTIDADE): formatar individualmente
+  // evita somar reais com unidades quando elas tem unidades diferentes.
+  return relevantMetas.map((meta) => formatMetaProgressValue(meta)).join(" + ")
 }
 
 function getCompactParticipantStatus(challenge: Challenge, participant: ChallengeParticipant) {
   if (!challenge.exigeAceite) {
-    return "Automatico"
+    return "Automático"
   }
 
   return getParticipantStatusLabel(participant.statusParticipacao)
@@ -321,24 +317,24 @@ function getReportTone(challenge: Challenge) {
 
   if (isEndedChallengeStatus(lifecycleStatus)) {
     return {
-      eyebrow: "3. Relatorio final",
+      eyebrow: "3. Relatório final",
       title: `Fechamento do ${kindLabel}`,
-      description: "Esse resumo consolida resultado, atingimento e valor a pagar por vendedor para servir como base de conferencia do gerente.",
+      description: "Esse resumo consolida resultado, atingimento e valor a pagar por vendedor para servir como base de conferência do gerente.",
     }
   }
 
   if (lifecycleStatus === "CANCELADO") {
     return {
-      eyebrow: "3. Relatorio congelado",
-      title: `Apuracao parcial do ${kindLabel}`,
-      description: "A campanha foi cancelada, mas o quadro abaixo preserva a apuracao acumulada para conferencia interna.",
+      eyebrow: "3. Relatório congelado",
+      title: `Apuração parcial do ${kindLabel}`,
+      description: "A campanha foi cancelada, mas o quadro abaixo preserva a apuração acumulada para conferência interna.",
     }
   }
 
   return {
-    eyebrow: "3. Previa gerencial",
-    title: `Previa de pagamento do ${kindLabel}`,
-    description: "Os valores abaixo acompanham a apuracao atual. Quando a campanha for encerrada, esse painel vira o relatorio final do gerente.",
+    eyebrow: "3. Prévia gerencial",
+    title: `Prévia de pagamento do ${kindLabel}`,
+    description: "Os valores abaixo acompanham a apuração atual. Quando a campanha for encerrada, esse painel vira o relatório final do gerente.",
   }
 }
 

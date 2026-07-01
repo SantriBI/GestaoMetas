@@ -71,7 +71,7 @@ export function ChallengeTargetAutocomplete({
         .catch((searchError) => {
           if (!active) return
           setResults([])
-          setError(searchError instanceof Error ? searchError.message : "Nao foi possivel buscar opcoes.")
+          setError(searchError instanceof Error ? searchError.message : "Não foi possível buscar opções.")
           setOpen(true)
         })
         .finally(() => {
@@ -161,7 +161,7 @@ export function ChallengeTargetAutocomplete({
             {loading ? (
               <div className="flex items-center gap-3 px-4 py-4 text-sm text-white/70">
                 <LoaderCircle className="h-4 w-4 animate-spin text-cyan-200" />
-                Buscando opcoes...
+                Buscando opções...
               </div>
             ) : error ? (
               <div className="px-4 py-4 text-sm leading-6 text-rose-100">{error}</div>

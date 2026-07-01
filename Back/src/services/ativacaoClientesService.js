@@ -1,5 +1,7 @@
 import ExcelJS from "exceljs"
 import { query } from "../db/oracle.js"
+import { getInstanceNameByVendedor } from "./evolutionApiService.js"
+import { dispatchCampanha } from "./whatsappDispatchService.js"
 
 const DEFAULT_TEMPLATES = [
   {
@@ -1073,6 +1075,28 @@ export async function enviarCampanha(campanhaId, payload = {}) {
     )
   }
 
+  let evolutionStatus = "nao_configurado"
+  let evolutionResultados = []
+
+  if (process.env.EVOLUTION_API_URL && payload.sk_vendedor) {
+    try {
+      const instanceName = await getInstanceNameByVendedor(payload.sk_vendedor)
+      if (instanceName) {
+        const resultado = await dispatchCampanha({
+          instanceName,
+          clientes,
+          campanhaId,
+          onProgress: null,
+        })
+        evolutionStatus = resultado.total_erros === 0 ? "enviado" : "parcial"
+        evolutionResultados = resultado.resultados
+      }
+    } catch (err) {
+      console.error("Erro no disparo Evolution API:", err)
+      evolutionStatus = "falhou"
+    }
+  }
+
   return {
     campanha: {
       ...campanha,
@@ -1081,6 +1105,8 @@ export async function enviarCampanha(campanhaId, payload = {}) {
       nome_usuario_confirmacao: confirmation.nome_usuario_confirmacao,
     },
     webhook_status: webhookStatus,
+    evolution_status: evolutionStatus,
+    evolution_resultados: evolutionResultados,
     clientes,
     payload_n8n: webhookPayload,
   }

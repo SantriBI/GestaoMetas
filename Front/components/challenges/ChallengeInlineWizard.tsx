@@ -8,7 +8,6 @@ import {
   type Challenge,
   type ChallengeCampaignKind,
   type ChallengeFormPayload,
-  type ChallengeImpactPreviewResponse,
   type ChallengeMetadata,
   type ChallengeModuleSetup,
 } from "@/lib/challenges"
@@ -23,7 +22,6 @@ export function ChallengeInlineWizard({
   actionError,
   onCancel,
   onSubmit,
-  onEstimateImpact,
 }: {
   editingChallenge?: Challenge | null
   campaignKind: ChallengeCampaignKind
@@ -34,11 +32,12 @@ export function ChallengeInlineWizard({
   actionError?: string | null
   onCancel: () => void
   onSubmit: (payload: ChallengeFormPayload, id?: number | string) => Promise<Challenge | null> | Challenge | null
-  onEstimateImpact: (payload: ChallengeFormPayload) => Promise<ChallengeImpactPreviewResponse | null>
 }) {
   const title = editingChallenge
     ? `Editar ${getChallengeCampaignKindLabel(campaignKind).toLowerCase()}`
-    : `Nova ${campaignKind === "BONUS" ? "rotina de bonus" : "campanha"}`
+    : campaignKind === "BONUS"
+      ? "Nova rotina de bônus"
+      : "Novo desafio"
 
   return (
     <section className="space-y-4">
@@ -47,19 +46,19 @@ export function ChallengeInlineWizard({
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.06] bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/58">
               <Wand2 className="h-4 w-4" />
-              Criacao inline
+              Criação inline
             </div>
             <h2 className="mt-3 text-2xl font-black tracking-tight text-white">{title}</h2>
           </div>
-          <p className="max-w-xl text-sm leading-6 text-white/54">Preencha o essencial: nome, metas, recompensa, prazo e impacto.</p>
+          <p className="max-w-xl text-sm leading-6 text-white/54">Preencha o essencial: nome, meta, recompensa e prazo.</p>
         </div>
       </div>
 
-      {!setup?.ready ? (
+      {setup && !setup.ready ? (
         <ChallengeInitializationWarning
           setup={setup}
-          title="As tabelas do modulo de campanhas ainda nao foram localizadas no banco."
-          description="Voce pode montar a campanha, mas a publicacao depende da persistencia do modulo."
+          title="As tabelas do módulo de campanhas ainda não foram localizadas no banco."
+          description={`Você pode montar ${campaignKind === "BONUS" ? "o bônus" : "o desafio"}, mas a publicação depende da persistência do módulo.`}
           compact
         />
       ) : null}
@@ -76,7 +75,6 @@ export function ChallengeInlineWizard({
           campaignKind={campaignKind}
           onCancel={onCancel}
           onSubmit={onSubmit}
-          onEstimateImpact={onEstimateImpact}
           saving={saving}
           editingChallenge={editingChallenge}
           metadata={metadata}

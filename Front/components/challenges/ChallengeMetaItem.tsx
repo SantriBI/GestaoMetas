@@ -36,9 +36,9 @@ export function ChallengeMetaItem({
 
           <h4 className="mt-4 text-[1.75rem] font-black tracking-tight text-white">{getMetaTypeLabel(meta.tipoMeta)}</h4>
           <p className="mt-3 text-sm leading-7 text-white/60">
-            Objetivo configurado para guiar o time com uma leitura direta e acionavel.
+            Objetivo configurado para guiar o time com uma leitura direta e acionável.
           </p>
-          {targetValue ? <p className="mt-3 text-sm leading-7 text-cyan-100/74">Foco especifico: {targetValue}</p> : null}
+          {targetValue ? <p className="mt-3 text-sm leading-7 text-cyan-100/74">Foco específico: {targetValue}</p> : null}
         </div>
 
         <div className="flex flex-wrap gap-3">

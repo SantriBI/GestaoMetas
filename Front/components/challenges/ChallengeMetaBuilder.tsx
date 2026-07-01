@@ -225,7 +225,7 @@ export function ChallengeMetaBuilder({
         </div>
 
         <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5 shadow-[0_24px_70px_rgba(2,6,23,0.18)]">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/42">Panorama rapido</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/42">Panorama rápido</p>
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div>
               <p className="text-3xl font-black tracking-tight text-white">{metas.length}</p>
@@ -233,7 +233,7 @@ export function ChallengeMetaBuilder({
             </div>
 
             <div className="text-right">
-              <p className="text-xs uppercase tracking-[0.16em] text-white/34">bonus potencial</p>
+              <p className="text-xs uppercase tracking-[0.16em] text-white/34">bônus potencial</p>
               <p className="mt-1 text-lg font-semibold text-white">{formatCurrencyBRL(totalReward)}</p>
             </div>
           </div>
@@ -257,10 +257,10 @@ export function ChallengeMetaBuilder({
                 {editingIndex !== null ? `Editando meta ${editingIndex + 1}` : "Nova meta"}
               </p>
               <h4 className="mt-3 text-2xl font-black tracking-tight text-white">
-                {editingIndex !== null ? "Atualize os detalhes da meta" : "Monte a proxima meta da campanha"}
+                {editingIndex !== null ? "Atualize os detalhes da meta" : "Monte a próxima meta da campanha"}
               </h4>
               <p className="mt-2 text-sm leading-7 text-white/56">
-                Escolha o indicador, defina o alvo e informe a recompensa. Tudo foi simplificado para leitura rapida.
+                Escolha o indicador, defina o alvo e informe a recompensa. Tudo foi simplificado para leitura rápida.
               </p>
             </div>
 
@@ -363,7 +363,7 @@ export function ChallengeMetaBuilder({
                 label="Marca / Categoria"
                 placeholder="Busque por nome ou MARCA_ID"
                 emptyLabel="Nenhuma marca encontrada para esse termo."
-                helperText="Voce pode buscar por MARCA_ID, nome da marca ou referencia de categoria."
+                helperText="Você pode buscar por MARCA_ID, nome da marca ou referência de categoria."
                 value={draft.marca}
                 onChange={(marca) => setDraft((current) => ({ ...current, marca }))}
                 onSearch={loadBrandOptions}
@@ -379,8 +379,8 @@ export function ChallengeMetaBuilder({
                 : draft.tipoMeta === "FATURAMENTO"
                   ? "Meta em reais para campanhas focadas em receita."
                   : draft.tipoMeta === "PRODUTO_OU_MARCA"
-                    ? "A meta mede o faturamento vendido no periodo do desafio considerando o produto, a marca ou ambos."
-                    : `A unidade desta meta sera exibida como ${unitByType[draft.tipoMeta]}.`}
+                    ? "A meta mede o faturamento vendido no período do desafio considerando o produto, a marca ou ambos."
+                    : `A unidade desta meta será exibida como ${unitByType[draft.tipoMeta]}.`}
             </p>
 
             <Button
@@ -410,7 +410,7 @@ export function ChallengeMetaBuilder({
         <section className="rounded-[30px] border border-dashed border-white/12 bg-white/[0.03] px-6 py-12 text-center">
           <p className="text-lg font-semibold text-white">Nenhuma meta adicionada ainda</p>
           <p className="mt-3 text-sm leading-7 text-white/54">
-            Comece pela primeira meta para transformar a ideia em uma campanha clara e acionavel para o time.
+            Comece pela primeira meta para transformar a ideia em uma campanha clara e acionável para o time.
           </p>
         </section>
       )}

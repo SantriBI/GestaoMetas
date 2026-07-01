@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises"
 import { query as oracleQuery } from "../../db/oracle.js"
 import { resolveOracleObjectNames } from "../../db/oracleObjectNames.js"
 import { calculateParticipantProgress } from "./desafiosProgressService.js"
-import { calculateChallengeImpact, calculateDraftChallengeImpact } from "./desafiosImpactService.js"
+import { calculateBonusSummary, calculateChallengeImpact, calculateDraftChallengeImpact } from "./desafiosImpactService.js"
 
 const TABLE_REQUIREMENTS = [
   {
@@ -619,7 +619,7 @@ function aggregateImpactSummary(items) {
   }
 }
 
-async function hydrateChallenge(challenge) {
+async function hydrateChallenge(challenge, { fullImpact = true } = {}) {
   const [metas, participants] = await Promise.all([
     loadMetas(challenge.id),
     loadParticipants(challenge.id),
@@ -630,7 +630,9 @@ async function hydrateChallenge(challenge) {
   )
 
   const stats = buildChallengeStats(participantsDetailed, metas)
-  const impact = await calculateChallengeImpact({ metas, participantsDetailed })
+  const impact = fullImpact
+    ? await calculateChallengeImpact({ metas, participantsDetailed })
+    : calculateBonusSummary({ metas, participantsDetailed })
   return {
     ...challenge,
     metas,
@@ -898,10 +900,9 @@ export async function listChallenges() {
     `
   )
 
-  const items = []
-  for (const row of rows) {
-    items.push(await hydrateChallenge(normalizeChallenge(row)))
-  }
+  const items = await Promise.all(
+    rows.map((row) => hydrateChallenge(normalizeChallenge(row), { fullImpact: false }))
+  )
 
   const impactSummary = aggregateImpactSummary(items)
 

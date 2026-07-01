@@ -23,7 +23,6 @@ export function ChallengeExistingList({
   onOpen,
   onClose,
   onEdit,
-  onEnd,
   onCancel,
 }: {
   campaignKind: ChallengeCampaignKind
@@ -34,7 +33,6 @@ export function ChallengeExistingList({
   onOpen: (challenge: Challenge) => void | Promise<void>
   onClose: () => void
   onEdit: (challenge: Challenge) => void
-  onEnd: (challenge: Challenge) => void | Promise<void>
   onCancel: (challenge: Challenge) => void | Promise<void>
 }) {
   const sortedItems = [...items].sort((left, right) => compareChallengesForDecision(left, right))
@@ -71,26 +69,26 @@ export function ChallengeExistingList({
 
   return (
     <section className="space-y-5">
-      {!setup?.ready ? (
+      {setup && !setup.ready ? (
         <ChallengeInitializationWarning
           setup={setup}
-          title="As tabelas do modulo de campanhas ainda nao foram localizadas no banco."
-          description="Voce pode revisar a tela, mas a publicacao depende da persistencia do modulo."
+          title="As tabelas do módulo de campanhas ainda não foram localizadas no banco."
+          description="Você pode revisar a tela, mas a publicação depende da persistência do módulo."
           compact
         />
       ) : null}
 
       <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/38">
-          {campaignKind === "BONUS" ? "Bonus" : "Desafios"}
+          {campaignKind === "BONUS" ? "Bônus" : "Desafios"}
         </h2>
         <p className="text-sm font-medium text-white/46">{activeCount} ativa(s) | {items.length} total</p>
       </div>
 
-      {loading ? (
+      {loading && !sortedItems.length ? (
         <div className="space-y-3.5">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <div key={index} className="h-[192px] animate-pulse rounded-[28px] border border-white/[0.05] bg-white/[0.03]" />
+          {Array.from({ length: 3 }).map((_, index) => (
+            <ChallengeCardSkeleton key={index} />
           ))}
         </div>
       ) : sortedItems.length ? (
@@ -133,7 +131,6 @@ export function ChallengeExistingList({
                             isOpen={isOpen}
                             isLoading={isLoading}
                             onEdit={onEdit}
-                            onEnd={onEnd}
                             onCancel={onCancel}
                           />
                         )
@@ -156,7 +153,6 @@ export function ChallengeExistingList({
                         isOpen={isOpen}
                         isLoading={isLoading}
                         onEdit={onEdit}
-                        onEnd={onEnd}
                         onCancel={onCancel}
                       />
                     )
@@ -168,11 +164,30 @@ export function ChallengeExistingList({
         </Accordion>
       ) : (
         <ChallengeEmptyState
-          title={campaignKind === "BONUS" ? "Nenhum bonus criado" : "Nenhum desafio criado"}
-          description={campaignKind === "BONUS" ? "Publique o primeiro bonus." : "Publique o primeiro desafio."}
+          title={campaignKind === "BONUS" ? "Nenhum bônus criado" : "Nenhum desafio criado"}
+          description={campaignKind === "BONUS" ? "Publique o primeiro bônus." : "Publique o primeiro desafio."}
         />
       )}
     </section>
+  )
+}
+
+function ChallengeCardSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(145deg,rgba(17,24,39,0.98),rgba(8,13,24,0.98),rgba(15,23,42,0.94))] p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="h-6 w-20 animate-pulse rounded-full bg-white/[0.06]" />
+            <div className="h-6 w-16 animate-pulse rounded-full bg-white/[0.06]" />
+            <div className="h-6 w-32 animate-pulse rounded-full bg-white/[0.06]" />
+          </div>
+          <div className="h-6 w-2/3 animate-pulse rounded-full bg-white/[0.08]" />
+          <div className="h-4 w-1/3 animate-pulse rounded-full bg-white/[0.05]" />
+        </div>
+        <div className="h-10 w-32 shrink-0 animate-pulse rounded-2xl bg-white/[0.06]" />
+      </div>
+    </div>
   )
 }
 

@@ -5,7 +5,25 @@
       "Bash(Select-String \"desafios\")",
       "PowerShell(netstat -ano)",
       "PowerShell(Get-Process -Id 21740 -ErrorAction SilentlyContinue)",
-      "Bash(xargs grep -l \"area-ataque\\\\|assistente-vendas\\\\|areaAtaque\\\\|assistenteVendas\")"
+      "Bash(xargs grep -l \"area-ataque\\\\|assistente-vendas\\\\|areaAtaque\\\\|assistenteVendas\")",
+      "Bash(cd \"/c/Users/guilherme.diniz/Documents/Desenvolvimento - Santri/GestaoMetas/Projeto\" && grep -rln \"GM_TB_WHATSAPP_INSTANCIAS\" --include=\"*.*\" -I . 2>/dev/null | grep -v node_modules)",
+      "Read(//c/c/Users/guilherme.diniz/Documents/Desenvolvimento - Santri/GestaoMetas/**)",
+      "Bash(cd \"/c/Users/guilherme.diniz/Documents/Desenvolvimento - Santri/GestaoMetas/Projeto/Back\" && sed -i 's/GM_TB_WHATSAPP_INSTANCIAS/TB_WHATSAPP_INSTANCIAS/g' src/controllers/whatsappAdminController.js src/services/evolutionApiService.js)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(npx next *)",
+      "Bash(echo \"TSC_EXIT:$?\")",
+      "Bash(./node_modules/.bin/tsc --noEmit -p tsconfig.json)",
+      "Bash(node --check src/services/desafios/desafiosImpactService.js)",
+      "Bash(node --check src/services/desafios/desafiosService.js)",
+      "Bash(node --check src/services/desafios/desafiosProgressService.js)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(grep -Hm1 ^description: '/c/Users/guilherme.diniz/Documents/Desenvolvimento - Santri/GestaoMetas/Projeto/.claude/skills/*/SKILL.md')",
+      "Bash(timeout 3 bash -c \"cat < /dev/null > /dev/tcp/172.30.0.175/1521\")",
+      "Bash(npm ls *)"
+    ],
+    "additionalDirectories": [
+      "c:\\c\\Users\\guilherme.diniz\\Documents\\Desenvolvimento - Santri\\GestaoMetas\\Projeto\\Back\\src\\controllers"
     ]
   }
 }

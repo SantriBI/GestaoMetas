@@ -2,39 +2,52 @@
 
 import type { ReactNode } from "react"
 import { useEffect, useRef, useState } from "react"
-import { ArrowLeft, ArrowRight, CalendarRange, Coins, Sparkles, Target } from "lucide-react"
+import { ArrowLeft, ArrowRight, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ChallengeImpactPreview } from "@/components/challenges/ChallengeImpactPreview"
-import { ChallengeMetaBuilder } from "@/components/challenges/ChallengeMetaBuilder"
+import { ChallengeReview } from "@/components/challenges/ChallengeReview"
+import {
+  ChallengeTargetAutocomplete,
+  type ChallengeTargetAutocompleteOption,
+} from "@/components/challenges/ChallengeTargetAutocomplete"
 import type {
   Challenge,
   ChallengeCampaignKind,
   ChallengeFormPayload,
-  ChallengeImpactPreviewResponse,
   ChallengeMeta,
   ChallengeMetadata,
   ChallengeModuleSetup,
 } from "@/lib/challenges"
 import {
   compareChallengeDateValues,
-  formatCurrencyBRL,
-  formatDateBR,
   getChallengeDateInputValue,
   getChallengeCampaignKind,
   getChallengeCampaignKindLabel,
   hasChallengeMetaTarget,
-  getMetaTypeLabel,
+  searchChallengeBrands,
+  searchChallengeProducts,
 } from "@/lib/challenges"
 
-const STEPS = ["Nome", "Metas", "Prazo", "Impacto estimado", "Revisao"]
+const STEPS = ["Nome", "Meta", "Prazo", "Revisão"]
+
+function getStepQuestions(kind: ChallengeCampaignKind) {
+  const noun = kind === "BONUS" ? "bônus" : "desafio"
+  return [
+    `Como vamos chamar esse ${noun}?`,
+    `Qual é a meta do ${noun}?`,
+    `Quando o ${noun} roda?`,
+    "Pronto para publicar?",
+  ]
+}
+
+type TargetKind = "BRAND" | "PRODUCT"
+type MetaMetricType = "VALOR" | "QUANTIDADE"
 
 export function ChallengeWizard({
   open,
   campaignKind,
   onCancel,
   onSubmit,
-  onEstimateImpact,
   saving,
   editingChallenge,
   metadata,
@@ -45,7 +58,6 @@ export function ChallengeWizard({
   campaignKind: ChallengeCampaignKind
   onCancel: () => void
   onSubmit: (payload: ChallengeFormPayload, id?: number | string) => Promise<unknown> | unknown
-  onEstimateImpact: (payload: ChallengeFormPayload) => Promise<ChallengeImpactPreviewResponse | null>
   saving?: boolean
   editingChallenge?: Challenge | null
   metadata?: ChallengeMetadata | null
@@ -53,23 +65,27 @@ export function ChallengeWizard({
   moduleSetup?: ChallengeModuleSetup | null
 }) {
   const scrollAreaRef = useRef<HTMLDivElement | null>(null)
-  const impactRequestRef = useRef(0)
   const [step, setStep] = useState(0)
   const [titulo, setTitulo] = useState("")
   const [descricao, setDescricao] = useState("")
   const [dataInicio, setDataInicio] = useState("")
   const [dataFim, setDataFim] = useState("")
   const [bonusMonth, setBonusMonth] = useState(getCurrentMonthValue())
-  const [metas, setMetas] = useState<ChallengeMeta[]>([])
-  const [impactPreview, setImpactPreview] = useState<ChallengeImpactPreviewResponse | null>(null)
-  const [impactLoading, setImpactLoading] = useState(false)
-  const [impactError, setImpactError] = useState<string | null>(null)
+  const [targetKind, setTargetKind] = useState<TargetKind>("BRAND")
+  const [target, setTarget] = useState<ChallengeTargetAutocompleteOption | null>(null)
+  const [metricType, setMetricType] = useState<MetaMetricType>("VALOR")
+  const [metaValor, setMetaValor] = useState("")
+  const [recompensaValor, setRecompensaValor] = useState("")
 
   const effectiveKind = editingChallenge ? getChallengeCampaignKind(editingChallenge) : campaignKind
-  const orderedMetas = metas.map((meta, index) => ({ ...meta, ordemExibicao: index + 1 }))
-  const impact = impactPreview?.impact ?? editingChallenge?.impact ?? null
-  const totalReward = orderedMetas.reduce((sum, meta) => sum + Number(meta.recompensaValor ?? 0), 0)
   const eligibleSellers = metadata?.sellers.length ?? 0
+  const meta = buildMetaFromState(targetKind, target, metricType, metaValor, recompensaValor)
+  const eyebrowLabel = editingChallenge
+    ? `Editar ${getChallengeCampaignKindLabel(effectiveKind).toLowerCase()}`
+    : effectiveKind === "BONUS"
+      ? "Novo bônus"
+      : "Novo desafio"
+  const stepQuestions = getStepQuestions(effectiveKind)
   const draftPayload: ChallengeFormPayload = {
     titulo: titulo.trim(),
     descricao: descricao.trim() || null,
@@ -78,7 +94,7 @@ export function ChallengeWizard({
     exigeAceite: effectiveKind === "DESAFIO",
     empresaId: editingChallenge?.empresaId ?? null,
     criadoPor: createdBy,
-    metas: orderedMetas,
+    metas: [meta],
   }
 
   useEffect(() => {
@@ -92,84 +108,48 @@ export function ChallengeWizard({
       getChallengeDateInputValue(editingChallenge?.dataFim) ||
       (effectiveKind === "BONUS" ? getMonthEnd(currentMonth) : addDaysValue(getTodayValue(), 7))
     const nextMonth = effectiveKind === "BONUS" ? (nextStart ? nextStart.slice(0, 7) : currentMonth) : currentMonth
-    const nextMetas = editingChallenge?.metas?.length
-      ? editingChallenge.metas.map((meta, index) => ({ ...meta, ordemExibicao: index + 1, config: meta.config ?? {} }))
-      : []
+    const existingMeta = editingChallenge?.metas?.[0] ?? null
+    const config = existingMeta?.config ?? {}
+    const hasProductTarget = Boolean(config.productId || config.productName)
+    const hasBrandTarget = Boolean(config.brandId || config.brandName)
 
     setTitulo(editingChallenge?.titulo ?? "")
     setDescricao(editingChallenge?.descricao ?? "")
     setDataInicio(nextStart)
     setDataFim(nextEnd)
     setBonusMonth(nextMonth)
-    setMetas(nextMetas)
+    setTargetKind(hasProductTarget && !hasBrandTarget ? "PRODUCT" : "BRAND")
+    setTarget(
+      hasProductTarget
+        ? { id: String(config.productId ?? ""), label: String(config.productName ?? "") }
+        : hasBrandTarget
+          ? { id: String(config.brandId ?? ""), label: String(config.brandName ?? "") }
+          : null
+    )
+    setMetricType(existingMeta?.metricType === "QUANTIDADE" ? "QUANTIDADE" : "VALOR")
+    setMetaValor(existingMeta ? String(Number(existingMeta.metaValor) || "") : "")
+    setRecompensaValor(existingMeta ? String(Number(existingMeta.recompensaValor) || "") : "")
     setStep(0)
-    setImpactPreview(null)
-    setImpactError(null)
   }, [campaignKind, editingChallenge, effectiveKind, open])
 
   useEffect(() => {
     scrollAreaRef.current?.scrollTo({ top: 0, behavior: "auto" })
   }, [open, step])
 
-  useEffect(() => {
-    const payload: ChallengeFormPayload = {
-      titulo: titulo.trim(),
-      descricao: descricao.trim() || null,
-      dataInicio,
-      dataFim,
-      exigeAceite: effectiveKind === "DESAFIO",
-      empresaId: editingChallenge?.empresaId ?? null,
-      criadoPor: createdBy,
-      metas: metas.map((meta, index) => ({ ...meta, ordemExibicao: index + 1 })),
-    }
-
-    if (step < 3 || !payload.titulo || !payload.dataInicio || !payload.dataFim || !payload.metas.length) return
-
-    let cancelled = false
-    const requestId = impactRequestRef.current + 1
-    impactRequestRef.current = requestId
-
-    setImpactLoading(true)
-    setImpactError(null)
-
-    void onEstimateImpact(payload)
-      .then((result) => {
-        if (cancelled || impactRequestRef.current !== requestId) return
-        setImpactPreview(result)
-        if (!result) setImpactError("Nao foi possivel gerar a leitura de impacto neste momento.")
-      })
-      .catch((err) => {
-        if (cancelled || impactRequestRef.current !== requestId) return
-        setImpactPreview(null)
-        setImpactError(err instanceof Error ? err.message : "Nao foi possivel gerar a leitura de impacto.")
-      })
-      .finally(() => {
-        if (cancelled || impactRequestRef.current !== requestId) return
-        setImpactLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [createdBy, dataFim, dataInicio, descricao, editingChallenge?.empresaId, effectiveKind, metas, onEstimateImpact, step, titulo])
-
-  const metasValidas =
-    orderedMetas.length > 0 &&
-    orderedMetas.every((meta) => {
-      const metaValor = Number(meta.metaValor)
-      const recompensa = Number(meta.recompensaValor)
-
-      if (!Number.isFinite(metaValor) || metaValor <= 0) return false
-      if (!Number.isFinite(recompensa) || recompensa < 0) return false
-      if (!hasChallengeMetaTarget(meta)) return false
-      return true
-    })
+  const metaValorNum = Number(metaValor)
+  const recompensaNum = Number(recompensaValor)
+  const metaValida =
+    Number.isFinite(metaValorNum) &&
+    metaValorNum > 0 &&
+    Number.isFinite(recompensaNum) &&
+    recompensaNum >= 0 &&
+    hasChallengeMetaTarget(meta)
 
   const canAdvance =
     step === 0
       ? titulo.trim().length > 0
       : step === 1
-        ? metasValidas
+        ? metaValida
         : step === 2
           ? Boolean(dataInicio && dataFim && compareChallengeDateValues(dataFim, dataInicio) >= 0)
           : true
@@ -184,6 +164,11 @@ export function ChallengeWizard({
 
     setDataInicio(getMonthStart(value))
     setDataFim(getMonthEnd(value))
+  }
+
+  function handleTargetKindChange(nextKind: TargetKind) {
+    setTargetKind(nextKind)
+    setTarget(null)
   }
 
   async function handleCreate() {
@@ -208,250 +193,181 @@ export function ChallengeWizard({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div ref={scrollAreaRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y">
-        <div className="space-y-6 px-4 py-4 sm:px-6 sm:py-5 lg:space-y-7 lg:px-7 lg:py-6">
-          <div className="flex flex-wrap gap-3">
-            {STEPS.map((label, index) => (
-              <div
-                key={label}
-                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                  index === step
-                    ? "border-cyan-300/24 bg-cyan-300/10 text-cyan-50"
-                    : index < step
-                      ? "border-emerald-300/20 bg-emerald-300/[0.08] text-emerald-50"
-                      : "border-white/10 bg-white/[0.03] text-white/48"
-                }`}
-              >
-                {index + 1}. {label}
-              </div>
-            ))}
+        <div className="space-y-4 px-6 pb-6 pt-8 sm:px-8 sm:pb-6 sm:pt-9">
+          <div className="mx-auto w-full max-w-[720px] space-y-2">
+            <div className="flex gap-1.5">
+              {STEPS.map((_, index) => (
+                <div
+                  key={STEPS[index]}
+                  className={`h-1.5 flex-1 rounded-full transition-colors ${index === step ? "bg-cyan-300" : "bg-white/10"}`}
+                />
+              ))}
+            </div>
+            <p className="text-xs font-medium text-white/42">
+              Etapa {step + 1} de {STEPS.length} · {STEPS[step]}
+            </p>
           </div>
 
-          <div className="mx-auto w-full max-w-[1180px]">
+          <div className="mx-auto w-full max-w-[720px]">
             {step === 0 ? (
-              <section className={panelClass}>
-                <div className="grid gap-8 xl:grid-cols-[minmax(0,1.16fr)_320px]">
-                  <div className="space-y-8">
-                    <div className="max-w-3xl">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/70">Etapa 1</p>
-                      <h3 className="mt-4 text-3xl font-black tracking-tight text-white">Nome da campanha</h3>
-                      <p className="mt-3 text-sm leading-7 text-white/58">
-                        Diga ao time, em uma frase curta, o que precisa acontecer. Quanto mais claro, mais rapido o time entra em ritmo.
-                      </p>
+              <section>
+                <StepHeader eyebrow={eyebrowLabel} title={stepQuestions[0]} />
+
+                <div className="mt-7 space-y-6">
+                  <Field label="Nome">
+                    <Input
+                      value={titulo}
+                      onChange={(event) => setTitulo(event.target.value)}
+                      className={wizardInputClass}
+                      placeholder={effectiveKind === "BONUS" ? "Ex.: Bônus de Conversão de Abril" : "Ex.: Sprint de Reativação da Semana"}
+                    />
+                  </Field>
+
+                  <Field label="Descrição (opcional)">
+                    <div className="relative">
+                      <textarea
+                        value={descricao}
+                        onChange={(event) => setDescricao(event.target.value.slice(0, 500))}
+                        rows={2}
+                        maxLength={500}
+                        className={`${wizardInputClass} h-auto resize-none py-3 leading-6`}
+                        placeholder="Explique o objetivo, regras e contexto para os vendedores..."
+                      />
+                      <span className="absolute bottom-3 right-4 text-[11px] text-white/30">
+                        {descricao.length}/500
+                      </span>
                     </div>
-
-                    <div className="space-y-4 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6">
-                      <Field label="Nome">
-                        <Input
-                          value={titulo}
-                          onChange={(event) => setTitulo(event.target.value)}
-                          className={wizardInputClass}
-                          placeholder={effectiveKind === "BONUS" ? "Ex.: Bonus de Conversao de Abril" : "Ex.: Sprint de Reativacao da Semana"}
-                        />
-                      </Field>
-
-                      <Field label="Descricao do desafio (opcional)">
-                        <div className="relative">
-                          <textarea
-                            value={descricao}
-                            onChange={(event) => setDescricao(event.target.value.slice(0, 500))}
-                            rows={3}
-                            maxLength={500}
-                            className={`${wizardInputClass} h-auto resize-none py-4 leading-6`}
-                            placeholder="Explique o objetivo, regras e contexto da campanha para os vendedores..."
-                          />
-                          <span className="absolute bottom-3 right-4 text-[11px] text-white/30">
-                            {descricao.length}/500
-                          </span>
-                        </div>
-                      </Field>
-                    </div>
-                  </div>
-
-                  <aside className={asidePanelClass}>
-                    <AsideCard title="Como o gerente vai ler" icon={<Sparkles className="h-3.5 w-3.5 text-cyan-200" />} highlight>
-                      <p className="text-xl font-semibold text-white">
-                        {titulo || (effectiveKind === "BONUS" ? "Novo bonus mensal" : "Nova campanha")}
-                      </p>
-                      <p className="mt-3 text-sm leading-7 text-white/56">
-                        {effectiveKind === "BONUS"
-                          ? "Bonus recorrente, automatico e sem aceite. Ideal para dar ritmo mensal ao time."
-                          : "Campanha com inicio, fim e aceite do vendedor. Ideal para acelerar uma frente comercial especifica."}
-                      </p>
-                    </AsideCard>
-
-                    <AsideCard title="Base da operacao" icon={<Target className="h-3.5 w-3.5 text-cyan-200" />}>
-                      <p className="text-sm leading-7 text-white/60">
-                        {eligibleSellers
-                          ? `${eligibleSellers} vendedor(es) entram no radar de elegibilidade desta campanha.`
-                          : "A leitura de participantes elegiveis aparece na etapa de impacto estimado."}
-                      </p>
-                    </AsideCard>
-                  </aside>
+                  </Field>
                 </div>
+
+                {eligibleSellers ? (
+                  <p className="mt-6 flex items-center gap-2 text-xs text-white/45">
+                    <Users className="h-3.5 w-3.5 text-cyan-200" />
+                    {eligibleSellers} vendedor(es) entram neste {effectiveKind === "BONUS" ? "bônus" : "desafio"}.
+                  </p>
+                ) : null}
               </section>
             ) : null}
 
             {step === 1 ? (
-              <section className={panelClass}>
-                <ChallengeMetaBuilder metas={orderedMetas} onChange={setMetas} />
+              <section>
+                <StepHeader eyebrow={eyebrowLabel} title={stepQuestions[1]} />
+
+                <div className="mt-7 flex gap-3">
+                  <TargetKindButton active={targetKind === "BRAND"} onClick={() => handleTargetKindChange("BRAND")}>
+                    Marca
+                  </TargetKindButton>
+                  <TargetKindButton active={targetKind === "PRODUCT"} onClick={() => handleTargetKindChange("PRODUCT")}>
+                    Produto
+                  </TargetKindButton>
+                </div>
+
+                <div className="mt-6">
+                  {targetKind === "BRAND" ? (
+                    <ChallengeTargetAutocomplete
+                      label="Marca"
+                      placeholder="Busque por nome ou MARCA_ID"
+                      emptyLabel="Nenhuma marca encontrada para esse termo."
+                      helperText="Todos os produtos da marca entram na meta automaticamente."
+                      value={target}
+                      onChange={setTarget}
+                      onSearch={loadBrandOptions}
+                      inputClassName={wizardInputClass}
+                    />
+                  ) : (
+                    <ChallengeTargetAutocomplete
+                      label="Produto"
+                      placeholder="Busque por nome ou PRODUTO_ID"
+                      emptyLabel="Nenhum produto encontrado para esse termo."
+                      helperText="Busca por nome ou PRODUTO_ID direto no Oracle."
+                      value={target}
+                      onChange={setTarget}
+                      onSearch={loadProductOptions}
+                      inputClassName={wizardInputClass}
+                    />
+                  )}
+                </div>
+
+                <div className="mt-6 flex items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">Medir por</span>
+                  <div className="flex overflow-hidden rounded-[14px] border border-white/10 bg-black/20">
+                    <button
+                      type="button"
+                      onClick={() => setMetricType("VALOR")}
+                      className={`px-4 py-2 text-xs font-semibold transition ${metricType === "VALOR" ? "bg-cyan-400/20 text-cyan-100" : "text-white/50 hover:text-white/80"}`}
+                    >
+                      R$ Valor
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMetricType("QUANTIDADE")}
+                      className={`px-4 py-2 text-xs font-semibold transition ${metricType === "QUANTIDADE" ? "bg-cyan-400/20 text-cyan-100" : "text-white/50 hover:text-white/80"}`}
+                    >
+                      # Quantidade
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-6 md:grid-cols-2">
+                  <Field label={metricType === "QUANTIDADE" ? "Meta (unidades)" : "Meta (R$)"}>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={metaValor}
+                      onChange={(event) => setMetaValor(event.target.value)}
+                      className={wizardInputClass}
+                      placeholder={metricType === "QUANTIDADE" ? "Ex.: 50" : "Ex.: 5000"}
+                    />
+                  </Field>
+
+                  <Field label="Recompensa (R$)">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={recompensaValor}
+                      onChange={(event) => setRecompensaValor(event.target.value)}
+                      className={wizardInputClass}
+                      placeholder="Ex.: 100"
+                    />
+                  </Field>
+                </div>
               </section>
             ) : null}
 
             {step === 2 ? (
-              <section className={panelClass}>
-                <div className="grid gap-8 xl:grid-cols-[minmax(0,1.16fr)_320px]">
-                  <div className="space-y-8">
-                    <div className="max-w-3xl">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/70">Etapa 3</p>
-                      <h3 className="mt-4 text-3xl font-black tracking-tight text-white">Prazo da campanha</h3>
-                      <p className="mt-3 text-sm leading-7 text-white/58">
-                        Defina a janela comercial da acao. O prazo certo ajuda o time a sentir urgencia sem perder clareza.
-                      </p>
+              <section>
+                <StepHeader eyebrow={eyebrowLabel} title={stepQuestions[2]} />
+
+                <div className="mt-7 space-y-6">
+                  {effectiveKind === "BONUS" ? (
+                    <Field label="Mês de referência">
+                      <Input type="month" value={bonusMonth} onChange={(event) => handleMonthChange(event.target.value)} className={wizardInputClass} />
+                    </Field>
+                  ) : (
+                    <div className="grid gap-6 md:grid-cols-2">
+                      <Field label="Data início">
+                        <Input type="date" value={dataInicio} onChange={(event) => setDataInicio(event.target.value)} className={wizardInputClass} />
+                      </Field>
+
+                      <Field label="Data fim">
+                        <Input type="date" value={dataFim} onChange={(event) => setDataFim(event.target.value)} className={wizardInputClass} />
+                      </Field>
                     </div>
-
-                    <div className="space-y-6 rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6">
-                      {effectiveKind === "BONUS" ? (
-                        <Field label="Mes de referencia">
-                          <Input type="month" value={bonusMonth} onChange={(event) => handleMonthChange(event.target.value)} className={wizardInputClass} />
-                        </Field>
-                      ) : (
-                        <div className="grid gap-5 md:grid-cols-2">
-                          <Field label="Data inicio">
-                            <Input type="date" value={dataInicio} onChange={(event) => setDataInicio(event.target.value)} className={wizardInputClass} />
-                          </Field>
-
-                          <Field label="Data fim">
-                            <Input type="date" value={dataFim} onChange={(event) => setDataFim(event.target.value)} className={wizardInputClass} />
-                          </Field>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <aside className={asidePanelClass}>
-                    <AsideCard title="Formato do prazo" icon={<CalendarRange className="h-3.5 w-3.5 text-cyan-200" />} highlight>
-                      <p className="text-lg font-semibold text-white">
-                        {effectiveKind === "BONUS" ? "Bonus mensal automatico" : "Campanha com data marcada"}
-                      </p>
-                      <p className="mt-3 text-sm leading-7 text-white/56">
-                        {effectiveKind === "BONUS"
-                          ? "O bonus roda dentro do mes escolhido e nao exige aceite do time."
-                          : "O desafio abre, precisa de aceite e termina no prazo combinado com a operacao."}
-                      </p>
-                    </AsideCard>
-
-                    <AsideCard title="Periodo selecionado" icon={<CalendarRange className="h-3.5 w-3.5 text-cyan-200" />}>
-                      <p className="text-lg font-semibold text-white">
-                        {dataInicio && dataFim ? `${formatDateBR(dataInicio)} ate ${formatDateBR(dataFim)}` : "Escolha as datas"}
-                      </p>
-                    </AsideCard>
-
-                    {dataInicio && dataFim && compareChallengeDateValues(dataFim, dataInicio) < 0 ? (
-                      <div className="rounded-[24px] border border-rose-300/18 bg-rose-400/10 p-5 text-sm leading-7 text-rose-100">
-                        A data final precisa ser igual ou posterior a data inicial.
-                      </div>
-                    ) : null}
-                  </aside>
+                  )}
                 </div>
+
+                {dataInicio && dataFim && compareChallengeDateValues(dataFim, dataInicio) < 0 ? (
+                  <p className="mt-3 text-sm text-rose-300">A data final precisa ser igual ou posterior à data inicial.</p>
+                ) : null}
               </section>
             ) : null}
 
             {step === 3 ? (
-              <section className={panelClass}>
-                <div className="max-w-3xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/70">Etapa 4</p>
-                  <h3 className="mt-4 text-3xl font-black tracking-tight text-white">Impacto estimado</h3>
-                  <p className="mt-3 text-sm leading-7 text-white/58">
-                    Antes de publicar, confira o quanto a campanha pode custar e o faturamento que ela pode ajudar a gerar.
-                  </p>
-                </div>
+              <section>
+                <StepHeader eyebrow={eyebrowLabel} title={stepQuestions[3]} />
 
-                <div className="mt-8 space-y-6">
-                  <ChallengeImpactPreview
-                    impact={impact}
-                    loading={impactLoading}
-                    error={impactError}
-                    preview
-                    title="Impacto da campanha"
-                    description="Leitura comercial do bonus, do faturamento projetado e da base elegivel para esta configuracao."
-                  />
-
-                  {impact ? (
-                    <div className="grid gap-4 lg:grid-cols-2">
-                      <ImpactCallout
-                        title="Custo potencial"
-                        value={`A campanha pode custar ate ${formatCurrencyBRL(impact.bonusPotential)}.`}
-                      />
-                      <ImpactCallout
-                        title="Faturamento potencial"
-                        value={`E pode gerar ate ${formatCurrencyBRL(impact.estimatedRevenue)} em faturamento.`}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
-
-            {step === 4 ? (
-              <section className={panelClass}>
-                <div className="max-w-3xl">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-100/70">Etapa 5</p>
-                  <h3 className="mt-4 text-3xl font-black tracking-tight text-white">Revisao final</h3>
-                  <p className="mt-3 text-sm leading-7 text-white/58">
-                    Um ultimo olhar para confirmar nome, metas, prazo e impacto financeiro antes de publicar.
-                  </p>
-                </div>
-
-                <div className="mt-8 grid gap-4 lg:grid-cols-4">
-                  <ReviewStat label="Formato" value={effectiveKind === "BONUS" ? "Bonus mensal" : "Desafio com aceite"} />
-                  <ReviewStat label="Prazo" value={dataInicio && dataFim ? `${formatDateBR(dataInicio)} ate ${formatDateBR(dataFim)}` : "-"} />
-                  <ReviewStat label="Metas" value={`${orderedMetas.length} meta(s)`} />
-                  <ReviewStat label="Bonus potencial" value={formatCurrencyBRL(totalReward)} />
-                </div>
-
-                <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-                  <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-6">
-                    <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
-                      <Target className="h-4 w-4 text-cyan-200" />
-                      O que vai entrar na campanha
-                    </div>
-                    <h4 className="mt-4 text-2xl font-black tracking-tight text-white">{titulo || "Nova campanha"}</h4>
-                    <div className="mt-5 space-y-3">
-                      {orderedMetas.map((meta, index) => (
-                        <div key={`${meta.tipoMeta}-${index}`} className="rounded-[22px] border border-white/10 bg-black/20 px-4 py-4">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div>
-                              <p className="text-sm font-semibold text-white">{getMetaTypeLabel(meta.tipoMeta)}</p>
-                              <p className="mt-1 text-sm text-white/58">
-                                Meta {meta.tipoMeta === "FATURAMENTO" ? formatCurrencyBRL(meta.metaValor) : `${meta.metaValor} ${meta.unidadeMeta}`}
-                              </p>
-                            </div>
-                            <span className="rounded-full border border-amber-200/14 bg-amber-200/10 px-3 py-1.5 text-sm font-semibold text-amber-100">
-                              {formatCurrencyBRL(meta.recompensaValor)}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <AsideCard title="Leitura executiva" icon={<Sparkles className="h-3.5 w-3.5 text-cyan-200" />} highlight>
-                      <p className="text-sm leading-7 text-white/62">
-                        {effectiveKind === "BONUS"
-                          ? "Bonus automatico, sem aceite e com acompanhamento recorrente do resultado."
-                          : "Campanha com aceite do time, prazo definido e acompanhamento por meta."}
-                      </p>
-                    </AsideCard>
-
-                    <AsideCard title="Impacto esperado" icon={<Coins className="h-3.5 w-3.5 text-cyan-200" />}>
-                      <p className="text-sm leading-7 text-white/62">
-                        {impact
-                          ? `Potencial de ${formatCurrencyBRL(impact.estimatedRevenue)} em faturamento com ate ${formatCurrencyBRL(impact.bonusPotential)} de bonus.`
-                          : "O impacto sera calculado assim que nome, metas e prazo estiverem preenchidos."}
-                      </p>
-                    </AsideCard>
-                  </div>
+                <div className="mt-7">
+                  <ChallengeReview titulo={titulo} descricao={descricao} metas={[meta]} dataInicio={dataInicio} dataFim={dataFim} />
                 </div>
               </section>
             ) : null}
@@ -459,107 +375,75 @@ export function ChallengeWizard({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-white/8 bg-[linear-gradient(180deg,rgba(2,8,23,0.84),rgba(2,8,23,0.96))] px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-7">
-        <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-white">
-              Etapa {step + 1} de {STEPS.length}: {STEPS[step]}
-            </p>
-            <p className="mt-1 text-sm text-white/46">
-              {moduleSetup?.ready === false
-                ? "A campanha pode ser revisada agora, mas a publicacao fica bloqueada ate a persistencia do modulo."
-                : "O fluxo foi reduzido ao essencial para publicar mais rapido e com melhor leitura de retorno."}
-            </p>
-          </div>
+      <div className="shrink-0 border-t border-white/8 bg-[linear-gradient(180deg,rgba(2,8,23,0.84),rgba(2,8,23,0.96))] px-4 py-3 backdrop-blur-xl sm:px-6 lg:px-7">
+        <div className="mx-auto flex w-full max-w-[720px] items-center justify-between gap-4">
+          <Button type="button" variant="outline" onClick={handleBack} className="h-12 rounded-2xl border-white/12 bg-white/5 text-white hover:bg-white/10">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {step === 0 ? "Voltar ao painel" : "Voltar"}
+          </Button>
 
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <Button type="button" variant="outline" onClick={handleBack} className="h-12 rounded-2xl border-white/12 bg-white/5 text-white hover:bg-white/10">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              {step === 0 ? "Voltar ao painel" : "Voltar"}
+          {step < STEPS.length - 1 ? (
+            <Button
+              type="button"
+              onClick={handleNext}
+              disabled={!canAdvance}
+              className="h-12 rounded-2xl bg-[linear-gradient(135deg,#22d3ee,#60a5fa,#f59e0b)] px-6 text-black hover:opacity-95 disabled:opacity-50"
+            >
+              Próximo
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
-
-            {step < STEPS.length - 1 ? (
-              <Button
-                type="button"
-                onClick={handleNext}
-                disabled={!canAdvance}
-                className="h-12 rounded-2xl bg-[linear-gradient(135deg,#22d3ee,#60a5fa,#f59e0b)] px-6 text-black hover:opacity-95 disabled:opacity-50"
-              >
-                Proximo
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={() => void handleCreate()}
-                disabled={saving || !canAdvance || moduleSetup?.ready === false}
-                className="h-12 rounded-2xl bg-[linear-gradient(135deg,#f59e0b,#ec4899,#06b6d4)] px-6 text-black hover:opacity-95 disabled:opacity-50"
-              >
-                {moduleSetup?.ready === false
-                  ? "Banco nao inicializado"
-                  : saving
-                    ? "Publicando..."
-                    : editingChallenge
-                      ? `Salvar ${getChallengeCampaignKindLabel(effectiveKind).toLowerCase()}`
-                      : "Publicar campanha"}
-              </Button>
-            )}
-          </div>
+          ) : (
+            <Button
+              type="button"
+              onClick={() => void handleCreate()}
+              disabled={saving || !canAdvance || moduleSetup?.ready === false}
+              className="h-12 rounded-2xl bg-[linear-gradient(135deg,#f59e0b,#ec4899,#06b6d4)] px-6 text-black hover:opacity-95 disabled:opacity-50"
+            >
+              {moduleSetup?.ready === false
+                ? "Banco não inicializado"
+                : saving
+                  ? "Publicando..."
+                  : editingChallenge
+                    ? `Salvar ${getChallengeCampaignKindLabel(effectiveKind).toLowerCase()}`
+                    : `Publicar ${effectiveKind === "BONUS" ? "bônus" : "desafio"}`}
+            </Button>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-function ImpactCallout({
-  title,
-  value,
-}: {
-  title: string
-  value: string
-}) {
+function StepHeader({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
-    <div className="rounded-[24px] border border-cyan-300/12 bg-cyan-300/[0.06] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100/72">{title}</p>
-      <p className="mt-3 text-lg font-semibold tracking-tight text-white">{value}</p>
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/40">{eyebrow}</p>
+      <h3 className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">{title}</h3>
     </div>
   )
 }
 
-function ReviewStat({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}) {
-  return (
-    <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/42">{label}</p>
-      <p className="mt-3 text-base font-semibold text-white">{value}</p>
-    </div>
-  )
-}
-
-function AsideCard({
-  title,
-  icon,
-  highlight = false,
+function TargetKindButton({
+  active,
+  onClick,
   children,
 }: {
-  title: string
-  icon: ReactNode
-  highlight?: boolean
+  active: boolean
+  onClick: () => void
   children: ReactNode
 }) {
   return (
-    <div className={`rounded-[24px] border p-5 ${highlight ? "border-cyan-300/14 bg-cyan-300/[0.06]" : "border-white/10 bg-black/20"}`}>
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/44">
-        {icon}
-        {title}
-      </div>
-      <div className="mt-4">{children}</div>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-11 rounded-2xl border px-6 text-sm font-semibold transition ${
+        active
+          ? "border-cyan-300/30 bg-cyan-300/15 text-cyan-50"
+          : "border-white/10 bg-white/[0.03] text-white/55 hover:bg-white/[0.06] hover:text-white"
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -576,6 +460,60 @@ function Field({
       {children}
     </label>
   )
+}
+
+function buildMetaFromState(
+  targetKind: TargetKind,
+  target: ChallengeTargetAutocompleteOption | null,
+  metricType: MetaMetricType,
+  metaValor: string,
+  recompensaValor: string
+): ChallengeMeta {
+  return {
+    tipoMeta: "PRODUTO_OU_MARCA",
+    metaValor: Number(metaValor),
+    unidadeMeta: metricType === "QUANTIDADE" ? "itens" : "R$",
+    recompensaValor: Number(recompensaValor),
+    metricType,
+    ordemExibicao: 1,
+    config: target
+      ? targetKind === "BRAND"
+        ? {
+            brandId: target.id,
+            brandName: target.label,
+            targetType: "BRAND",
+            targetValue: formatTargetOption(target),
+          }
+        : {
+            productId: target.id,
+            productName: target.label,
+            targetType: "PRODUCT",
+            targetValue: formatTargetOption(target),
+          }
+      : {},
+  }
+}
+
+function formatTargetOption(option: ChallengeTargetAutocompleteOption) {
+  return [String(option.id ?? "").trim(), String(option.label ?? "").trim()].filter(Boolean).join(" - ")
+}
+
+async function loadProductOptions(term: string) {
+  const response = await searchChallengeProducts(term)
+  return response.items.map((item) => ({
+    id: item.produtoId,
+    label: item.nomeProduto,
+    description: item.nomeMarca ? `Marca: ${item.nomeMarca}` : null,
+  }))
+}
+
+async function loadBrandOptions(term: string) {
+  const response = await searchChallengeBrands(term)
+  return response.items.map((item) => ({
+    id: item.marcaId,
+    label: item.nomeMarca,
+    description: item.nomeCategoria ? `Categoria: ${item.nomeCategoria}` : null,
+  }))
 }
 
 function getTodayValue() {
@@ -604,6 +542,4 @@ function getMonthEnd(value: string) {
   return `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, "0")}-${String(lastDay.getDate()).padStart(2, "0")}`
 }
 
-const asidePanelClass = "space-y-5 rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(8,13,24,0.95),rgba(15,23,42,0.88))] p-6 shadow-[0_24px_70px_rgba(2,6,23,0.28)]"
-const panelClass = "rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))] px-5 py-5 shadow-[0_28px_90px_rgba(2,6,23,0.22)] sm:px-7 sm:py-7 xl:px-8 xl:py-8"
 const wizardInputClass = "h-14 w-full rounded-[20px] border border-white/10 bg-black/20 px-5 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] outline-none transition placeholder:text-white/28 focus-visible:border-cyan-300/35 focus-visible:ring-0"

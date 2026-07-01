@@ -7,8 +7,8 @@ import type { ChallengeModuleSetup } from "@/lib/challenges"
 
 export function ChallengeInitializationWarning({
   setup,
-  title = "Modulo de desafios ainda nao inicializado no banco.",
-  description = "Execute o script SQL de criacao das tabelas para ativar o recurso e liberar a persistencia das campanhas.",
+  title = "Módulo de desafios ainda não inicializado no banco.",
+  description = "Execute o script SQL de criação das tabelas para ativar o recurso e liberar a persistência das campanhas.",
   compact = false,
 }: {
   setup: ChallengeModuleSetup | null | undefined
@@ -34,7 +34,7 @@ export function ChallengeInitializationWarning({
         <div className="max-w-3xl">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-100/80">
             <AlertTriangle className="h-4 w-4" />
-            Inicializacao pendente
+            Inicialização pendente
           </div>
           <h3 className="mt-4 text-2xl font-black tracking-tight text-white">{title}</h3>
           <p className="mt-3 text-sm leading-7 text-white/72">{description}</p>
@@ -69,7 +69,7 @@ export function ChallengeInitializationWarning({
             className="h-11 rounded-2xl border-white/12 bg-white/5 text-white hover:bg-white/10"
           >
             <FileText className="mr-2 h-4 w-4" />
-            {showInstructions ? "Ocultar instrucoes" : "Ver instrucoes"}
+            {showInstructions ? "Ocultar instruções" : "Ver instruções"}
           </Button>
 
           {setup.sqlScript ? (
@@ -100,7 +100,7 @@ export function ChallengeInitializationWarning({
               <code>{setup.sqlScript}</code>
             </pre>
           ) : (
-            <p className="text-sm text-white/60">O script SQL nao ficou disponivel automaticamente nesta sessao.</p>
+            <p className="text-sm text-white/60">O script SQL não ficou disponível automaticamente nesta sessão.</p>
           )}
         </div>
       ) : null}

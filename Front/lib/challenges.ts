@@ -305,10 +305,10 @@ export function isClosedChallengeStatus(status: ChallengeStatus | string | null 
 export function getParticipantStatusLabel(status: ParticipantStatus) {
   const labels: Record<ParticipantStatus, string> = {
     CONVIDADO: "Convidado",
-    DISPONIVEL: "Disponivel",
+    DISPONIVEL: "Disponível",
     ACEITO: "Aceito",
     EM_ANDAMENTO: "Em andamento",
-    CONCLUIDO: "Concluido",
+    CONCLUIDO: "Concluído",
     EXPIRADO: "Expirado",
     RECUSADO: "Recusado",
   }
@@ -420,7 +420,7 @@ export function getChallengeLifecycleLabel(
     const start = startValue ? parseChallengeDateTime(startValue, "start") : null
     if (!start) return "Agendado"
     const daysUntilStart = Math.max(Math.ceil((start.getTime() - now.getTime()) / 86400000), 0)
-    return daysUntilStart <= 1 ? "Comeca em 1 dia" : `Comeca em ${daysUntilStart} dias`
+    return daysUntilStart <= 1 ? "Começa em 1 dia" : `Começa em ${daysUntilStart} dias`
   }
 
   if (lifecycleStatus === "ATIVO") {
@@ -429,7 +429,7 @@ export function getChallengeLifecycleLabel(
     if (!end) return "Ativo"
     const remainingMs = end.getTime() - now.getTime()
     const remainingDays = remainingMs / 86400000
-    if (remainingDays > 0 && remainingDays <= 1) return "Ultimas 24h"
+    if (remainingDays > 0 && remainingDays <= 1) return "Últimas 24h"
     const wholeRemainingDays = Math.max(Math.ceil(remainingMs / 86400000), 0)
     if (wholeRemainingDays > 1) return `Termina em ${wholeRemainingDays} dias`
     return "Ativo"
@@ -447,7 +447,7 @@ export function getChallengeLifecycleLabel(
     return "Campanha cancelada"
   }
 
-  return "Rascunho em configuracao"
+  return "Rascunho em configuração"
 }
 
 export function formatMetaValue(meta: Pick<ChallengeMeta, "metaValor" | "unidadeMeta" | "tipoMeta" | "metricType">) {
@@ -554,7 +554,7 @@ export function getChallengeCampaignKind(challenge: { exigeAceite?: boolean | nu
 }
 
 export function getChallengeCampaignKindLabel(kind: ChallengeCampaignKind) {
-  return kind === "BONUS" ? "Bonus" : "Desafio"
+  return kind === "BONUS" ? "Bônus" : "Desafio"
 }
 
 function normalizeChallengeBrandName(value: unknown) {

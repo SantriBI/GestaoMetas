@@ -21,7 +21,7 @@ export function ChallengeCampaignSummary({
 
   const cards = [
     {
-      label: "Bonus",
+      label: "Bônus",
       value: formatCurrencyBRL(Number(summary?.estimatedRewardTotal ?? 0)),
       icon: <Coins className="h-4 w-4 text-amber-200" />,
     },

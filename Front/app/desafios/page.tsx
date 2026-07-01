@@ -1,18 +1,15 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { useEffect, useState } from "react"
-import { Coins, Gift, Swords, TrendingUp } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Gift, Swords } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { ChallengeCampaignSummary } from "@/components/challenges/ChallengeCampaignSummary"
 import { ChallengeExistingList } from "@/components/challenges/ChallengeExistingList"
 import { ChallengeInlineWizard } from "@/components/challenges/ChallengeInlineWizard"
 import { ChallengesModeSwitcher } from "@/components/challenges/ChallengesModeSwitcher"
 import { AppShellNav } from "@/components/layout/AppShellNav"
 import { useManagerChallenges } from "@/hooks/useChallenges"
 import {
-  aggregateChallengesSummary,
-  formatCurrencyBRL,
   getChallengeCampaignKind,
   getChallengeLifecycleStatus,
   type Challenge,
@@ -35,7 +32,7 @@ const campaignTabs: Array<{
   },
   {
     kind: "BONUS",
-    label: "Bonus",
+    label: "Bônus",
     icon: <Gift className="h-4 w-4" />,
   },
 ]
@@ -53,16 +50,14 @@ export default function DesafiosPage() {
     setup,
     selectedChallenge,
     setSelectedChallenge,
-    loading,
+    loadingChallenges,
     saving,
     error,
     actionError,
     clearActionError,
     saveChallenge,
     openDetails,
-    endChallenge,
     cancelChallenge,
-    estimateImpact,
   } = useManagerChallenges()
 
   useEffect(() => {
@@ -76,28 +71,26 @@ export default function DesafiosPage() {
   }, [router])
 
   useEffect(() => {
-    if (modeInitialized || loading || !data) return
+    if (modeInitialized || loadingChallenges || !data) return
     const hasChallenges = data.items.some((item) => getChallengeCampaignKind(item) === "DESAFIO")
     const hasBonus = data.items.some((item) => getChallengeCampaignKind(item) === "BONUS")
 
     setCampaignKind(hasChallenges ? "DESAFIO" : hasBonus ? "BONUS" : "DESAFIO")
     setMode(data.items.length ? "list" : "create")
     setModeInitialized(true)
-  }, [data, loading, modeInitialized])
+  }, [data, loadingChallenges, modeInitialized])
 
-  const visibleItems = (data?.items ?? []).filter((item) => getChallengeCampaignKind(item) === campaignKind)
-  const activeItems = visibleItems.filter((item) => getChallengeLifecycleStatus(item) === "ATIVO")
-  const visibleSummary = aggregateChallengesSummary(visibleItems)
-  const activeSummary = aggregateChallengesSummary(activeItems)
+  const visibleItems = useMemo(
+    () => (data?.items ?? []).filter((item) => getChallengeCampaignKind(item) === campaignKind),
+    [data, campaignKind]
+  )
+  const activeItems = useMemo(
+    () => visibleItems.filter((item) => getChallengeLifecycleStatus(item) === "ATIVO"),
+    [visibleItems]
+  )
   const selectedVisibleChallenge =
     selectedChallenge && getChallengeCampaignKind(selectedChallenge) === campaignKind ? selectedChallenge : null
   const activeCount = activeItems.length
-  const activePreviewReturn =
-    activeSummary.returnPerBonusRealized && activeSummary.returnPerBonusRealized > 0
-      ? `${activeSummary.returnPerBonusRealized.toFixed(2)}x`
-      : activeSummary.returnPerBonusPotential && activeSummary.returnPerBonusPotential > 0
-        ? `${activeSummary.returnPerBonusPotential.toFixed(2)}x`
-        : "0,00x"
 
   async function handleOpen(challenge: Challenge) {
     const detail = await openDetails(challenge.id)
@@ -167,18 +160,8 @@ export default function DesafiosPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/38">Painel gerencial</p>
               <h1 className="mt-3 text-[2.35rem] font-black tracking-tight text-white sm:text-[3rem]">Campanhas & Incentivos</h1>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-white/58">
-                Acompanhe desafios, bonus e engajamento comercial.
+                Acompanhe desafios e bônus do time.
               </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2.5 xl:justify-end">
-              <HeaderMetricPill label="Ativas" value={`${activeCount} ativa(s)`} icon={<Swords className="h-4 w-4" />} />
-              <HeaderMetricPill
-                label="Bonus ativo"
-                value={formatCurrencyBRL(Number(activeSummary.estimatedRewardTotal ?? 0))}
-                icon={<Coins className="h-4 w-4" />}
-              />
-              <HeaderMetricPill label="Retorno ativo" value={activePreviewReturn} icon={<TrendingUp className="h-4 w-4" />} />
             </div>
           </div>
         </section>
@@ -219,12 +202,6 @@ export default function DesafiosPage() {
           onChange={handleModeChange}
         />
 
-        <ChallengeCampaignSummary
-          summary={activeSummary}
-          activeCount={activeCount}
-          totalCount={visibleItems.length}
-        />
-
         {mode === "create" ? (
           <ChallengeInlineWizard
             editingChallenge={editingChallenge}
@@ -239,60 +216,36 @@ export default function DesafiosPage() {
               setMode("list")
             }}
             onSubmit={handleSave}
-            onEstimateImpact={estimateImpact}
           />
         ) : (
           <ChallengeExistingList
             campaignKind={campaignKind}
-            loading={loading}
+            loading={loadingChallenges}
             items={visibleItems}
             selectedChallenge={selectedVisibleChallenge}
             setup={setup}
             onOpen={handleOpen}
             onClose={() => setSelectedChallenge(null)}
             onEdit={handleEdit}
-            onEnd={(challenge) => void endChallenge(challenge.id)}
             onCancel={(challenge) => void cancelChallenge(challenge.id)}
           />
         )}
 
-        {mode === "list" && !visibleItems.length && !loading ? (
+        {mode === "list" && !visibleItems.length && !loadingChallenges ? (
           <div className="rounded-[28px] border border-dashed border-white/[0.08] bg-white/[0.025] p-6 text-center">
             <p className="text-lg font-semibold text-white">
-              {campaignKind === "BONUS" ? "Nenhum bonus configurado" : "Nenhuma campanha publicada"}
+              {campaignKind === "BONUS" ? "Nenhum bônus configurado" : "Nenhum desafio publicado"}
             </p>
             <button
               type="button"
               onClick={handleStartCreate}
               className="mt-5 inline-flex h-11 items-center justify-center rounded-2xl bg-white px-5 text-sm font-semibold text-black transition hover:opacity-92"
             >
-              Criar nova campanha
+              {campaignKind === "BONUS" ? "Criar novo bônus" : "Criar novo desafio"}
             </button>
           </div>
         ) : null}
       </main>
-    </div>
-  )
-}
-
-function HeaderMetricPill({
-  label,
-  value,
-  icon,
-}: {
-  label: string
-  value: string | number
-  icon: ReactNode
-}) {
-  return (
-    <div className="inline-flex min-w-[154px] items-center gap-3 rounded-full border border-white/[0.06] bg-white/[0.03] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
-      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.05] text-white/68">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-white">{value}</p>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/36">{label}</p>
-      </div>
     </div>
   )
 }

@@ -25,12 +25,17 @@ import {
   updateChallenge,
 } from "@/lib/challenges"
 
+let managerChallengesCache: ChallengesResponse | null = null
+let managerMetadataCache: ChallengeMetadata | null = null
+let managerSetupCache: ChallengeModuleSetup | null = null
+
 export function useManagerChallenges() {
-  const [data, setData] = useState<ChallengesResponse | null>(null)
-  const [metadata, setMetadata] = useState<ChallengeMetadata | null>(null)
-  const [setup, setSetup] = useState<ChallengeModuleSetup | null>(null)
+  const [data, setData] = useState<ChallengesResponse | null>(managerChallengesCache)
+  const [metadata, setMetadata] = useState<ChallengeMetadata | null>(managerMetadataCache)
+  const [setup, setSetup] = useState<ChallengeModuleSetup | null>(managerSetupCache)
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loadingChallenges, setLoadingChallenges] = useState(!managerChallengesCache)
+  const [loadingMeta, setLoadingMeta] = useState(!managerMetadataCache || !managerSetupCache)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -56,22 +61,33 @@ export function useManagerChallenges() {
   }
 
   const refresh = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [challenges, challengeMetadata, challengeSetup] = await Promise.all([
-        fetchChallenges(),
-        fetchChallengeMetadata(),
-        fetchChallengeSetup(),
-      ])
-      setData(challenges)
-      setMetadata(challengeMetadata)
-      setSetup(challengeSetup)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar desafios.")
-    } finally {
-      setLoading(false)
-    }
+    setLoadingChallenges(!managerChallengesCache)
+    setLoadingMeta(!managerMetadataCache || !managerSetupCache)
+
+    const challengesRequest = fetchChallenges()
+      .then((challenges) => {
+        managerChallengesCache = challenges
+        setData(challenges)
+        setError(null)
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Erro ao carregar desafios.")
+      })
+      .finally(() => setLoadingChallenges(false))
+
+    const metaRequest = Promise.all([fetchChallengeMetadata(), fetchChallengeSetup()])
+      .then(([challengeMetadata, challengeSetup]) => {
+        managerMetadataCache = challengeMetadata
+        managerSetupCache = challengeSetup
+        setMetadata(challengeMetadata)
+        setSetup(challengeSetup)
+      })
+      .catch(() => {
+        // Metadata e setup sao secundarios: a lista principal renderiza mesmo sem eles.
+      })
+      .finally(() => setLoadingMeta(false))
+
+    await Promise.all([challengesRequest, metaRequest])
   }, [])
 
   const openDetails = useCallback(async (id: number | string) => {
@@ -91,23 +107,6 @@ export function useManagerChallenges() {
     } catch (err) {
       updateSetupFromError(err)
       setActionError(err instanceof Error ? err.message : "Erro ao salvar desafio.")
-      return null
-    } finally {
-      setSaving(false)
-    }
-  }, [refresh])
-
-  const endChallenge = useCallback(async (id: number | string) => {
-    setSaving(true)
-    try {
-      const challenge = await closeChallenge(id, "ENCERRADO_MANUAL")
-      await refresh()
-      setSelectedChallenge(challenge)
-      setActionError(null)
-      return challenge
-    } catch (err) {
-      updateSetupFromError(err)
-      setActionError(err instanceof Error ? err.message : "Erro ao encerrar desafio.")
       return null
     } finally {
       setSaving(false)
@@ -152,7 +151,8 @@ export function useManagerChallenges() {
     setup,
     selectedChallenge,
     setSelectedChallenge,
-    loading,
+    loadingChallenges,
+    loadingMeta,
     saving,
     error,
     actionError,
@@ -160,7 +160,6 @@ export function useManagerChallenges() {
     refresh,
     openDetails,
     saveChallenge,
-    endChallenge,
     cancelChallenge,
     estimateImpact,
   }
@@ -213,7 +212,7 @@ export function useSellerChallenges(skVendedor?: number | string | null) {
       setSelectedChallenge((current) => (current && String(current.id) === String(id) ? null : current))
       setError(
         isMissingChallenge
-          ? "Esse desafio nao esta mais disponivel. Atualizamos a lista para remover o atalho antigo."
+          ? "Esse desafio não está mais disponível. Atualizamos a lista para remover o atalho antigo."
           : err instanceof Error
             ? err.message
             : "Erro ao carregar detalhes do desafio."
