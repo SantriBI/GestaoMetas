@@ -1,4 +1,8 @@
-import oracledb from "./oracleClient.js"
+import oracledb, {
+  explainOracleConnectionError,
+  getOracleRuntimeInfo,
+  sanitizeConnectString,
+} from "./oracleClient.js"
 import centralPool from "./mysql.js"
 import { decryptSecret, encryptSecret, SecretDecryptError } from "../security/secrets.js"
 
@@ -41,6 +45,7 @@ async function getOracleConfigByEmpresaId(empresaId) {
     user: org.oracle_user,
     password: await decryptOraclePassword(org),
     connectString: org.oracle_connect_string,
+    organizationId: org.id_organizacao,
   }
 }
 
@@ -80,7 +85,8 @@ export async function queryOracleByEmpresaId(empresaId, sql, binds = {}, options
     throw new Error("empresa_id e obrigatorio para consultar o Oracle do cliente.")
   }
 
-  const config = await getOracleConfigByEmpresaId(empresaId)
+  const { organizationId, ...config } = await getOracleConfigByEmpresaId(empresaId)
+  const runtime = getOracleRuntimeInfo()
   const isDml = /^\s*(INSERT|UPDATE|DELETE|MERGE)\b/i.test(sql)
   const execOptions = { autoCommit: isDml, ...options }
   const maxAttempts = isDml ? 1 : MAX_SELECT_RETRIES + 1
@@ -94,7 +100,15 @@ export async function queryOracleByEmpresaId(empresaId, sql, binds = {}, options
       return result.rows ?? []
     } catch (err) {
       const canRetry = isRetryableSelectError(err, isDml) && attempt < maxAttempts
-      if (!canRetry) throw err
+      if (!canRetry) {
+        console.error(
+          `[oracle-tenants] falha na conexao Oracle da organizacao ${organizationId} ` +
+          `(mode=${runtime.mode}; client=${runtime.oracleClientVersion}; ` +
+          `connectString=${sanitizeConnectString(config.connectString)}):`,
+          explainOracleConnectionError(err)
+        )
+        throw err
+      }
       await sleep(RETRY_DELAY_MS * attempt)
     } finally {
       if (connection) {

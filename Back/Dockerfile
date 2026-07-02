@@ -9,7 +9,7 @@ WORKDIR /app
 # sqlnet.ora (erro NJS-533 no modo thin padrao).
 FROM base AS oracle-client
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends wget unzip \
+  && apt-get install -y --no-install-recommends ca-certificates wget unzip \
   && rm -rf /var/lib/apt/lists/* \
   && wget -q https://download.oracle.com/otn_software/linux/instantclient/2113000/instantclient-basiclite-linux.x64-21.13.0.0.0dbru.zip -O /tmp/instantclient.zip \
   && unzip -q /tmp/instantclient.zip -d /opt/oracle \
@@ -35,10 +35,12 @@ RUN --mount=type=cache,target=/root/.npm \
 FROM deps AS dev
 ENV NODE_ENV=development
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libaio1 \
+  && apt-get install -y --no-install-recommends libaio1 libnsl2 \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=oracle-client /opt/oracle/instantclient /opt/oracle/instantclient
-ENV ORACLE_CLIENT_LIB_DIR=/opt/oracle/instantclient
+RUN echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf \
+  && ldconfig
+ENV ORACLE_CLIENT_MODE=thick
 COPY . .
 EXPOSE 3001
 CMD ["npm", "run", "dev"]
@@ -47,10 +49,12 @@ CMD ["npm", "run", "dev"]
 FROM base AS prod
 ENV NODE_ENV=production
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libaio1 \
+  && apt-get install -y --no-install-recommends libaio1 libnsl2 \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=oracle-client /opt/oracle/instantclient /opt/oracle/instantclient
-ENV ORACLE_CLIENT_LIB_DIR=/opt/oracle/instantclient
+RUN echo /opt/oracle/instantclient > /etc/ld.so.conf.d/oracle-instantclient.conf \
+  && ldconfig
+ENV ORACLE_CLIENT_MODE=thick
 COPY package*.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

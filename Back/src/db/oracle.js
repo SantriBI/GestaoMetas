@@ -1,4 +1,8 @@
-import oracledb from "./oracleClient.js"
+import oracledb, {
+  explainOracleConnectionError,
+  getOracleRuntimeInfo,
+  sanitizeConnectString,
+} from "./oracleClient.js"
 
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
 oracledb.fetchAsString = [oracledb.CLOB]
@@ -20,7 +24,7 @@ function getLegacyOracleConfig() {
     )
   }
 
-  return {
+  const config = {
     user,
     password,
     connectString,
@@ -28,12 +32,21 @@ function getLegacyOracleConfig() {
     poolMax: 25,
     poolIncrement: 2
   }
+
+  const runtime = getOracleRuntimeInfo()
+  console.log(
+    `[oracle] preparando pool legado (mode=${runtime.mode}; client=${runtime.oracleClientVersion}; ` +
+    `connectString=${sanitizeConnectString(connectString)}).`
+  )
+
+  return config
 }
 
 export async function getPool() {
   if (!poolPromise) {
     poolPromise = oracledb.createPool(getLegacyOracleConfig()).catch((err) => {
       poolPromise = null
+      console.error("[oracle] falha ao criar pool legado:", explainOracleConnectionError(err))
       throw err
     })
   }
