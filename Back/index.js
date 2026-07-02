@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import './src/db/oracleClient.js';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -21,6 +22,7 @@ import perfilVendedorRoutes from './src/routes/perfilVendedor.js';
 import industriaRoutes from './src/routes/industria.js';
 import organizacoesRoutes from './src/routes/organizacoes.js';
 import { ensureCentralSchema } from './src/db/mysql-tenants.js';
+import { describeMysqlTarget, formatDbError } from './src/db/mysql.js';
 
 const app = express();
 
@@ -66,7 +68,10 @@ ensureCentralSchema()
     });
   })
   .catch((err) => {
-    console.error('Falha ao inicializar schema central MySQL:', err.message);
+    console.error(
+      `Falha ao inicializar schema central MySQL (${describeMysqlTarget({ admin: true })}):`,
+      formatDbError(err)
+    );
     // Inicia mesmo assim para nao derrubar Oracle se MySQL estiver fora
     app.listen(PORT, () => {
       console.log(`API rodando em http://localhost:${PORT} (sem MySQL central)`);

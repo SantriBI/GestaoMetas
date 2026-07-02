@@ -8,12 +8,12 @@ const IS_PROD = process.env.NODE_ENV === "production"
 const TENANT_GRANT_PRIVS = process.env.MYSQL_TENANT_GRANT_PRIVILEGES ?? "SELECT, INSERT, UPDATE, DELETE"
 
 // Pool central
-import centralPool from "./mysql.js"
+import centralPool, { getMysqlConnectTimeoutMs } from "./mysql.js"
 
 function slugify(nome) {
   return String(nome)
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
@@ -42,6 +42,7 @@ function getAdminConfig() {
     port: Number(process.env.MYSQL_ADMIN_PORT ?? process.env.MYSQL_PORT ?? 3306),
     user: process.env.MYSQL_ADMIN_USER ?? "root",
     password: process.env.MYSQL_ADMIN_PASSWORD ?? "",
+    connectTimeout: getMysqlConnectTimeoutMs(),
     multipleStatements: true,
   }
 }
@@ -56,6 +57,7 @@ function getTenantPool(dbName) {
     user: process.env.MYSQL_USER,
     password: process.env.MYSQL_PASSWORD,
     database: dbName,
+    connectTimeout: getMysqlConnectTimeoutMs(),
     waitForConnections: true,
     connectionLimit: 5,
     charset: "utf8mb4",

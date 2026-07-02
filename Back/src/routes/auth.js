@@ -3,7 +3,7 @@ import express from "express"
 import bcrypt from "bcrypt"
 import { issueAuthToken, setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME, verifyAuthToken } from "../auth/token.js"
 import { requireAuth, requireRole } from "../middleware/auth.js"
-import centralPool from "../db/mysql.js"
+import centralPool, { describeMysqlTarget, formatDbError } from "../db/mysql.js"
 import { queryTenantByEmpresaId } from "../db/mysql-tenants.js"
 
 const router = express.Router()
@@ -59,7 +59,10 @@ router.post("/login", async (req, res) => {
       centralUser = await findUserCentral(login)
     } catch (error) {
       mysqlAuthUnavailable = true
-      console.warn("MySQL central indisponivel no login:", error?.message ?? error)
+      console.warn(
+        `MySQL central indisponivel no login (${describeMysqlTarget()}):`,
+        formatDbError(error)
+      )
     }
 
     if (centralUser) {
@@ -93,7 +96,10 @@ router.post("/login", async (req, res) => {
       tenantResult = await findUserInTenants(login)
     } catch (error) {
       mysqlAuthUnavailable = true
-      console.warn("MySQL tenants indisponivel no login:", error?.message ?? error)
+      console.warn(
+        `MySQL tenants indisponivel no login (${describeMysqlTarget()}):`,
+        formatDbError(error)
+      )
     }
 
     if (tenantResult) {
