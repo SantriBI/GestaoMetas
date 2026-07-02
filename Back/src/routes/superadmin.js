@@ -1,6 +1,6 @@
 import express from "express"
 import bcrypt from "bcrypt"
-import oracledb from "oracledb"
+import oracledb from "../db/oracleClient.js"
 import { requireAuth } from "../middleware/auth.js"
 import { auditAction } from "../audit.js"
 import { encryptSecret, decryptSecret } from "../security/secrets.js"

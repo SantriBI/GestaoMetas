@@ -1,3 +1,4 @@
+import "dotenv/config"
 import oracledb from "oracledb"
 
 // Ativa o modo thick do node-oracledb quando o Oracle Instant Client estiver
@@ -12,13 +13,14 @@ if (libDir) {
     oracledb.initOracleClient({ libDir })
     console.log(`[oracle] node-oracledb inicializado em modo thick (libDir=${libDir}).`)
   } catch (err) {
-    console.warn(
-      "[oracle] Nao foi possivel inicializar o modo thick do node-oracledb; seguindo em modo thin. " +
-      "Bancos que exigem Native Network Encryption/Data Integrity vao falhar com NJS-533. " +
-      "Instale o Oracle Instant Client 64-bit e defina ORACLE_CLIENT_LIB_DIR para a pasta correta.",
-      err?.message ?? err
+    throw new Error(
+      "[oracle] Nao foi possivel inicializar o modo thick do node-oracledb. " +
+      "Instale o Oracle Instant Client 64-bit e defina ORACLE_CLIENT_LIB_DIR para a pasta correta. " +
+      `Detalhe: ${err?.message ?? err}`
     )
   }
 } else {
   console.log("[oracle] ORACLE_CLIENT_LIB_DIR nao definido; usando node-oracledb em modo thin.")
 }
+
+export default oracledb

@@ -1,4 +1,4 @@
-import oracledb from "oracledb"
+import oracledb from "./oracleClient.js"
 import centralPool from "./mysql.js"
 import { decryptSecret, encryptSecret, SecretDecryptError } from "../security/secrets.js"
 

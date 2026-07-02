@@ -1,6 +1,5 @@
 import "dotenv/config"
-import oracledb from "oracledb"
-import "./src/db/oracleClient.js"
+import oracledb from "./src/db/oracleClient.js"
 
 async function test() {
   try {

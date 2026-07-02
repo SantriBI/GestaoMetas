@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises"
-import oracledb from "oracledb"
+import oracledb from "../db/oracleClient.js"
 
 const ddlUrl = new URL("../../sql/ddl_gestao_metas.sql", import.meta.url)
 

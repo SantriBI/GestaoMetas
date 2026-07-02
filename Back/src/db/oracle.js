@@ -1,7 +1,4 @@
-import oracledb from "oracledb"
-import dotenv from "dotenv"
-
-dotenv.config()
+import oracledb from "./oracleClient.js"
 
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
 oracledb.fetchAsString = [oracledb.CLOB]

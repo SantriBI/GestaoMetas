@@ -1,4 +1,4 @@
-import oracledb from "oracledb"
+import oracledb from "../db/oracleClient.js"
 import { query } from "../db/oracle.js"
 import { resolveOracleObjectNames } from "../db/oracleObjectNames.js"
 import {

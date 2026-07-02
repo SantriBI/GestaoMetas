@@ -1,5 +1,5 @@
 import crypto from "node:crypto"
-import oracledb from "oracledb"
+import oracledb from "../db/oracleClient.js"
 import { query } from "../db/oracle.js"
 import { resolveOracleObjectName } from "../db/oracleObjectNames.js"
 import { dropOracleProvisionedViews, provisionOracleViews } from "./oracleProvisioningService.js"
