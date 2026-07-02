@@ -12,6 +12,7 @@ import {
   getChallengeLifecycleLabel,
   getChallengeLifecycleStatus,
   getChallengeMetaFocusLabel,
+  getChallengeMetaTargetSummary,
   getMetaTypeLabel,
   isClosedChallengeStatus,
   type Challenge,

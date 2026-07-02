@@ -28,7 +28,7 @@ import {
 import { formatCurrency } from "@/lib/types"
 import RankingAlerts from "@/components/RankingAlerts"
 import { ChallengeNotificationBanner } from "@/components/challenges/ChallengeNotificationBanner"
-import { CardDashboard, dashboardCardThemes, type CardDashboardConfig } from "@/components/dashboard/CardDashboard"
+import { CardDashboard, dashboardCardThemes, dashboardCardThemesLight, type CardDashboardConfig } from "@/components/dashboard/CardDashboard"
 import { AppShellNav } from "@/components/layout/AppShellNav"
 import { MotivationSpotlight } from "@/components/layout/MotivationSpotlight"
 import { useNotifications } from "@/components/notifications/NotificationContext"
@@ -44,6 +44,7 @@ import {
 import { fetchSellerLifeGoal, type LifeGoalResponse } from "@/lib/life-goal"
 import { buildMotivationMessage } from "@/lib/motivation"
 import { AuthUser, setStoredUser } from "@/lib/user-session"
+import { useTheme } from "next-themes"
 
 interface VendedorData {
   nome: string
@@ -188,6 +189,8 @@ function isDashboardCampaignAvailable(challenge: DashboardCampaignBannerItem) {
 
 export default function VendedorDashboard() {
   const router = useRouter()
+  const { resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
   const { addNotification, notifications, removeNotifications } = useNotifications()
   const [vendedor, setVendedor] = useState<VendedorData | null>(null)
   const [vendedorLoadError, setVendedorLoadError] = useState<string | null>(null)
@@ -271,6 +274,10 @@ export default function VendedorDashboard() {
       })
   }, [alertCampaignItems, sellerCampaignItems, skVendedor])
   const dashboardCampaignNotificationIdsKey = dashboardCampaignNotificationIds.join("|")
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     if (!authUser?.sk_vendedor) return
@@ -739,6 +746,8 @@ export default function VendedorDashboard() {
   }
 
 
+  const isDark = !mounted || resolvedTheme === "dark"
+
   if (!vendedor) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -879,6 +888,7 @@ export default function VendedorDashboard() {
       description: "Veja seu desempenho hoje e o que precisa fazer para bater sua meta.",
       icon: TrendingUp,
       gradient: dashboardCardThemes.sky,
+      gradientLight: dashboardCardThemesLight.sky,
       actionLabel: activeView === "jornada" ? "Fechar painel" : "Abrir painel",
       badge: percentualDia >= 100 ? "DESTAQUE" : "PRIORIDADE",
       tag: "ACAO PRINCIPAL",
@@ -900,6 +910,7 @@ export default function VendedorDashboard() {
       description: "Clientes e oportunidades que voce precisa agir agora.",
       icon: Swords,
       gradient: dashboardCardThemes.emerald,
+      gradientLight: dashboardCardThemesLight.emerald,
       actionLabel: "Ver oportunidades",
       badge: orcamentosAbertos > 0 ? "PRIORIDADE" : undefined,
       tag: "ACAO IMEDIATA",
@@ -911,6 +922,7 @@ export default function VendedorDashboard() {
       description: "Acompanhe campanhas e ganhe bonus por performance.",
       icon: Zap,
       gradient: dashboardCardThemes.amber,
+      gradientLight: dashboardCardThemesLight.amber,
       actionLabel: "Ver desafios",
       badge: novosDesafiosCount > 0 ? "NOVO" : undefined,
       tag: "PERFORMANCE",
@@ -927,6 +939,7 @@ export default function VendedorDashboard() {
       description: "Descubra o historico e a proxima melhor oferta.",
       icon: Search,
       gradient: dashboardCardThemes.cyan,
+      gradientLight: dashboardCardThemesLight.cyan,
       actionLabel: "Buscar cliente",
       tag: "ANALISE",
       microcopy:
@@ -940,6 +953,7 @@ export default function VendedorDashboard() {
       description: "Recupere clientes e aumente suas vendas hoje.",
       icon: MessageCircle,
       gradient: dashboardCardThemes.rose,
+      gradientLight: dashboardCardThemesLight.rose,
       actionLabel: "Reativar clientes",
       badge: "DESTAQUE",
       highlight: true,
@@ -982,7 +996,7 @@ export default function VendedorDashboard() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_24%),radial-gradient(circle_at_78%_18%,rgba(245,158,11,0.08),transparent_22%),linear-gradient(135deg,rgba(8,16,29,1),rgba(9,14,24,1)_45%,rgba(13,22,36,1))]">
+    <div className={`relative min-h-screen overflow-x-hidden ${isDark ? "bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_24%),radial-gradient(circle_at_78%_18%,rgba(245,158,11,0.08),transparent_22%),linear-gradient(135deg,rgba(8,16,29,1),rgba(9,14,24,1)_45%,rgba(13,22,36,1))]" : "bg-[linear-gradient(160deg,#f8fafc_0%,#f0fdf4_40%,#f8fafc_100%)]"}`}>
       {confettiActive ? (
         <canvas
           ref={confettiCanvasRef}
@@ -1006,11 +1020,11 @@ export default function VendedorDashboard() {
           ) : null}
 
           {!isLoadingLifeGoal && lifeGoalHasObjectives && !isLifeGoalNoticeDismissed ? (
-            <section className="relative rounded-[22px] border border-emerald-300/14 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_26%),linear-gradient(135deg,rgba(5,46,34,0.82),rgba(8,20,32,0.94),rgba(7,24,18,0.88))] px-4 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.18)] sm:px-5">
+            <section className={`relative rounded-[22px] px-4 py-3 sm:px-5 ${isDark ? "border border-emerald-300/14 bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_26%),linear-gradient(135deg,rgba(5,46,34,0.82),rgba(8,20,32,0.94),rgba(7,24,18,0.88))] shadow-[0_14px_34px_rgba(0,0,0,0.18)]" : "border border-emerald-200/60 bg-[linear-gradient(135deg,rgba(240,253,244,0.97),rgba(255,255,255,0.98))] shadow-[0_6px_20px_rgba(0,0,0,0.06)]"}`}>
               <button
                 type="button"
                 onClick={handleDismissLifeGoalNotice}
-                className="absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/8 text-white/68 transition-colors hover:bg-white/14 hover:text-white"
+                className={`absolute right-3 top-3 inline-flex h-7 w-7 items-center justify-center rounded-full transition-colors ${isDark ? "border border-white/10 bg-white/8 text-white/68 hover:bg-white/14 hover:text-white" : "border border-slate-200/60 bg-white/80 text-slate-400 hover:bg-slate-100 hover:text-slate-600"}`}
                 aria-label="Fechar notificacao da Meta de Vida"
               >
                 <X className="h-3.5 w-3.5" />
@@ -1018,32 +1032,32 @@ export default function VendedorDashboard() {
 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <div className="min-w-0">
-                  <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300/16 bg-emerald-400/8 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100/84">
+                  <div className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${isDark ? "border-emerald-300/16 bg-emerald-400/8 text-emerald-100/84" : "border-emerald-200/60 bg-emerald-50 text-emerald-700"}`}>
                     <Target className="h-3 w-3" />
                     Meta de Vida
                   </div>
 
                   <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                    <p className="text-[15px] font-bold text-white sm:text-base">
+                    <p className={`text-[15px] font-bold sm:text-base ${isDark ? "text-white" : "text-slate-900"}`}>
                       {lifeGoalHeadline}
                     </p>
-                    <span className="rounded-full border border-white/10 bg-white/8 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-100/72">
+                    <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${isDark ? "border-white/10 bg-white/8 text-emerald-100/72" : "border-emerald-200/60 bg-emerald-50 text-emerald-600"}`}>
                       {lifeGoalPercentual.toFixed(1)}% conquistado
                     </span>
                   </div>
 
-                  <p className="mt-1.5 text-[13px] leading-5 text-white/64">
+                  <p className={`mt-1.5 text-[13px] leading-5 ${isDark ? "text-white/64" : "text-slate-500"}`}>
                     {lifeGoalSubline}
                   </p>
                 </div>
 
                 <div className="flex items-center gap-3 sm:min-w-[220px]">
                   <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/46">
+                    <div className={`mb-1.5 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] ${isDark ? "text-white/46" : "text-slate-400"}`}>
                       <span>Progresso</span>
                       <span>{formatCurrency(lifeGoalConquistado)}</span>
                     </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                    <div className={`h-2 overflow-hidden rounded-full ${isDark ? "bg-white/10" : "bg-slate-200/60"}`}>
                       <div
                         className="h-full rounded-full bg-[linear-gradient(90deg,#10b981,#34d399,#f59e0b)] transition-[width] duration-700 ease-out"
                         style={{ width: `${lifeGoalPercentual}%` }}
@@ -1054,7 +1068,7 @@ export default function VendedorDashboard() {
                   <button
                     type="button"
                     onClick={() => router.push("/vendedor/minha-meta-de-vida")}
-                    className="shrink-0 rounded-full border border-emerald-300/16 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-semibold text-emerald-50 transition-colors hover:bg-emerald-400/16"
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${isDark ? "border-emerald-300/16 bg-emerald-400/10 text-emerald-50 hover:bg-emerald-400/16" : "border-emerald-200/60 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
                   >
                     Ver painel
                   </button>
@@ -1064,17 +1078,17 @@ export default function VendedorDashboard() {
           ) : null}
 
           {dashboardCampaignBanners.length ? (
-            <section className="overflow-hidden rounded-[24px] border border-white/8 bg-[#07111f] shadow-[0_16px_48px_rgba(2,8,23,0.16)]">
-              <div className="border-b border-white/8 px-5 py-4">
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-300">
+            <section className={`overflow-hidden rounded-[24px] ${isDark ? "border border-white/8 bg-[#07111f] shadow-[0_16px_48px_rgba(2,8,23,0.16)]" : "border border-cyan-200/40 bg-white shadow-[0_6px_20px_rgba(0,0,0,0.06)]"}`}>
+              <div className={`border-b px-5 py-4 ${isDark ? "border-white/8" : "border-cyan-100/60"}`}>
+                <h2 className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${isDark ? "text-cyan-300" : "text-cyan-600"}`}>
                   DESAFIOS ATIVOS
                 </h2>
-                <p className="mt-2 text-sm text-white/60">
+                <p className={`mt-2 text-sm ${isDark ? "text-white/60" : "text-slate-500"}`}>
                   Campanhas disponiveis para aumentar sua premiacao hoje.
                 </p>
               </div>
 
-              <div className="divide-y divide-white/8 px-2 py-1 sm:px-3">
+              <div className={`divide-y px-2 py-1 sm:px-3 ${isDark ? "divide-white/8" : "divide-cyan-100/60"}`}>
                 {dashboardCampaignBanners.map((campaign) => {
                   const isAvailable = isDashboardCampaignAvailable(campaign)
 
@@ -1104,7 +1118,7 @@ export default function VendedorDashboard() {
         </div>
 
         {metaHerdada === 1 && (
-          <div className="flex items-start gap-3 p-4 mb-6 rounded-xl border border-amber-600/50 bg-amber-900/40 text-amber-200">
+          <div className={`flex items-start gap-3 p-4 mb-6 rounded-xl border ${isDark ? "border-amber-600/50 bg-amber-900/40 text-amber-200" : "border-amber-300/50 bg-amber-50 text-amber-800"}`}>
             <AlertTriangle className="w-5 h-5 mt-0.5 shrink-0" />
             <span className="text-sm">
               Meta utilizada do mês anterior. A meta do mês atual ainda não foi cadastrada no ADM.
@@ -1114,7 +1128,7 @@ export default function VendedorDashboard() {
 
         {dataReferenciaValida ? (
           <div className="flex justify-end">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-muted-foreground">
+            <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs text-muted-foreground ${isDark ? "border-white/10 bg-white/5" : "border-slate-200/60 bg-white/80"}`}>
               <span
                 className={`h-2 w-2 rounded-full ${
                   dadosSaoDeHoje ? "bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,0.8)]" : "bg-amber-400"
@@ -1126,43 +1140,43 @@ export default function VendedorDashboard() {
         ) : null}
 
         {/* HERO */}
-        <section className="relative overflow-hidden rounded-[30px] border border-emerald-400/16 bg-[linear-gradient(140deg,rgba(6,19,14,0.94),rgba(9,16,26,0.94),rgba(7,26,18,0.9))] p-6 shadow-[0_18px_50px_rgba(0,0,0,0.28)] backdrop-blur-sm">
+        <section className={`relative overflow-hidden rounded-[30px] p-6 backdrop-blur-sm ${isDark ? "border border-emerald-400/16 bg-[linear-gradient(140deg,rgba(6,19,14,0.94),rgba(9,16,26,0.94),rgba(7,26,18,0.9))] shadow-[0_18px_50px_rgba(0,0,0,0.28)]" : "border border-slate-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]"}`}>
           <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-            <div className="absolute left-0 top-0 h-36 w-36 rounded-full bg-emerald-400/12 blur-3xl" />
-            <div className="absolute bottom-0 right-0 h-40 w-40 rounded-full bg-lime-400/8 blur-3xl" />
+            <div className={`absolute left-0 top-0 h-36 w-36 rounded-full blur-3xl ${isDark ? "bg-emerald-400/12" : "bg-emerald-300/20"}`} />
+            <div className={`absolute bottom-0 right-0 h-40 w-40 rounded-full blur-3xl ${isDark ? "bg-lime-400/8" : "bg-lime-300/15"}`} />
           </div>
           <div className="relative space-y-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/18 bg-emerald-500/8 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-100/80">
+                <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] ${isDark ? "border-emerald-400/18 bg-emerald-500/8 text-emerald-100/80" : "border-emerald-200/60 bg-emerald-50 text-emerald-700"}`}>
                   Painel do vendedor
                 </div>
                 <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-5">
-                  <h1 className="text-3xl font-extrabold tracking-tight">
-                    Olá, <span className="bg-gradient-to-r from-emerald-200 via-emerald-300 to-lime-200 bg-clip-text text-transparent">{vendedor.nome.split(" ")[0]}</span>
+                  <h1 className={`text-3xl font-extrabold tracking-tight ${isDark ? "" : "text-slate-900"}`}>
+                    Olá, <span className="bg-gradient-to-r from-emerald-500 via-emerald-600 to-lime-500 bg-clip-text text-transparent">{vendedor.nome.split(" ")[0]}</span>
                   </h1>
-                  <div className="inline-flex items-center gap-3 rounded-2xl border border-emerald-400/18 bg-emerald-500/8 px-4 py-2">
+                  <div className={`inline-flex items-center gap-3 rounded-2xl border px-4 py-2 ${isDark ? "border-emerald-400/18 bg-emerald-500/8" : "border-emerald-200/50 bg-white/80"}`}>
                     <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 via-emerald-500 to-lime-400 shadow-[0_8px_18px_rgba(34,197,94,0.22)]">
-                      <Award className="h-5 w-5 text-[#04110a]" />
+                      <Award className="h-5 w-5 text-white" />
                     </div>
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-white/45">
+                      <p className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${isDark ? "text-white/45" : "text-slate-400"}`}>
                         Ranking atual
                       </p>
-                      <p className="text-2xl font-black text-white">
+                      <p className={`text-2xl font-black ${isDark ? "text-white" : "text-slate-900"}`}>
                         {vendedor.posicao > 0 ? vendedor.posicao : "--"}{" "}
-                        <span className="text-sm font-semibold text-white/55">
+                        <span className={`text-sm font-semibold ${isDark ? "text-white/55" : "text-slate-400"}`}>
                           / {vendedor.totalVendedores && vendedor.totalVendedores > 0 ? vendedor.totalVendedores : "--"}
                         </span>
                       </p>
                     </div>
                   </div>
                 </div>
-                <div className="mt-3 flex items-start gap-3 text-sm text-emerald-100/85">
+                <div className={`mt-3 flex items-start gap-3 text-sm ${isDark ? "text-emerald-100/85" : "text-emerald-700"}`}>
                   <div className="mt-0.5">{getPositionIcon()}</div>
                   <div>
-                    <p className="font-semibold text-white/92">{rankingMotivation.headline}</p>
-                    <p className="mt-1 text-sm text-emerald-100/72">{rankingMotivation.body}</p>
+                    <p className={`font-semibold ${isDark ? "text-white/92" : "text-slate-800"}`}>{rankingMotivation.headline}</p>
+                    <p className={`mt-1 text-sm ${isDark ? "text-emerald-100/72" : "text-slate-500"}`}>{rankingMotivation.body}</p>
                   </div>
                 </div>
               </div>
@@ -1176,6 +1190,7 @@ export default function VendedorDashboard() {
                   description={card.description}
                   icon={card.icon}
                   gradient={card.gradient}
+                  gradientLight={card.gradientLight}
                   actionLabel={card.actionLabel}
                   badge={card.badge}
                   highlight={card.highlight}
@@ -1204,7 +1219,7 @@ export default function VendedorDashboard() {
             className="transform-gpu will-change-transform"
             style={getJourneyAnimationStyle(0)}
           >
-            <section className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(12,18,29,0.92))] p-8 shadow-[0_12px_32px_rgba(0,0,0,0.22)] transition-transform duration-300 hover:-translate-y-1">
+            <section className={`rounded-3xl border p-8 shadow-[0_12px_32px_rgba(0,0,0,0.22)] transition-transform duration-300 hover:-translate-y-1 ${isDark ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(12,18,29,0.92))]" : "border-slate-200 bg-white"}`}>
           <div className="flex justify-between items-end">
             <div>
               <p className="text-sm text-muted-foreground">Meta do mês</p>
@@ -1218,7 +1233,7 @@ export default function VendedorDashboard() {
             </div>
           </div>
 
-          <div className="relative h-5 overflow-hidden rounded-full bg-white/6">
+          <div className={`relative h-5 overflow-hidden rounded-full ${isDark ? "bg-white/6" : "bg-slate-200/80"}`}>
             <div
               className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-emerald-400 via-emerald-500 to-lime-400 transition-all"
               style={{ width: `${vendedor.percentual * 100}%` }}
@@ -1236,7 +1251,7 @@ export default function VendedorDashboard() {
             </span>
           </div>
           {/* FAIXA DE CONTEXTO - CLIENTES & TICKET */}
-            <section className="mt-6 rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(30,41,59,0.62),rgba(15,23,42,0.82),rgba(14,116,144,0.12))] px-6 py-4 shadow-[0_6px_20px_rgba(0,0,0,0.16)]">
+            <section className={`mt-6 rounded-2xl border px-6 py-4 shadow-[0_6px_20px_rgba(0,0,0,0.08)] ${isDark ? "border-white/10 bg-[linear-gradient(135deg,rgba(30,41,59,0.62),rgba(15,23,42,0.82),rgba(14,116,144,0.12))]" : "border-slate-100 bg-slate-50"}`}>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 
                 <div className="flex items-center gap-4">
@@ -1277,7 +1292,7 @@ export default function VendedorDashboard() {
             className="transform-gpu will-change-transform"
             style={getJourneyAnimationStyle(100)}
           >
-            <section className="rounded-2xl border border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.38),rgba(88,28,12,0.24),rgba(15,23,42,0.92))] p-6 shadow-[0_10px_28px_rgba(120,53,15,0.18)] transition-transform duration-300 hover:-translate-y-1">
+            <section className={`rounded-2xl border p-6 transition-transform duration-300 hover:-translate-y-1 ${isDark ? "border-amber-400/20 bg-[linear-gradient(135deg,rgba(120,53,15,0.38),rgba(88,28,12,0.24),rgba(15,23,42,0.92))] shadow-[0_10px_28px_rgba(120,53,15,0.18)]" : "border-amber-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]"}`}>
             <div className="flex items-center gap-3">
               <Zap className="h-5 w-5 text-amber-300" />
               <h3 className="font-semibold text-amber-100">Missão do Dia</h3>
@@ -1320,7 +1335,7 @@ export default function VendedorDashboard() {
                   </span>
               </div>
 
-              <div className="h-3 overflow-hidden rounded-full bg-white/8">
+              <div className={`h-3 overflow-hidden rounded-full ${isDark ? "bg-white/8" : "bg-slate-200/80"}`}>
                 <div
                   className={`h-full transition-all ${percentualDia >= 100 ? "bg-gradient-to-r from-emerald-400 via-emerald-500 to-lime-400" : "bg-gradient-to-r from-amber-300 via-amber-400 to-orange-500"}`}
                     style={{
@@ -1346,12 +1361,12 @@ export default function VendedorDashboard() {
             </p>
 
             {/* FAIXA DE CONTEXTO - CLIENTES & TICKET */}
-              <section className="mt-6 rounded-2xl border border-white/10 bg-[linear-gradient(135deg,rgba(51,65,85,0.54),rgba(30,41,59,0.72),rgba(120,53,15,0.12))] px-6 py-4 shadow-[0_6px_20px_rgba(0,0,0,0.16)]">
+              <section className={`mt-6 rounded-2xl border px-6 py-4 shadow-[0_6px_20px_rgba(0,0,0,0.06)] ${isDark ? "border-white/10 bg-[linear-gradient(135deg,rgba(51,65,85,0.54),rgba(30,41,59,0.72),rgba(120,53,15,0.12))]" : "border-amber-100 bg-amber-50/70"}`}>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   
                   <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/8">
-                      <Users className="h-5 w-5 text-emerald-200" />
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${isDark ? "bg-white/8" : "bg-emerald-100"}`}>
+                      <Users className={`h-5 w-5 ${isDark ? "text-emerald-200" : "text-emerald-600"}`} />
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Clientes atendidos hoje</p>
@@ -1361,11 +1376,11 @@ export default function VendedorDashboard() {
                     </div>
                   </div>
 
-                  <div className="hidden h-8 w-px bg-white/10 sm:block" />
+                  <div className={`hidden h-8 w-px sm:block ${isDark ? "bg-white/10" : "bg-amber-200/60"}`} />
 
                   <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/8">
-                      <DollarSign className="h-5 w-5 text-amber-300" />
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${isDark ? "bg-white/8" : "bg-amber-100"}`}>
+                      <DollarSign className={`h-5 w-5 ${isDark ? "text-amber-300" : "text-amber-600"}`} />
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Ticket médio do dia</p>
@@ -1387,7 +1402,7 @@ export default function VendedorDashboard() {
             className="transform-gpu will-change-transform"
             style={getJourneyAnimationStyle(200)}
           >
-            <section className="rounded-2xl border border-emerald-400/18 bg-[linear-gradient(135deg,rgba(8,31,20,0.62),rgba(15,23,42,0.9),rgba(34,197,94,0.08))] px-6 py-4 shadow-[0_8px_24px_rgba(16,185,129,0.14)] transition-transform duration-300 hover:-translate-y-1">
+            <section className={`rounded-2xl border px-6 py-4 transition-transform duration-300 hover:-translate-y-1 ${isDark ? "border-emerald-400/18 bg-[linear-gradient(135deg,rgba(8,31,20,0.62),rgba(15,23,42,0.9),rgba(34,197,94,0.08))] shadow-[0_8px_24px_rgba(16,185,129,0.14)]" : "border-emerald-200 bg-emerald-50/70 shadow-[0_2px_8px_rgba(34,197,94,0.07)]"}`}>
             <div className="flex items-start gap-3">
                
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/16">
@@ -1429,7 +1444,7 @@ export default function VendedorDashboard() {
             className="transform-gpu will-change-transform"
             style={getJourneyAnimationStyle(300)}
           >
-            <section className="rounded-3xl border border-amber-400/20 bg-[linear-gradient(140deg,rgba(245,158,11,0.12),rgba(15,23,42,0.92),rgba(120,53,15,0.18))] p-8 shadow-[0_10px_30px_rgba(245,158,11,0.12)] transition-transform duration-300 hover:-translate-y-1">
+            <section className={`rounded-3xl border p-8 transition-transform duration-300 hover:-translate-y-1 ${isDark ? "border-amber-400/20 bg-[linear-gradient(140deg,rgba(245,158,11,0.12),rgba(15,23,42,0.92),rgba(120,53,15,0.18))] shadow-[0_10px_30px_rgba(245,158,11,0.12)]" : "border-slate-200 bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]"}`}>
           <h3 className="font-bold text-xl mb-1">💰 Dinheiro em Jogo</h3>
           <p className="text-muted-foreground text-sm mb-6">
             Oportunidades abertas que podem virar venda
@@ -1489,21 +1504,21 @@ export default function VendedorDashboard() {
             className="transform-gpu will-change-transform"
             style={getJourneyAnimationStyle(400)}
           >
-            <section className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(11,18,32,0.94))] p-6 shadow-[0_10px_30px_rgba(0,0,0,0.2)]">
+            <section className={`rounded-3xl border p-6 shadow-[0_10px_30px_rgba(0,0,0,0.1)] ${isDark ? "border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(11,18,32,0.94))]" : "border-slate-200 bg-white"}`}>
           <button
             type="button"
             onClick={() => setIsTabelaOportunidadesOpen((prev) => !prev)}
-            className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/8"
+            className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${isDark ? "border-white/10 bg-white/5 hover:bg-white/8" : "border-slate-200/60 bg-slate-50/80 hover:bg-slate-100/60"}`}
           >
             <div className="flex items-center gap-3">
-              <h3 className="text-lg font-bold text-white">Tabela de Oportunidades</h3>
+              <h3 className={`text-lg font-bold ${isDark ? "text-white" : "text-slate-900"}`}>Tabela de Oportunidades</h3>
               {!isLoadingOportunidades && (
                 <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-200">
                   {listaOrcamentos.length} registros
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 text-sm text-slate-200">
+            <div className={`flex items-center gap-2 text-sm ${isDark ? "text-slate-200" : "text-slate-500"}`}>
               <span>{isTabelaOportunidadesOpen ? "Fechar" : "Abrir"}</span>
               {isTabelaOportunidadesOpen ? (
                 <ChevronUp className="h-4 w-4" />
@@ -1530,16 +1545,16 @@ export default function VendedorDashboard() {
                       <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                         Data inicial
                       </label>
-                      <div className="flex items-center gap-2 rounded-md bg-[#0b1220] px-3 py-2">
-                        <Calendar className="h-4 w-4 text-emerald-200" />
+                      <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${isDark ? "bg-[#0b1220]" : "bg-slate-100"}`}>
+                        <Calendar className={`h-4 w-4 ${isDark ? "text-emerald-200" : "text-emerald-500"}`} />
                         <input
                           type="date"
                           value={dataInicialFiltro}
                           onChange={(e) => setDataInicialFiltro(e.target.value)}
                           min={dataMinimaInput || undefined}
                           max={dataMaximaInput || undefined}
-                          className="w-full bg-transparent text-sm text-white outline-none [color-scheme:dark]"
-                          style={{ colorScheme: "dark" }}
+                          className={`w-full bg-transparent text-sm outline-none ${isDark ? "text-white [color-scheme:dark]" : "text-slate-700 [color-scheme:light]"}`}
+                          style={{ colorScheme: isDark ? "dark" : "light" }}
                         />
                       </div>
                     </div>
@@ -1548,16 +1563,16 @@ export default function VendedorDashboard() {
                       <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                         Data final
                       </label>
-                      <div className="flex items-center gap-2 rounded-md bg-[#0b1220] px-3 py-2">
-                        <Calendar className="h-4 w-4 text-emerald-200" />
+                      <div className={`flex items-center gap-2 rounded-md px-3 py-2 ${isDark ? "bg-[#0b1220]" : "bg-slate-100"}`}>
+                        <Calendar className={`h-4 w-4 ${isDark ? "text-emerald-200" : "text-emerald-500"}`} />
                         <input
                           type="date"
                           value={dataFinalFiltro}
                           onChange={(e) => setDataFinalFiltro(e.target.value)}
                           min={dataMinimaInput || undefined}
                           max={dataMaximaInput || undefined}
-                          className="w-full bg-transparent text-sm text-white outline-none [color-scheme:dark]"
-                          style={{ colorScheme: "dark" }}
+                          className={`w-full bg-transparent text-sm outline-none ${isDark ? "text-white [color-scheme:dark]" : "text-slate-700 [color-scheme:light]"}`}
+                          style={{ colorScheme: isDark ? "dark" : "light" }}
                         />
                       </div>
                     </div>
@@ -1630,7 +1645,7 @@ export default function VendedorDashboard() {
                               <ChevronUp className="h-4 w-4" />
                             )
                           ) : (
-                            <ArrowUpDown className="h-4 w-4 text-white/45" />
+                            <ArrowUpDown className={`h-4 w-4 ${isDark ? "text-white/45" : "text-slate-400"}`} />
                           )}
                         </button>
                       </th>
@@ -1655,7 +1670,7 @@ export default function VendedorDashboard() {
                               <ChevronUp className="h-4 w-4" />
                             )
                           ) : (
-                            <ArrowUpDown className="h-4 w-4 text-white/45" />
+                            <ArrowUpDown className={`h-4 w-4 ${isDark ? "text-white/45" : "text-slate-400"}`} />
                           )}
                         </button>
                       </th>
@@ -1758,7 +1773,7 @@ export default function VendedorDashboard() {
         `}</style>
 
         {/* FOOTER */}
-        <footer className="flex justify-between border-t border-white/10 pt-6 text-sm text-muted-foreground">
+        <footer className={`flex justify-between border-t pt-6 text-sm text-muted-foreground ${isDark ? "border-white/10" : "border-slate-200/60"}`}>
           <span>Atualizado agora</span>
           <button onClick={() => window.location.reload()} className="text-primary">
             Atualizar
@@ -1769,21 +1784,21 @@ export default function VendedorDashboard() {
       {/* FEEDBACK FLUTUANTE */}
       {isFeedbackOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          className={`fixed inset-0 z-40 backdrop-blur-sm ${isDark ? "bg-black/40" : "bg-black/20"}`}
           onClick={closeFeedback}
         />
       )}
       {isFeedbackOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-80 rounded-2xl border border-white/10 bg-zinc-900/95 p-5 shadow-2xl backdrop-blur-md">
+        <div className={`fixed bottom-24 right-6 z-50 w-80 rounded-2xl border p-5 shadow-2xl backdrop-blur-md ${isDark ? "border-white/10 bg-zinc-900/95" : "border-slate-200/60 bg-white/98"}`}>
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-white">Sugestão de melhoria</h3>
-              <p className="text-xs text-white/45">Sua opinião é muito importante!</p>
+              <h3 className={`text-sm font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>Sugestão de melhoria</h3>
+              <p className={`text-xs ${isDark ? "text-white/45" : "text-slate-400"}`}>Sua opinião é muito importante!</p>
             </div>
             <button
               type="button"
               onClick={closeFeedback}
-              className="rounded-lg p-1.5 text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+              className={`rounded-lg p-1.5 transition-colors ${isDark ? "text-white/45 hover:bg-white/10 hover:text-white" : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"}`}
             >
               <X className="h-4 w-4" />
             </button>
@@ -1794,7 +1809,7 @@ export default function VendedorDashboard() {
                 <Zap className="h-5 w-5" />
               </div>
               <p className="text-sm font-medium text-emerald-300">Feedback enviado!</p>
-              <p className="text-xs text-white/45">Obrigado pela sugestão 🙏</p>
+              <p className={`text-xs ${isDark ? "text-white/45" : "text-slate-400"}`}>Obrigado pela sugestão 🙏</p>
             </div>
           ) : (
             <>
@@ -1803,7 +1818,7 @@ export default function VendedorDashboard() {
                 onChange={(e) => setFeedbackTexto(e.target.value)}
                 placeholder="Conte o que poderia ser melhor no sistema..."
                 rows={4}
-                className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
+                className={`w-full resize-none rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 ${isDark ? "border-white/10 bg-white/5 text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:ring-emerald-500/30" : "border-slate-200/60 bg-slate-50 text-slate-800 placeholder:text-slate-400 focus:border-emerald-400/60 focus:ring-emerald-400/20"}`}
               />
               {feedbackStatus === "error" && (
                 <p className="mt-1.5 text-xs text-red-400">Erro ao enviar. Tente novamente.</p>

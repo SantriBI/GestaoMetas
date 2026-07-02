@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Home, LayoutDashboard, LogOut, MessageSquareMore, PiggyBank, UserRound } from "lucide-react"
+import { Home, LayoutDashboard, LogOut, MessageSquareMore, Moon, PiggyBank, Sun, UserRound } from "lucide-react"
 import Image from "next/image"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { NotificationBell } from "@/components/notifications/NotificationBell"
@@ -16,6 +16,7 @@ import {
   getUserAvatarSrc,
   getUserInitials,
 } from "@/lib/user-session"
+import { useTheme } from "next-themes"
 
 interface AppShellNavProps {
   user: AuthUser | null
@@ -27,8 +28,16 @@ export function AppShellNav({ user }: AppShellNavProps) {
   const router = useRouter()
   const dashboardHref = getDashboardRoute(user?.role)
   const [feedActivityCount, setFeedActivityCount] = useState(0)
+  const [mounted, setMounted] = useState(false)
+  const { resolvedTheme, setTheme } = useTheme()
 
-  const palette = {
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const isDark = !mounted || resolvedTheme === "dark"
+
+  const darkPalette = {
     nav: "border-[#183424] bg-[#08130f]/84 backdrop-blur-xl text-white",
     logo: "",
     link: "text-white/68 hover:bg-[#11251b] hover:text-white",
@@ -37,7 +46,22 @@ export function AppShellNav({ user }: AppShellNavProps) {
     role: "text-[#9cb8a5]",
     logout: "border-[#21402c] bg-[#0c1711] text-white/75 hover:bg-[#11251b] hover:text-white",
     avatarRing: "border-[#21402c]",
+    toggle: "border-[#21402c] bg-[#0c1711] text-white/75 hover:bg-[#11251b] hover:text-white",
   }
+
+  const lightPalette = {
+    nav: "border-green-200/60 bg-white/90 backdrop-blur-xl text-slate-900",
+    logo: "invert",
+    link: "text-slate-600 hover:bg-green-50 hover:text-slate-900",
+    active: "bg-[linear-gradient(135deg,rgba(11,59,46,0.85),rgba(34,197,94,0.85))] text-white shadow-[0_10px_24px_rgba(34,197,94,0.16)]",
+    profile: "border-green-200/60 bg-green-50/80 text-slate-900",
+    role: "text-green-600",
+    logout: "border-green-200/60 bg-green-50/80 text-slate-600 hover:bg-green-100 hover:text-slate-900",
+    avatarRing: "border-green-300/60",
+    toggle: "border-green-200/60 bg-green-50/80 text-slate-600 hover:bg-green-100 hover:text-slate-900",
+  }
+
+  const palette = isDark ? darkPalette : lightPalette
 
   const lifeGoalHref = "/vendedor/minha-meta-de-vida"
   const navItems = [
@@ -171,6 +195,20 @@ export function AppShellNav({ user }: AppShellNavProps) {
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:justify-end">
           {user?.role === "VENDEDOR" ? <NotificationBell /> : null}
+
+          {mounted && (
+            <button
+              type="button"
+              aria-label="Alternar tema"
+              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+              className={cn(
+                "inline-flex items-center justify-center rounded-lg border p-2 transition-colors",
+                palette.toggle
+              )}
+            >
+              {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+          )}
 
           <button
             type="button"

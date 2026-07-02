@@ -5,6 +5,7 @@ import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from "@/components/ui/sonner"
 import { NotificationProvider } from "@/components/notifications/NotificationContext"
 import { NotificationToast } from "@/components/notifications/NotificationToast"
+import { ThemeProvider } from "@/components/theme-provider"
 import './globals.css'
 
 const spaceGrotesk = Space_Grotesk({ 
@@ -30,14 +31,16 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR" className="dark">
-      <body suppressHydrationWarning className={`${spaceGrotesk.className} antialiased`}>
-        <NotificationProvider>
-          {children}
-          <NotificationToast />
-          <Toaster position="top-right" richColors />
-          <Analytics />
-        </NotificationProvider>
+    <html lang="pt-BR" suppressHydrationWarning>
+      <body className={`${spaceGrotesk.className} antialiased`} suppressHydrationWarning>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+          <NotificationProvider>
+            {children}
+            <NotificationToast />
+            <Toaster position="top-right" richColors />
+            <Analytics />
+          </NotificationProvider>
+        </ThemeProvider>
       </body>
     </html>
   )
