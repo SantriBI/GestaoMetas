@@ -1,7 +1,8 @@
-import oracledb from "oracledb"
-import dotenv from "dotenv"
-
-dotenv.config()
+import oracledb, {
+  explainOracleConnectionError,
+  getOracleRuntimeInfo,
+  sanitizeConnectString,
+} from "./oracleClient.js"
 
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
 oracledb.fetchAsString = [oracledb.CLOB]
@@ -10,14 +11,48 @@ const TRANSIENT_ORACLE_ERROR_CODES = new Set([8103])
 const MAX_SELECT_RETRIES = 2
 const RETRY_DELAY_MS = 150
 
-const pool = await oracledb.createPool({
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  connectString: process.env.DB_CONNECT_STRING,
-  poolMin: 4,
-  poolMax: 25,
-  poolIncrement: 2
-})
+let poolPromise = null
+
+function getLegacyOracleConfig() {
+  const user = process.env.DB_USER
+  const password = process.env.DB_PASSWORD
+  const connectString = process.env.DB_CONNECT_STRING
+
+  if (!user || !password || !connectString) {
+    throw new Error(
+      "Oracle legado nao configurado. Defina DB_USER, DB_PASSWORD e DB_CONNECT_STRING no Back/.env."
+    )
+  }
+
+  const config = {
+    user,
+    password,
+    connectString,
+    poolMin: 4,
+    poolMax: 25,
+    poolIncrement: 2
+  }
+
+  const runtime = getOracleRuntimeInfo()
+  console.log(
+    `[oracle] preparando pool legado (mode=${runtime.mode}; client=${runtime.oracleClientVersion}; ` +
+    `connectString=${sanitizeConnectString(connectString)}).`
+  )
+
+  return config
+}
+
+export async function getPool() {
+  if (!poolPromise) {
+    poolPromise = oracledb.createPool(getLegacyOracleConfig()).catch((err) => {
+      poolPromise = null
+      console.error("[oracle] falha ao criar pool legado:", explainOracleConnectionError(err))
+      throw err
+    })
+  }
+
+  return poolPromise
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -48,6 +83,7 @@ export async function query(sql, binds = {}, options = {}) {
   const maxAttempts = isDml ? 1 : MAX_SELECT_RETRIES + 1
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const pool = await getPool()
     const connection = await pool.getConnection()
 
     try {
@@ -70,4 +106,4 @@ export async function query(sql, binds = {}, options = {}) {
   }
 }
 
-export default pool
+export default getPool

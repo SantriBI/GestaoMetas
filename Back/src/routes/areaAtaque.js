@@ -1,5 +1,6 @@
 import express from "express"
 import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import {
   getRankingVendorsDayViewName,
   getRankingVendorsViewName,
@@ -45,21 +46,44 @@ function mapearCliente(row) {
   }
 }
 
-async function resolverEscopoVendedor(codigoRecebido) {
+function getEmpresaIdFromRequest(req) {
+  return req.query.empresa_id ?? req.query.empresaId ?? null
+}
+
+async function getQueryContext(empresaId) {
+  if (empresaId) {
+    return {
+      query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
+      rankingView: "VW_RANKING_VENDEDORES",
+      rankingDayView: "VW_RANKING_VENDEDORES_DIA",
+      orcamentosView: "VW_ORCAMENTOS_GESTAO_METAS",
+    }
+  }
+
   const [rankingView, rankingDayView] = await Promise.all([
     getRankingVendorsViewName(),
     getRankingVendorsDayViewName(),
   ])
-  const rows = await query(
+
+  return {
+    query,
+    rankingView,
+    rankingDayView,
+    orcamentosView: "DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS",
+  }
+}
+
+async function resolverEscopoVendedor(codigoRecebido, context) {
+  const rows = await context.query(
     `
     SELECT *
     FROM (
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM ${rankingView}
+      FROM ${context.rankingView}
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
       UNION ALL
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM ${rankingDayView}
+      FROM ${context.rankingDayView}
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
     )
     WHERE ROWNUM = 1
@@ -124,7 +148,7 @@ function montarAlertasERecomendacoes({
   }
 }
 
-function consultaClientes(whereClause, orderByClause) {
+function consultaClientes(whereClause, orderByClause, orcamentosView) {
   const clienteNorm = normalizarTextoSql("cliente")
   const nomeClienteNorm = normalizarTextoSql("rfv.nome_cliente")
 
@@ -133,7 +157,7 @@ function consultaClientes(whereClause, orderByClause) {
       SELECT
         ${clienteNorm} AS cliente_norm,
         COUNT(*) AS orcamentos_abertos
-      FROM DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS
+      FROM ${orcamentosView}
       WHERE vendedor_id = :vendedor_comercial
       GROUP BY ${clienteNorm}
     )
@@ -157,7 +181,7 @@ function consultaClientes(whereClause, orderByClause) {
   `
 }
 
-function consultaResumoCategoria(whereClause) {
+function consultaResumoCategoria(whereClause, orcamentosView) {
   const clienteNorm = normalizarTextoSql("cliente")
   const nomeClienteNorm = normalizarTextoSql("rfv.nome_cliente")
 
@@ -166,7 +190,7 @@ function consultaResumoCategoria(whereClause) {
       SELECT
         ${clienteNorm} AS cliente_norm,
         COUNT(*) AS orcamentos_abertos
-      FROM DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS
+      FROM ${orcamentosView}
       WHERE vendedor_id = :vendedor_comercial
       GROUP BY ${clienteNorm}
     )
@@ -181,10 +205,32 @@ function consultaResumoCategoria(whereClause) {
   `
 }
 
+async function safeQuery(context, label, sql, binds = {}) {
+  try {
+    const result = await context.query(sql, binds)
+    console.log(`[AreaAtaque] ${label}: ${result.length} linha(s)`)
+    return result
+  } catch (err) {
+    console.error(`[AreaAtaque] ERRO em "${label}":`, err?.message ?? err)
+    return []
+  }
+}
+
 router.get("/area-ataque/:vendedor_id", async (req, res) => {
   try {
     const { vendedor_id } = req.params
-    const vendedor = await resolverEscopoVendedor(vendedor_id)
+    const empresa_id = getEmpresaIdFromRequest(req)
+    console.log(`[AreaAtaque] Requisicao: vendedor_id=${vendedor_id}, empresa_id=${empresa_id}`)
+    const context = await getQueryContext(empresa_id)
+    const vendedor = await resolverEscopoVendedor(vendedor_id, context).catch((err) => {
+      console.warn("Area de ataque: falha ao resolver vendedor pelo ranking:", err?.message ?? err)
+      return {
+        skVendedor: vendedor_id,
+        vendedorId: vendedor_id,
+        nomeVendedor: null,
+      }
+    })
+    console.log(`[AreaAtaque] Vendedor resolvido: skVendedor=${vendedor.skVendedor}, vendedorId=${vendedor.vendedorId}`)
     const binds = {
       vendedor_id: vendedor.skVendedor,
       vendedor_comercial: vendedor.vendedorId,
@@ -205,13 +251,15 @@ router.get("/area-ataque/:vendedor_id", async (req, res) => {
       carteiraResumoRows,
       produtosRows,
     ] = await Promise.all([
-      query(consultaClientes(filtroCampeoes, "rfv.valor DESC"), binds),
-      query(consultaResumoCategoria(filtroCampeoes), binds),
-      query(consultaClientes(filtroFieis, "rfv.valor DESC"), binds),
-      query(consultaResumoCategoria(filtroFieis), binds),
-      query(consultaClientes(filtroRisco, "rfv.recencia DESC, rfv.valor DESC"), binds),
-      query(consultaResumoCategoria(filtroRisco), binds),
-      query(
+      safeQuery(context, "clientes campeoes", consultaClientes(filtroCampeoes, "rfv.valor DESC", context.orcamentosView), binds),
+      safeQuery(context, "resumo campeoes", consultaResumoCategoria(filtroCampeoes, context.orcamentosView), binds),
+      safeQuery(context, "clientes fieis", consultaClientes(filtroFieis, "rfv.valor DESC", context.orcamentosView), binds),
+      safeQuery(context, "resumo fieis", consultaResumoCategoria(filtroFieis, context.orcamentosView), binds),
+      safeQuery(context, "clientes em risco", consultaClientes(filtroRisco, "rfv.recencia DESC, rfv.valor DESC", context.orcamentosView), binds),
+      safeQuery(context, "resumo risco", consultaResumoCategoria(filtroRisco, context.orcamentosView), binds),
+      safeQuery(
+        context,
+        "resumo carteira",
         `
         SELECT
           NVL(SUM(valor), 0) AS valor_historico_clientes,
@@ -223,10 +271,12 @@ router.get("/area-ataque/:vendedor_id", async (req, res) => {
         `,
         { vendedor_id: vendedor.skVendedor }
       ),
-      query(
+      safeQuery(
+        context,
+        "produtos em alta",
         `
         SELECT
-          p.nome,
+          NVL(p.nome_pai_nivel1, 'Sem grupo') AS nome,
           SUM(
             CASE
               WHEN f.tipo = 'DEV' THEN NVL(f.valor_liquido_item, 0) * -1
@@ -237,7 +287,7 @@ router.get("/area-ataque/:vendedor_id", async (req, res) => {
         JOIN DM_VENDAS.DIM_PRODUTOS p
           ON f.sk_produto = p.sk_produto
         WHERE f.sk_vendedor = :vendedor_id
-        GROUP BY p.nome
+        GROUP BY NVL(p.nome_pai_nivel1, 'Sem grupo')
         ORDER BY total_vendido DESC
         FETCH FIRST 5 ROWS ONLY
         `,
@@ -262,6 +312,7 @@ router.get("/area-ataque/:vendedor_id", async (req, res) => {
     const resumoCarteira = normalizarLinha(carteiraResumoRows[0] ?? {})
 
     const valorHistoricoClientes = numero(resumoCarteira.valor_historico_clientes)
+    console.log(`[AreaAtaque] Totais: campeoes=${resumoCampeoes.total}, fieis=${resumoFieis.total}, risco=${resumoEmRisco.total}, valorHistorico=${valorHistoricoClientes}`)
     const inteligencia = montarAlertasERecomendacoes({
       campeoes,
       fieis,

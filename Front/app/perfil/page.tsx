@@ -15,6 +15,23 @@ import {
 
 interface PerfilResponse extends AuthUser {}
 
+function normalizeCpf(value?: string | number | null) {
+  return String(value ?? "").replace(/\D/g, "")
+}
+
+function isCpfLike(value?: string | number | null) {
+  return /^\d{11}$/.test(normalizeCpf(value))
+}
+
+function getDisplayName(user?: Pick<AuthUser, "nome" | "login"> | null) {
+  const name = String(user?.nome ?? "").trim()
+  if (!name || isCpfLike(name) || normalizeCpf(name) === normalizeCpf(user?.login)) {
+    return null
+  }
+
+  return name
+}
+
 export default function PerfilPage() {
   const router = useRouter()
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -46,7 +63,10 @@ export default function PerfilPage() {
         setLoadingPerfil(true)
         setErro(null)
 
-        const response = await fetch(`/api/usuarios/perfil/${authenticatedUser.id_usuario}`, {
+        const params = new URLSearchParams()
+        if (authenticatedUser.empresa_id) params.set("empresa_id", String(authenticatedUser.empresa_id))
+
+        const response = await fetch(`/api/usuarios/perfil/${authenticatedUser.id_usuario}?${params.toString()}`, {
           cache: "no-store",
         })
         const json = await response.json().catch(() => ({}))
@@ -75,7 +95,12 @@ export default function PerfilPage() {
     carregarPerfil()
   }, [router])
 
-  const avatarSrc = useMemo(() => previewFoto ?? getUserAvatarSrc(perfil ?? user), [perfil, previewFoto, user])
+  const displayName = getDisplayName(perfil ?? user)
+  const avatarUser = useMemo(
+    () => ({ ...(perfil ?? user), nome: displayName ?? "Usuario" }),
+    [displayName, perfil, user]
+  )
+  const avatarSrc = useMemo(() => previewFoto ?? getUserAvatarSrc(avatarUser), [avatarUser, previewFoto])
 
   function limparFeedback() {
     setErro(null)
@@ -109,6 +134,7 @@ export default function PerfilPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id_usuario: user.id_usuario,
+          empresa_id: user.empresa_id,
           arquivo_base64: previewFoto,
           mime_type: fotoArquivo.type,
         }),
@@ -144,6 +170,7 @@ export default function PerfilPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id_usuario: user.id_usuario,
+          empresa_id: user.empresa_id,
           senha_atual: senhaAtual,
           nova_senha: novaSenha,
           confirmar_senha: confirmarSenha,
@@ -193,10 +220,12 @@ export default function PerfilPage() {
           <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(10,15,28,0.88))] p-6">
             <div className="flex flex-col items-center text-center">
               <Avatar className="size-28 border-2 border-slate-800 object-cover shadow-[0_16px_40px_rgba(2,6,23,0.35)]">
-                <AvatarImage src={avatarSrc} alt={perfil?.nome ?? user?.nome ?? "Usuario"} />
-                <AvatarFallback>{getUserInitials(perfil?.nome ?? user?.nome)}</AvatarFallback>
+                <AvatarImage src={avatarSrc} alt={displayName ?? "Usuario"} />
+                <AvatarFallback>{getUserInitials(displayName)}</AvatarFallback>
               </Avatar>
-              <h2 className="mt-4 text-lg font-semibold uppercase tracking-[0.08em]">{perfil?.nome ?? user?.nome ?? "Carregando..."}</h2>
+              <h2 className="mt-4 text-lg font-semibold uppercase tracking-[0.08em]">
+                {displayName ?? (loadingPerfil ? "Carregando..." : "Usuario")}
+              </h2>
               <p className="mt-1 text-sm text-slate-400">{perfil?.role === "VENDEDOR" ? "Vendedor" : "Gerente"}</p>
             </div>
 
@@ -241,7 +270,9 @@ export default function PerfilPage() {
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-4">
                   <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Nome</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-100">{loadingPerfil ? "Carregando..." : perfil?.nome ?? "-"}</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-100">
+                    {loadingPerfil ? "Carregando..." : displayName ?? "-"}
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-4">
                   <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Perfil</p>

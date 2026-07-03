@@ -1,29 +1,25 @@
 import { query } from "./oracle.js"
 
 const OBJECT_SPECS = {
-  usersTable: {
-    type: "TABLE",
-    candidates: ["GM_TB_USUARIOS_APP", "USUARIOS_APP"],
-  },
   feedPostsTable: {
     type: "TABLE",
-    candidates: ["GM_TB_FEED_POSTS", "FEED_POSTS"],
+    candidates: ["FEED_POSTS", "GM_TB_FEED_POSTS"],
   },
   feedLikesTable: {
     type: "TABLE",
-    candidates: ["GM_TB_FEED_CURTIDAS", "FEED_CURTIDAS"],
+    candidates: ["FEED_CURTIDAS", "GM_TB_FEED_CURTIDAS"],
   },
   feedCommentsTable: {
     type: "TABLE",
-    candidates: ["GM_TB_FEED_COMENTARIOS", "FEED_COMENTARIOS"],
+    candidates: ["FEED_COMENTARIOS", "GM_TB_FEED_COMENTARIOS"],
   },
   objectivesTable: {
     type: "TABLE",
-    candidates: ["GM_TB_OBJETIVOS_VENDEDOR", "OBJETIVOS_VENDEDOR"],
+    candidates: ["OBJETIVOS_VENDEDOR", "GM_TB_OBJETIVOS_VENDEDOR"],
   },
   profileTable: {
     type: "TABLE",
-    candidates: ["GM_TB_PERFIL_VENDEDOR", "PERFIL_VENDEDOR"],
+    candidates: ["PERFIL_VENDEDOR", "GM_TB_PERFIL_VENDEDOR"],
   },
   challengesTable: {
     type: "TABLE",
@@ -45,19 +41,24 @@ const OBJECT_SPECS = {
     type: "TABLE",
     candidates: ["DESAFIOS_COMERCIAIS_LOG", "GM_TB_DESAFIOS_COMERCIAIS_LOG"],
   },
+  organizacoesTable: {
+    type: "TABLE",
+    candidates: ["ORGANIZACOES", "GM_TB_ORGANIZACOES"],
+  },
   rankingVendorsView: {
     type: "VIEW",
     owner: "DM_VENDAS",
-    candidates: ["GM_VW_RANKING_VENDEDORES", "VW_RANKING_VENDEDORES"],
+    candidates: ["VW_RANKING_VENDEDORES", "GM_VW_RANKING_VENDEDORES"],
   },
   rankingVendorsDayView: {
     type: "VIEW",
     owner: "DM_VENDAS",
-    candidates: ["GM_VW_RANKING_VENDEDORES_DIA", "VW_RANKING_VENDEDORES_DIA"],
+    candidates: ["VW_RANKING_VENDEDORES_DIA", "GM_VW_RANKING_VENDEDORES_DIA"],
   },
   rankingVendorsDayHistView: {
     type: "VIEW",
-    candidates: ["GM_VW_RANKING_VENDEDORES_DIA_HIST", "VW_RANKING_VENDEDORES_DIA_HIST"],
+    owner: "DM_VENDAS",
+    candidates: ["VW_RANKING_VENDEDORES_DIA_HIST", "GM_VW_RANKING_VENDEDORES_DIA_HIST"],
   },
 }
 
@@ -138,10 +139,6 @@ export async function resolveOracleObjectNames(keys) {
   return Object.fromEntries(entries)
 }
 
-export async function getUsersTableName() {
-  return resolveOracleObjectName("usersTable")
-}
-
 export async function getFeedPostsTableName() {
   return resolveOracleObjectName("feedPostsTable")
 }
@@ -160,6 +157,10 @@ export async function getObjectivesTableName() {
 
 export async function getProfileTableName() {
   return resolveOracleObjectName("profileTable")
+}
+
+export async function getOrganizacoesTableName() {
+  return resolveOracleObjectName("organizacoesTable")
 }
 
 export async function getRankingVendorsViewName() {

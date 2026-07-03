@@ -41,8 +41,9 @@ const SEQUENCES = [
 ]
 
 const metaTypes = ["FATURAMENTO", "PEDIDOS_FECHADOS", "CLIENTES_ATENDIDOS", "RECUPERAR_CLIENTES", "PRODUTO_OU_MARCA"]
-const moduleSqlPath = "Back/sql/desafios_comerciais.sql"
-const moduleSqlUrl = new URL("../../../sql/desafios_comerciais.sql", import.meta.url)
+const moduleSqlPath = "Back/sql/ddl_gestao_metas.sql"
+const moduleSqlUrl = new URL("../../../sql/ddl_gestao_metas.sql", import.meta.url)
+let challengeGoalsColumnCache = null
 
 function numberValue(value) {
   const parsed = Number(value ?? 0)
@@ -99,6 +100,31 @@ async function getChallengeTableNames() {
   return resolveOracleObjectNames(TABLE_REQUIREMENTS.map((item) => item.key))
 }
 
+async function getChallengeGoalsColumns() {
+  if (challengeGoalsColumnCache) return challengeGoalsColumnCache
+
+  const { challengeGoalsTable } = await getChallengeTableNames()
+  const tableName = String(challengeGoalsTable).split(".").pop().toUpperCase()
+  const rows = await query(
+    `
+    SELECT column_name
+    FROM USER_TAB_COLUMNS
+    WHERE TABLE_NAME = :table_name
+    `,
+    { table_name: tableName }
+  )
+
+  challengeGoalsColumnCache = new Set(
+    rows.map((row) => normalizeRow(row).column_name).filter(Boolean)
+  )
+  return challengeGoalsColumnCache
+}
+
+async function challengeGoalsHasColumn(columnName) {
+  const columns = await getChallengeGoalsColumns()
+  return columns.has(String(columnName).toUpperCase())
+}
+
 async function resolveChallengeSql(sql) {
   if (typeof sql !== "string" || !sql.includes("DESAFIOS_COMERCIAIS")) {
     return sql
@@ -138,6 +164,12 @@ function isActiveParticipantStatus(status) {
 
 function isCampaignWithAcceptance(challenge) {
   return challenge?.exigeAceite !== false
+}
+
+function isClosedChallengeStatus(status) {
+  return ["ENCERRADO", "ENCERRADO_AUTOMATICO", "ENCERRADO_MANUAL", "CANCELADO"].includes(
+    String(status ?? "").toUpperCase()
+  )
 }
 
 async function tableExists(tableName) {
@@ -265,7 +297,7 @@ function normalizeMeta(row) {
     metaValor: numberValue(item.meta_valor),
     unidadeMeta: textValue(item.unidade_meta),
     recompensaValor: numberValue(item.recompensa_valor),
-    metricType: textValue(item.metric_type) ?? 'VALOR',
+    metricType: textValue(item.metric_type) ?? textValue(config.metricType) ?? 'VALOR',
     ordemExibicao: numberValue(item.ordem_exibicao),
     config,
   }
@@ -372,6 +404,67 @@ async function loadTimeline(idDesafio) {
       dataEvento: item.data_evento ?? null,
     }
   })
+}
+
+async function insertChallengeMeta(idDesafio, meta, index) {
+  const idMeta = await nextSequenceValue("DESAFIOS_COMERCIAIS_METAS_SEQ")
+  const metricType = String(meta.metricType ?? "VALOR").toUpperCase()
+  const configJson = JSON.stringify({
+    ...(meta.config ?? {}),
+    metricType,
+  })
+  const hasMetricTypeColumn = await challengeGoalsHasColumn("METRIC_TYPE")
+  const columns = [
+    "id_meta",
+    "id_desafio",
+    "tipo_meta",
+    "meta_valor",
+    "unidade_meta",
+    "recompensa_valor",
+    "ordem_exibicao",
+    "config_json",
+    "criado_em",
+    "atualizado_em",
+  ]
+  const values = [
+    ":id_meta",
+    ":id_desafio",
+    ":tipo_meta",
+    ":meta_valor",
+    ":unidade_meta",
+    ":recompensa_valor",
+    ":ordem_exibicao",
+    ":config_json",
+    "SYSDATE",
+    "SYSDATE",
+  ]
+  const params = {
+    id_meta: idMeta,
+    id_desafio: idDesafio,
+    tipo_meta: String(meta.tipoMeta).toUpperCase(),
+    meta_valor: meta.metaValor,
+    unidade_meta: meta.unidadeMeta ?? null,
+    recompensa_valor: meta.recompensaValor ?? 0,
+    ordem_exibicao: index + 1,
+    config_json: configJson,
+  }
+
+  if (hasMetricTypeColumn) {
+    columns.splice(6, 0, "metric_type")
+    values.splice(6, 0, ":metric_type")
+    params.metric_type = metricType
+  }
+
+  await query(
+    `
+    INSERT INTO DESAFIOS_COMERCIAIS_METAS (
+      ${columns.join(",\n      ")}
+    ) VALUES (
+      ${values.join(",\n      ")}
+    )
+    `,
+    params
+  )
 }
 
 async function resolveTargetSellers(payload) {
@@ -1002,47 +1095,7 @@ export async function createChallenge(payload) {
   )
 
   for (const [index, meta] of payload.metas.entries()) {
-    const idMeta = await nextSequenceValue("DESAFIOS_COMERCIAIS_METAS_SEQ")
-    await query(
-      `
-      INSERT INTO DESAFIOS_COMERCIAIS_METAS (
-        id_meta,
-        id_desafio,
-        tipo_meta,
-        meta_valor,
-        unidade_meta,
-        recompensa_valor,
-        metric_type,
-        ordem_exibicao,
-        config_json,
-        criado_em,
-        atualizado_em
-      ) VALUES (
-        :id_meta,
-        :id_desafio,
-        :tipo_meta,
-        :meta_valor,
-        :unidade_meta,
-        :recompensa_valor,
-        :metric_type,
-        :ordem_exibicao,
-        :config_json,
-        SYSDATE,
-        SYSDATE
-      )
-      `,
-      {
-        id_meta: idMeta,
-        id_desafio: idDesafio,
-        tipo_meta: String(meta.tipoMeta).toUpperCase(),
-        meta_valor: meta.metaValor,
-        unidade_meta: meta.unidadeMeta ?? null,
-        recompensa_valor: meta.recompensaValor ?? 0,
-        metric_type: String(meta.metricType ?? 'VALOR').toUpperCase(),
-        ordem_exibicao: index + 1,
-        config_json: JSON.stringify(meta.config ?? {}),
-      }
-    )
+    await insertChallengeMeta(idDesafio, meta, index)
   }
 
   for (const seller of targetSellers) {
@@ -1112,47 +1165,7 @@ export async function updateChallenge(idDesafio, payload) {
   await query(`DELETE FROM DESAFIOS_COMERCIAIS_VENDEDORES WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
   await query(`DELETE FROM DESAFIOS_COMERCIAIS_METAS WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
   for (const [index, meta] of payload.metas.entries()) {
-    const idMeta = await nextSequenceValue("DESAFIOS_COMERCIAIS_METAS_SEQ")
-    await query(
-      `
-      INSERT INTO DESAFIOS_COMERCIAIS_METAS (
-        id_meta,
-        id_desafio,
-        tipo_meta,
-        meta_valor,
-        unidade_meta,
-        recompensa_valor,
-        metric_type,
-        ordem_exibicao,
-        config_json,
-        criado_em,
-        atualizado_em
-      ) VALUES (
-        :id_meta,
-        :id_desafio,
-        :tipo_meta,
-        :meta_valor,
-        :unidade_meta,
-        :recompensa_valor,
-        :metric_type,
-        :ordem_exibicao,
-        :config_json,
-        SYSDATE,
-        SYSDATE
-      )
-      `,
-      {
-        id_meta: idMeta,
-        id_desafio: idDesafio,
-        tipo_meta: String(meta.tipoMeta).toUpperCase(),
-        meta_valor: meta.metaValor,
-        unidade_meta: meta.unidadeMeta ?? null,
-        recompensa_valor: meta.recompensaValor ?? 0,
-        metric_type: String(meta.metricType ?? 'VALOR').toUpperCase(),
-        ordem_exibicao: index + 1,
-        config_json: JSON.stringify(meta.config ?? {}),
-      }
-    )
+    await insertChallengeMeta(idDesafio, meta, index)
   }
 
   for (const seller of targetSellers) {
@@ -1280,7 +1293,7 @@ export async function markChallengeSeen(idDesafio, skVendedor) {
 
 export async function acceptChallenge(idDesafio, skVendedor) {
   const detail = await getChallengeById(idDesafio)
-  if (["ENCERRADO", "CANCELADO"].includes(detail.status)) throw new Error("Nao e possivel aceitar um desafio encerrado.")
+  if (isClosedChallengeStatus(detail.status)) throw new Error("Nao e possivel aceitar um desafio encerrado.")
   if (!isCampaignWithAcceptance(detail)) throw new Error("Bonus mensal nao precisa de aceite.")
 
   const currentParticipant = detail.participants?.find((item) => String(item.skVendedor) === String(skVendedor))
@@ -1307,7 +1320,7 @@ export async function acceptChallenge(idDesafio, skVendedor) {
 
 export async function declineChallenge(idDesafio, skVendedor) {
   const detail = await getChallengeById(idDesafio)
-  if (["ENCERRADO", "CANCELADO"].includes(detail.status)) throw new Error("Nao e possivel recusar um desafio encerrado.")
+  if (isClosedChallengeStatus(detail.status)) throw new Error("Nao e possivel recusar um desafio encerrado.")
   if (!isCampaignWithAcceptance(detail)) throw new Error("Bonus mensal nao precisa de aceite.")
 
   const currentParticipant = detail.participants?.find((item) => String(item.skVendedor) === String(skVendedor))

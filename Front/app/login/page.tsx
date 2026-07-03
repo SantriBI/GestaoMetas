@@ -3,7 +3,7 @@
 import React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Mail, Lock, ArrowRight, ArrowLeft, TrendingUp } from "lucide-react"
+import { Mail, Lock, ArrowRight, ArrowLeft, Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 import { setStoredUser } from "@/lib/user-session"
@@ -12,6 +12,7 @@ export default function LoginPage() {
   const router = useRouter()
   const [login, setLogin] = useState("")
   const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
 
@@ -32,10 +33,10 @@ export default function LoginPage() {
         }),
       })
 
-      const data = await response.json()
+      const data = await response.json().catch(() => null)
 
       if (!response.ok) {
-        setError(data.error || "Erro ao realizar login")
+        setError(data?.error || `Erro ao realizar login (${response.status})`)
         setIsLoading(false)
         return
       }
@@ -47,6 +48,16 @@ export default function LoginPage() {
       }
 
       setStoredUser(data)
+
+      if (data.role === "SUPERADMIN") {
+        router.push("/admin")
+        return
+      }
+
+      if (data.role === "ADMIN") {
+        router.push("/admin/organizacoes")
+        return
+      }
 
       if (data.role === "VENDEDOR") {
         router.push("/vendedor")
@@ -136,12 +147,20 @@ export default function LoginPage() {
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                 <input
                   id="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="********"
-                  className="w-full pl-10 pr-4 py-3 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                  className="w-full pl-10 pr-12 py-3 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
               </div>
             </div>
 

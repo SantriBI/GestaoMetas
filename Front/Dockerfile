@@ -7,7 +7,16 @@ WORKDIR /app
 # Dependencias completas para permitir build e modo dev.
 FROM base AS deps
 COPY package*.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+  npm ci \
+    --fetch-retries=5 \
+    --fetch-retry-factor=2 \
+    --fetch-retry-mintimeout=20000 \
+    --fetch-retry-maxtimeout=120000 \
+    --fetch-timeout=600000 \
+    --prefer-offline \
+    --no-audit \
+    --fund=false
 
 # Container voltado para desenvolvimento local com hot reload.
 FROM deps AS dev
@@ -20,6 +29,12 @@ CMD ["sh", "-c", "npm run dev -- --hostname 0.0.0.0 --port ${PORT:-3000}"]
 # Build de producao com saida standalone do Next.js.
 FROM deps AS builder
 ENV NODE_ENV=production
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_BACKEND_PORT
+ARG BACKEND_PORT
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_BACKEND_PORT=${NEXT_PUBLIC_BACKEND_PORT}
+ENV BACKEND_PORT=${BACKEND_PORT}
 COPY . .
 RUN npm run build
 

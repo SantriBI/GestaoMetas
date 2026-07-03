@@ -8,9 +8,10 @@ import { VendedorPanoramaModal } from "@/components/dashboard/VendedorPanoramaMo
 interface RankingTableProps {
   vendedores: VendedorProcessado[]
   viewMode: "mensal" | "diario"
+  empresaId?: string | number | null
 }
 
-export function RankingTable({ vendedores, viewMode }: RankingTableProps) {
+export function RankingTable({ vendedores, viewMode, empresaId }: RankingTableProps) {
   const [panoramaAberto, setPanoramaAberto] = useState(false)
   const [vendedorSelecionado, setVendedorSelecionado] = useState<number | null>(null)
   const [nomeVendedorSelecionado, setNomeVendedorSelecionado] = useState<string | null>(null)
@@ -270,6 +271,7 @@ export function RankingTable({ vendedores, viewMode }: RankingTableProps) {
       <VendedorPanoramaModal
         vendedorId={vendedorSelecionado}
         nomeVendedor={nomeVendedorSelecionado}
+        empresaId={empresaId}
         open={panoramaAberto}
         onOpenChange={setPanoramaAberto}
       />

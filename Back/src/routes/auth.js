@@ -1,214 +1,252 @@
-import express from 'express'
-import bcrypt from 'bcrypt'
-import { query } from '../db/oracle.js'
-import { getUsersTableName } from '../db/oracleObjectNames.js'
+import crypto from "node:crypto"
+import express from "express"
+import bcrypt from "bcrypt"
+import { issueAuthToken, setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME, verifyAuthToken } from "../auth/token.js"
+import { requireAuth, requireRole } from "../middleware/auth.js"
+import centralPool, { describeMysqlTarget, formatDbError } from "../db/mysql.js"
+import { queryTenantByEmpresaId } from "../db/mysql-tenants.js"
 
 const router = express.Router()
-let fotoUrlColumnExists = null
 
 function normalizarCPF(valor) {
-  return String(valor).trim().replace(/\D/g, '')
+  return String(valor).trim().replace(/\D/g, "")
 }
 
-async function hasFotoUrlColumn() {
-  if (fotoUrlColumnExists !== null) {
-    return fotoUrlColumnExists
-  }
+// Busca usuario no banco central MySQL (SUPERADMIN/ADMIN)
+async function findUserCentral(login) {
+  const loginNorm = normalizarCPF(login)
+  const [rows] = await centralPool.query(
+    "SELECT * FROM usuarios_auth WHERE (login = ? OR (? != '' AND REPLACE(login, ' ', '') = ?)) AND ativo = 'S' LIMIT 1",
+    [login.trim(), loginNorm, loginNorm]
+  )
+  return rows[0] ?? null
+}
 
-  const userTable = await getUsersTableName()
-  const rows = await query(
-    `
-    SELECT COUNT(*) AS total
-    FROM USER_TAB_COLUMNS
-    WHERE TABLE_NAME = :tableName
-      AND COLUMN_NAME = 'FOTO_URL'
-    `,
-    { tableName: userTable.split('.').pop() }
+// Busca usuario em todos os tenants MySQL
+async function findUserInTenants(login) {
+  const loginNorm = normalizarCPF(login)
+  const [orgs] = await centralPool.query(
+    "SELECT id_organizacao, db_name FROM organizacoes_auth WHERE ativo = 'S' AND db_name IS NOT NULL"
   )
 
-  fotoUrlColumnExists = Number(rows[0]?.TOTAL ?? 0) > 0
-  return fotoUrlColumnExists
+  for (const org of orgs) {
+    try {
+      const rows = await queryTenantByEmpresaId(
+        org.id_organizacao,
+        "SELECT * FROM usuarios_auth WHERE (login = ? OR (? != '' AND cpf = ?)) AND ativo = 'S' LIMIT 1",
+        [login.trim(), loginNorm, loginNorm]
+      )
+      if (rows.length) return { user: rows[0], empresa_id: org.id_organizacao }
+    } catch {}
+  }
+  return null
 }
 
 // POST /api/login
-router.post('/login', async (req, res) => {
+router.post("/login", async (req, res) => {
   const { login, senha } = req.body
 
   if (!login || !senha) {
-    return res.status(400).json({
-      error: 'Login e senha são obrigatórios'
-    })
+    return res.status(400).json({ error: "Login e senha sao obrigatorios" })
   }
 
   try {
-    const loginDigitado = String(login).trim()
-    const loginNormalizado = normalizarCPF(loginDigitado)
-    const userTable = await getUsersTableName()
-    const fotoColumnSql = (await hasFotoUrlColumn())
-      ? 'foto_url'
-      : 'CAST(NULL AS VARCHAR2(500)) AS foto_url'
+    // 1. Tenta banco central (SUPERADMIN/ADMIN)
+    let mysqlAuthUnavailable = false
+    let centralUser = null
 
-    const rows = await query(
-      `
-      SELECT *
-      FROM (
-        SELECT
-          id_usuario,
-          nome as nome,
-          login,
-          senha_hash,
-          role,
-          empresa_id,
-          sk_vendedor,
-          ${fotoColumnSql},
-          senha_temporaria,
-          ativo
-        FROM ${userTable}
-        WHERE TRIM(login) = :loginDigitado
-           OR (:loginNormalizado <> '' AND REGEXP_REPLACE(login, '[^0-9]', '') = :loginNormalizado)
+    try {
+      centralUser = await findUserCentral(login)
+    } catch (error) {
+      mysqlAuthUnavailable = true
+      console.warn(
+        `MySQL central indisponivel no login (${describeMysqlTarget()}):`,
+        formatDbError(error)
       )
-      WHERE ROWNUM = 1
-      `,
-      {
-        loginDigitado,
-        loginNormalizado
-      }
-    )
-
-    if (rows.length === 0) {
-      return res.status(401).json({ error: 'Usuário ou senha inválidos' })
     }
 
-    const user = rows[0]
+    if (centralUser) {
+      const ok = await bcrypt.compare(senha, centralUser.senha_hash)
+      if (!ok) return res.status(401).json({ error: "Usuario ou senha invalidos" })
 
-    if (user.ATIVO !== 'S') {
-      return res.status(403).json({ error: 'Usuário inativo' })
+      await centralPool.query(
+        "UPDATE usuarios_auth SET ultimo_login = NOW() WHERE id_usuario = ?",
+        [centralUser.id_usuario]
+      )
+
+      const token = issueAuthToken(centralUser)
+      setAuthCookie(res, token)
+
+      return res.json({
+        id_usuario: centralUser.id_usuario,
+        nome: centralUser.nome ?? centralUser.nome_completo,
+        login: centralUser.login,
+        role: centralUser.role,
+        empresa_id: centralUser.empresa_id ?? null,
+        sk_vendedor: centralUser.sk_vendedor ?? null,
+        foto_url: centralUser.foto_url ?? null,
+        senha_temporaria: centralUser.senha_temporaria ?? "N",
+      })
     }
 
-    const senhaOk = await bcrypt.compare(senha, user.SENHA_HASH)
+    // 2. Tenta tenants MySQL
+    let tenantResult = null
 
-    if (!senhaOk) {
-      return res.status(401).json({ error: 'Usuário ou senha inválidos' })
+    try {
+      tenantResult = await findUserInTenants(login)
+    } catch (error) {
+      mysqlAuthUnavailable = true
+      console.warn(
+        `MySQL tenants indisponivel no login (${describeMysqlTarget()}):`,
+        formatDbError(error)
+      )
     }
 
-  res.json({
-    id_usuario: user.ID_USUARIO,
-    nome: user.NOME,
-    login: user.LOGIN,
-    role: user.ROLE,
-    empresa_id: user.EMPRESA_ID,
-    sk_vendedor: user.SK_VENDEDOR,
-    foto_url: user.FOTO_URL ?? null,
-    senha_temporaria: user.SENHA_TEMPORARIA
-  })
+    if (tenantResult) {
+      const { user, empresa_id } = tenantResult
+      const ok = await bcrypt.compare(senha, user.senha_hash)
+      if (!ok) return res.status(401).json({ error: "Usuario ou senha invalidos" })
 
+      await queryTenantByEmpresaId(
+        empresa_id,
+        "UPDATE usuarios_auth SET ultimo_login = NOW() WHERE id_usuario = ?",
+        [user.id_usuario]
+      )
+
+      const token = issueAuthToken({ ...user, empresa_id })
+      setAuthCookie(res, token)
+
+      return res.json({
+        id_usuario: user.id_usuario,
+        nome: user.nome ?? user.nome_completo,
+        login: user.login,
+        role: user.role,
+        empresa_id,
+        sk_vendedor: user.sk_vendedor ?? null,
+        foto_url: user.foto_url ?? null,
+        senha_temporaria: user.senha_temporaria ?? "N",
+      })
+    }
+
+    if (mysqlAuthUnavailable) {
+      return res.status(503).json({
+        error: "Banco de autenticacao local indisponivel. Inicie o MySQL.",
+      })
+    }
+
+    return res.status(401).json({ error: "Usuario ou senha invalidos" })
   } catch (error) {
-    console.error('Erro no login:', error)
-    res.status(500).json({ error: 'Erro interno no servidor' })
+    console.error("Erro no login:", error)
+    return res.status(500).json({ error: "Erro interno no servidor" })
   }
 })
 
+// POST /api/logout
+router.post("/logout", (req, res) => {
+  clearAuthCookie(res)
+  return res.json({ ok: true })
+})
 
 // POST /api/alterar-senha
-router.post('/alterar-senha', async (req, res) => {
-  const { login, senhaAtual, novaSenha } = req.body
+router.post("/alterar-senha", requireAuth, async (req, res) => {
+  const { senhaAtual, novaSenha } = req.body
+  const { id_usuario, empresa_id } = req.auth
 
-  if (!login || !senhaAtual || !novaSenha) {
-    return res.status(400).json({
-      error: 'Login, senha atual e nova senha são obrigatórios'
-    })
+  if (!senhaAtual || !novaSenha) {
+    return res.status(400).json({ error: "senhaAtual e novaSenha sao obrigatorios" })
+  }
+
+  if (String(novaSenha).length < 6) {
+    return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres" })
   }
 
   try {
-    const loginDigitado = String(login).trim()
-    const loginNormalizado = normalizarCPF(loginDigitado)
-    const userTable = await getUsersTableName()
+    // Busca usuario no banco correto
+    let user = null
+    let source = null
 
-    const rows = await query(
-      `
-      SELECT *
-      FROM (
-        SELECT id_usuario, senha_hash
-        FROM ${userTable}
-        WHERE TRIM(login) = :loginDigitado
-           OR (:loginNormalizado <> '' AND REGEXP_REPLACE(login, '[^0-9]', '') = :loginNormalizado)
+    const centralRow = await centralPool.query(
+      "SELECT * FROM usuarios_auth WHERE id_usuario = ? LIMIT 1",
+      [id_usuario]
+    )
+    if (centralRow[0]?.length) {
+      user = centralRow[0][0]
+      source = "central"
+    } else if (empresa_id) {
+      const rows = await queryTenantByEmpresaId(
+        empresa_id,
+        "SELECT * FROM usuarios_auth WHERE id_usuario = ? LIMIT 1",
+        [id_usuario]
       )
-      WHERE ROWNUM = 1
-      `,
-      {
-        loginDigitado,
-        loginNormalizado
+      if (rows.length) {
+        user = rows[0]
+        source = "tenant"
       }
-    )
-
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Usuário não encontrado' })
     }
 
-    const user = rows[0]
+    if (!user) return res.status(404).json({ error: "Usuario nao encontrado" })
 
-    const senhaOk = await bcrypt.compare(senhaAtual, user.SENHA_HASH)
-    if (!senhaOk) {
-      return res.status(401).json({ error: 'Senha atual inválida' })
+    const ok = await bcrypt.compare(senhaAtual, user.senha_hash)
+    if (!ok) return res.status(401).json({ error: "Senha atual invalida" })
+
+    const novoHash = await bcrypt.hash(novaSenha, 10)
+
+    if (source === "central") {
+      await centralPool.query(
+        "UPDATE usuarios_auth SET senha_hash = ?, senha_temporaria = 'N' WHERE id_usuario = ?",
+        [novoHash, id_usuario]
+      )
+    } else {
+      await queryTenantByEmpresaId(
+        empresa_id,
+        "UPDATE usuarios_auth SET senha_hash = ?, senha_temporaria = 'N' WHERE id_usuario = ?",
+        [novoHash, id_usuario]
+      )
     }
 
-    const novaSenhaHash = await bcrypt.hash(novaSenha, 10)
-
-    await query(
-      `
-      UPDATE ${userTable}
-      SET senha_hash = :novaSenhaHash,
-          senha_temporaria = 'N',
-          atualizado_em = SYSDATE
-      WHERE id_usuario = :id
-      `,
-      {
-        novaSenhaHash,
-        id: user.ID_USUARIO
-      }
-    )
-
-    res.json({ message: 'Senha alterada com sucesso' })
-
+    return res.json({ message: "Senha alterada com sucesso" })
   } catch (error) {
-    console.error('Erro ao alterar senha:', error)
-    res.status(500).json({ error: 'Erro interno no servidor' })
+    console.error("Erro ao alterar senha:", error)
+    return res.status(500).json({ error: "Erro interno" })
   }
 })
 
-// POST /api/resetar-senhas-temporarias
-router.post('/resetar-senhas-temporarias', async (req, res) => {
-  const { adminToken } = req.body
-
-  if (!process.env.ADMIN_RESET_TOKEN) {
-    return res.status(500).json({ error: 'ADMIN_RESET_TOKEN não configurado' })
-  }
-
-  if (adminToken !== process.env.ADMIN_RESET_TOKEN) {
-    return res.status(403).json({ error: 'Token inválido' })
-  }
-
+router.post("/resetar-senhas-temporarias", requireAuth, requireRole("SUPERADMIN"), async (req, res) => {
   try {
-    const hashTemporario = '$2a$12$1cXgi9XcQ0GF8NH9PaEtN.adhzylBin.SvRgd0dqv2S1nOysgsWJy'
-    const userTable = await getUsersTableName()
+    const senhaTemporaria = crypto.randomBytes(10).toString("base64url").slice(0, 14)
+    const hashTemporario = await bcrypt.hash(senhaTemporaria, 12)
 
-    await query(
-      `
-      UPDATE ${userTable}
-      SET senha_hash = :hashTemporario,
-          senha_temporaria = 'S',
-          atualizado_em = SYSDATE
-      `
-      ,
-      { hashTemporario }
+    const [centralResult] = await centralPool.query(
+      "UPDATE usuarios_auth SET senha_hash = ?, senha_temporaria = 'S'",
+      [hashTemporario]
     )
 
-    res.json({
-      message: 'Senhas redefinidas com sucesso para senha temporária'
+    const [orgs] = await centralPool.query(
+      "SELECT id_organizacao FROM organizacoes_auth WHERE ativo = 'S' AND db_name IS NOT NULL"
+    )
+    let tenantsAtualizados = 0
+
+    for (const org of orgs) {
+      try {
+        const result = await queryTenantByEmpresaId(
+          org.id_organizacao,
+          "UPDATE usuarios_auth SET senha_hash = ?, senha_temporaria = 'S'",
+          [hashTemporario]
+        )
+        tenantsAtualizados += result?.affectedRows ?? 0
+      } catch (tenantError) {
+        console.warn("Falha ao resetar senhas no tenant:", org.id_organizacao, tenantError?.message ?? tenantError)
+      }
+    }
+
+    return res.json({
+      message: "Senhas redefinidas com sucesso para senha temporaria",
+      senha_temporaria: senhaTemporaria,
+      usuarios_atualizados: (centralResult?.affectedRows ?? 0) + tenantsAtualizados,
     })
   } catch (error) {
-    console.error('Erro ao resetar senhas temporárias:', error)
-    res.status(500).json({ error: 'Erro interno no servidor' })
+    console.error("Erro ao resetar senhas temporarias:", error)
+    return res.status(500).json({ error: "Erro interno no servidor" })
   }
 })
 

@@ -1,50 +1,24 @@
 import express from "express"
-import bcrypt from "bcrypt"
 import fs from "fs/promises"
 import path from "path"
 import { randomUUID } from "crypto"
-import { query } from "../db/oracle.js"
-import { getUsersTableName } from "../db/oracleObjectNames.js"
+import {
+  findAuthUserById,
+  findManagedUserById,
+  listManagedUsersByEmpresaId,
+  revokeManagedUserSession,
+  revokeManagedUsersByEmpresaId,
+  resolveAuthUserDisplayName,
+  setManagedUserActive,
+  setManagedUserPassword,
+  updateAuthUserPassword,
+  updateAuthUserPhoto,
+} from "../services/authUsersService.js"
+import { requireAuth } from "../middleware/auth.js"
+import centralPool from "../db/mysql.js"
 
 const router = express.Router()
 const uploadDir = path.resolve(process.cwd(), "uploads", "usuarios")
-let fotoUrlColumnExists = null
-
-function normalizarCPF(valor) {
-  return String(valor ?? "").replace(/\D/g, "")
-}
-
-function formatarCPF(valor) {
-  const cpf = normalizarCPF(valor)
-  if (cpf.length !== 11) return String(valor ?? "").trim()
-  return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4")
-}
-
-function cpfValido(valor) {
-  const cpf = normalizarCPF(valor)
-
-  if (!/^\d{11}$/.test(cpf) || /^(\d)\1{10}$/.test(cpf)) {
-    return false
-  }
-
-  let soma = 0
-  for (let i = 0; i < 9; i += 1) {
-    soma += Number(cpf[i]) * (10 - i)
-  }
-
-  let resto = (soma * 10) % 11
-  if (resto === 10) resto = 0
-  if (resto !== Number(cpf[9])) return false
-
-  soma = 0
-  for (let i = 0; i < 10; i += 1) {
-    soma += Number(cpf[i]) * (11 - i)
-  }
-
-  resto = (soma * 10) % 11
-  if (resto === 10) resto = 0
-  return resto === Number(cpf[10])
-}
 
 function obterExtensao(mimeType) {
   switch (mimeType) {
@@ -60,58 +34,108 @@ function obterExtensao(mimeType) {
   }
 }
 
-async function hasFotoUrlColumn() {
-  if (fotoUrlColumnExists !== null) {
-    return fotoUrlColumnExists
+function normalizePublicUser(usuario) {
+  return {
+    id_usuario: usuario.id_usuario,
+    nome: usuario.nome,
+    login: usuario.login,
+    role: usuario.role,
+    empresa_id: usuario.empresa_id,
+    sk_vendedor: usuario.sk_vendedor,
+    foto_url: usuario.foto_url ?? null,
+    senha_temporaria: usuario.senha_temporaria ?? "N",
   }
-
-  const userTable = await getUsersTableName()
-  const rows = await query(
-    `
-    SELECT COUNT(*) AS total
-    FROM USER_TAB_COLUMNS
-    WHERE TABLE_NAME = :tableName
-      AND COLUMN_NAME = 'FOTO_URL'
-    `,
-    { tableName: userTable.split(".").pop() }
-  )
-
-  fotoUrlColumnExists = Number(rows[0]?.TOTAL ?? 0) > 0
-  return fotoUrlColumnExists
 }
 
-async function buscarUsuarioPorId(idUsuario) {
-  const userTable = await getUsersTableName()
-  const fotoColumnSql = (await hasFotoUrlColumn())
-    ? "foto_url"
-    : "CAST(NULL AS VARCHAR2(500)) AS foto_url"
+function actorRole(req) {
+  return String(req.auth?.role ?? "").toUpperCase()
+}
 
-  const rows = await query(
-    `
-    SELECT
-      id_usuario,
-      nome,
-      login,
-      role,
-      empresa_id,
-      sk_vendedor,
-      ${fotoColumnSql},
-      senha_hash,
-      senha_temporaria,
-      ativo
-    FROM ${userTable}
-    WHERE id_usuario = :id_usuario
-    `,
-    { id_usuario: idUsuario }
+function isGlobalAdmin(req) {
+  return actorRole(req) === "SUPERADMIN" || actorRole(req) === "ADMIN"
+}
+
+function getRequestedEmpresaId(req) {
+  return req.query?.empresa_id ?? req.query?.empresaId ?? req.body?.empresa_id ?? req.body?.empresaId ?? null
+}
+
+function getManagementScope(req, res, { requireEmpresa = true } = {}) {
+  const role = actorRole(req)
+
+  if (role === "GERENTE") {
+    const empresaId = req.auth?.empresa_id ?? null
+    if (!empresaId) {
+      res.status(403).json({ error: "Empresa do gerente nao encontrada." })
+      return null
+    }
+
+    return {
+      empresaId,
+      roles: ["VENDEDOR"],
+      excludeUserId: req.auth?.id_usuario ?? null,
+      canManage: (user) => user?.role === "VENDEDOR",
+    }
+  }
+
+  if (isGlobalAdmin(req)) {
+    const empresaId = getRequestedEmpresaId(req)
+    if (requireEmpresa && !empresaId) {
+      res.status(400).json({ error: "empresa_id e obrigatorio." })
+      return null
+    }
+
+    return {
+      empresaId: empresaId ?? null,
+      roles: ["GERENTE", "VENDEDOR", "PAINEL", "INDUSTRIA"],
+      excludeUserId: null,
+      canManage: (user) => ["GERENTE", "VENDEDOR", "PAINEL", "INDUSTRIA"].includes(String(user?.role ?? "").toUpperCase()),
+    }
+  }
+
+  res.status(403).json({ error: "Acesso negado." })
+  return null
+}
+
+async function getActiveOrganizations() {
+  const [rows] = await centralPool.query(
+    "SELECT id_organizacao, nome FROM organizacoes_auth WHERE ativo = 'S' AND db_name IS NOT NULL ORDER BY nome"
   )
+  return rows
+}
 
-  return rows[0] ?? null
+async function loadTargetUser(req, res) {
+  const scope = getManagementScope(req, res)
+  if (!scope) return null
+
+  const target = await findManagedUserById({
+    idUsuario: req.params.id_usuario,
+    empresaId: scope.empresaId,
+  })
+
+  if (!target) {
+    res.status(404).json({ error: "Usuario nao encontrado." })
+    return null
+  }
+
+  if (scope.excludeUserId && String(target.id_usuario) === String(scope.excludeUserId)) {
+    res.status(403).json({ error: "Esta acao nao pode ser feita sobre seu proprio usuario." })
+    return null
+  }
+
+  if (!scope.canManage(target)) {
+    res.status(403).json({ error: "Usuario fora do seu escopo de gestao." })
+    return null
+  }
+
+  return { scope, target }
 }
 
 async function alterarSenha(req, res) {
+  // id_usuario e empresa_id vêm do token autenticado, nunca do body
+  const id_usuario = req.auth.id_usuario
+  const empresa_id = req.auth.empresa_id
+
   const {
-    id_usuario,
-    login,
     senha_atual,
     senhaAtual,
     nova_senha,
@@ -124,74 +148,31 @@ async function alterarSenha(req, res) {
   const novaSenhaFinal = nova_senha ?? novaSenha
   const confirmarSenhaFinal = confirmar_senha ?? confirmarSenha ?? novaSenhaFinal
 
-  if ((!id_usuario && !login) || !senhaAtualFinal || !novaSenhaFinal) {
+  if (!senhaAtualFinal || !novaSenhaFinal) {
     return res.status(400).json({
-      error: "Usuário, senha atual e nova senha são obrigatórios",
+      error: "Senha atual e nova senha sao obrigatorios",
     })
   }
 
-  if (novaSenhaFinal.length < 6) {
+  if (String(novaSenhaFinal).length < 6) {
     return res.status(400).json({ error: "A nova senha deve ter pelo menos 6 caracteres" })
   }
 
   if (novaSenhaFinal !== confirmarSenhaFinal) {
-    return res.status(400).json({ error: "A confirmação da senha não confere" })
+    return res.status(400).json({ error: "A confirmacao da senha nao confere" })
   }
 
   try {
-    const userTable = await getUsersTableName()
-    const rows = id_usuario
-      ? await query(
-          `
-          SELECT id_usuario, senha_hash
-          FROM ${userTable}
-          WHERE id_usuario = :id_usuario
-          `,
-          { id_usuario }
-        )
-      : await query(
-          `
-          SELECT *
-          FROM (
-            SELECT id_usuario, senha_hash
-            FROM ${userTable}
-            WHERE TRIM(login) = :loginDigitado
-               OR (:loginNormalizado <> '' AND REGEXP_REPLACE(login, '[^0-9]', '') = :loginNormalizado)
-          )
-          WHERE ROWNUM = 1
-          `,
-          {
-            loginDigitado: String(login).trim(),
-            loginNormalizado: normalizarCPF(login),
-          }
-        )
+    const result = await updateAuthUserPassword({
+      idUsuario: id_usuario,
+      empresaId: empresa_id,
+      senhaAtual: senhaAtualFinal,
+      novaSenha: novaSenhaFinal,
+    })
 
-    if (!rows.length) {
-      return res.status(404).json({ error: "Usuário não encontrado" })
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error })
     }
-
-    const user = rows[0]
-    const senhaOk = await bcrypt.compare(senhaAtualFinal, user.SENHA_HASH)
-
-    if (!senhaOk) {
-      return res.status(401).json({ error: "Senha atual inválida" })
-    }
-
-    const novaSenhaHash = await bcrypt.hash(novaSenhaFinal, 10)
-
-    await query(
-      `
-      UPDATE ${userTable}
-      SET senha_hash = :novaSenhaHash,
-          senha_temporaria = 'N',
-          atualizado_em = SYSDATE
-      WHERE id_usuario = :id_usuario
-      `,
-      {
-        novaSenhaHash,
-        id_usuario: user.ID_USUARIO,
-      }
-    )
 
     return res.json({ message: "Senha alterada com sucesso" })
   } catch (error) {
@@ -200,27 +181,141 @@ async function alterarSenha(req, res) {
   }
 }
 
-router.get("/usuarios/perfil/:id_usuario", async (req, res) => {
-  try {
-    const usuario = await buscarUsuarioPorId(req.params.id_usuario)
+router.get("/usuarios/perfil/:id_usuario", requireAuth, async (req, res) => {
+  const callerRole = actorRole(req)
+  const callerId = String(req.auth?.id_usuario ?? "")
+  const targetId = String(req.params.id_usuario)
+  const isAdmin = ["ADMIN", "SUPERADMIN", "GERENTE"].includes(callerRole)
 
-    if (!usuario || usuario.ATIVO !== "S") {
-      return res.status(404).json({ error: "Usuário não encontrado" })
+  if (!isAdmin && callerId !== targetId) {
+    return res.status(403).json({ error: "Acesso negado." })
+  }
+
+  try {
+    const usuario = await findAuthUserById(req.params.id_usuario, req.query.empresa_id)
+
+    if (!usuario || usuario.ativo !== "S") {
+      return res.status(404).json({ error: "Usuario nao encontrado" })
     }
 
-    return res.json({
-      id_usuario: usuario.ID_USUARIO,
-      nome: usuario.NOME,
-      login: usuario.LOGIN,
-      role: usuario.ROLE,
-      empresa_id: usuario.EMPRESA_ID,
-      sk_vendedor: usuario.SK_VENDEDOR,
-      foto_url: usuario.FOTO_URL ?? null,
-      senha_temporaria: usuario.SENHA_TEMPORARIA,
-    })
+    return res.json(normalizePublicUser(await resolveAuthUserDisplayName(usuario)))
   } catch (error) {
-    console.error("Erro ao buscar perfil do usuário:", error)
-    return res.status(500).json({ error: "Erro ao buscar perfil do usuário" })
+    console.error("Erro ao buscar perfil do usuario:", error)
+    return res.status(500).json({ error: "Erro ao buscar perfil do usuario" })
+  }
+})
+
+router.get("/usuarios/gerenciamento", requireAuth, async (req, res) => {
+  try {
+    const scope = getManagementScope(req, res, { requireEmpresa: false })
+    if (!scope) return
+
+    if (scope.empresaId) {
+      const users = await listManagedUsersByEmpresaId(scope.empresaId, { roles: scope.roles })
+      return res.json({ data: users })
+    }
+
+    const organizations = await getActiveOrganizations()
+    const data = []
+    for (const org of organizations) {
+      try {
+        const users = await listManagedUsersByEmpresaId(org.id_organizacao, {
+          roles: scope.roles,
+          organizacaoNome: org.nome,
+        })
+        data.push(...users)
+      } catch {}
+    }
+
+    return res.json({ data })
+  } catch (error) {
+    console.error("Erro ao listar usuarios gerenciaveis:", error)
+    return res.status(500).json({ error: "Erro ao listar usuarios." })
+  }
+})
+
+router.patch("/usuarios/gerenciamento/:id_usuario/senha", requireAuth, async (req, res) => {
+  const novaSenha = req.body?.nova_senha ?? req.body?.novaSenha
+  if (!novaSenha || String(novaSenha).length < 6) {
+    return res.status(400).json({ error: "Nova senha deve ter pelo menos 6 caracteres." })
+  }
+
+  try {
+    const loaded = await loadTargetUser(req, res)
+    if (!loaded) return
+
+    await setManagedUserPassword({
+      idUsuario: loaded.target.id_usuario,
+      empresaId: loaded.scope.empresaId,
+      novaSenha,
+    })
+
+    return res.json({ message: "Senha alterada e sessoes antigas desconectadas." })
+  } catch (error) {
+    console.error("Erro ao alterar senha gerenciada:", error)
+    return res.status(500).json({ error: "Erro ao alterar senha." })
+  }
+})
+
+router.patch("/usuarios/gerenciamento/:id_usuario/status", requireAuth, async (req, res) => {
+  const ativo = req.body?.ativo
+  if (!["S", "N"].includes(ativo)) {
+    return res.status(400).json({ error: "ativo deve ser S ou N." })
+  }
+
+  try {
+    const loaded = await loadTargetUser(req, res)
+    if (!loaded) return
+
+    await setManagedUserActive({
+      idUsuario: loaded.target.id_usuario,
+      empresaId: loaded.scope.empresaId,
+      ativo,
+    })
+
+    return res.json({ message: `Usuario ${ativo === "S" ? "ativado" : "inativado"} com sucesso.` })
+  } catch (error) {
+    console.error("Erro ao alterar status gerenciado:", error)
+    return res.status(500).json({ error: "Erro ao alterar status." })
+  }
+})
+
+router.post("/usuarios/gerenciamento/:id_usuario/logoff", requireAuth, async (req, res) => {
+  try {
+    const loaded = await loadTargetUser(req, res)
+    if (!loaded) return
+
+    await revokeManagedUserSession({
+      idUsuario: loaded.target.id_usuario,
+      empresaId: loaded.scope.empresaId,
+    })
+
+    return res.json({ message: "Usuario desconectado com sucesso." })
+  } catch (error) {
+    console.error("Erro ao desconectar usuario:", error)
+    return res.status(500).json({ error: "Erro ao desconectar usuario." })
+  }
+})
+
+router.post("/usuarios/gerenciamento/logoff-geral", requireAuth, async (req, res) => {
+  if (actorRole(req) === "GERENTE") {
+    return res.status(403).json({ error: "Logoff geral nao permitido para gerente." })
+  }
+
+  try {
+    const scope = getManagementScope(req, res)
+    if (!scope) return
+
+    const total = await revokeManagedUsersByEmpresaId({
+      empresaId: scope.empresaId,
+      roles: scope.roles,
+      excludeUserId: scope.excludeUserId,
+    })
+
+    return res.json({ message: "Usuarios desconectados com sucesso.", total })
+  } catch (error) {
+    console.error("Erro no logoff geral:", error)
+    return res.status(500).json({ error: "Erro ao desconectar usuarios." })
   }
 })
 
@@ -232,35 +327,35 @@ router.get("/usuarios/foto/:arquivo", async (req, res) => {
     await fs.access(caminho)
     return res.sendFile(caminho)
   } catch {
-    return res.status(404).json({ error: "Foto não encontrada" })
+    return res.status(404).json({ error: "Foto nao encontrada" })
   }
 })
 
-router.post("/usuarios/upload-foto", async (req, res) => {
-  const { id_usuario, arquivo_base64, arquivoBase64, mime_type, mimeType } = req.body
+router.post("/usuarios/upload-foto", requireAuth, async (req, res) => {
+  const { id_usuario, empresa_id, arquivo_base64, arquivoBase64, mime_type, mimeType } = req.body
   const conteudoBase64 = arquivo_base64 ?? arquivoBase64
   const tipoMime = mime_type ?? mimeType
 
   if (!id_usuario || !conteudoBase64 || !tipoMime) {
-    return res.status(400).json({ error: "Usuário, arquivo e tipo da imagem são obrigatórios" })
+    return res.status(400).json({ error: "Usuario, arquivo e tipo da imagem sao obrigatorios" })
+  }
+
+  const callerRole = actorRole(req)
+  const callerId = String(req.auth?.id_usuario ?? "")
+  const isAdmin = ["ADMIN", "SUPERADMIN"].includes(callerRole)
+  if (!isAdmin && callerId !== String(id_usuario)) {
+    return res.status(403).json({ error: "Acesso negado." })
   }
 
   const extensao = obterExtensao(tipoMime)
   if (!extensao) {
-    return res.status(400).json({ error: "Formato de imagem inválido. Use PNG, JPG ou WEBP." })
+    return res.status(400).json({ error: "Formato de imagem invalido. Use PNG, JPG ou WEBP." })
   }
 
   try {
-    if (!(await hasFotoUrlColumn())) {
-      return res.status(503).json({
-        error: "O banco ainda não possui a coluna FOTO_URL. Execute a migração antes de enviar fotos.",
-      })
-    }
-
-    const userTable = await getUsersTableName()
-    const usuario = await buscarUsuarioPorId(id_usuario)
-    if (!usuario || usuario.ATIVO !== "S") {
-      return res.status(404).json({ error: "Usuário não encontrado" })
+    const usuario = await findAuthUserById(id_usuario, empresa_id)
+    if (!usuario || usuario.ativo !== "S") {
+      return res.status(404).json({ error: "Usuario nao encontrado" })
     }
 
     const base64Limpo = String(conteudoBase64)
@@ -269,7 +364,7 @@ router.post("/usuarios/upload-foto", async (req, res) => {
 
     const buffer = Buffer.from(base64Limpo, "base64")
     if (!buffer.length || buffer.length > 5 * 1024 * 1024) {
-      return res.status(400).json({ error: "A imagem deve ter até 5 MB" })
+      return res.status(400).json({ error: "A imagem deve ter ate 5 MB" })
     }
 
     await fs.mkdir(uploadDir, { recursive: true })
@@ -277,94 +372,21 @@ router.post("/usuarios/upload-foto", async (req, res) => {
     await fs.writeFile(path.join(uploadDir, nomeArquivo), buffer)
 
     const fotoUrl = `/api/usuarios/foto/${nomeArquivo}`
-
-    await query(
-      `
-      UPDATE ${userTable}
-      SET foto_url = :fotoUrl,
-          atualizado_em = SYSDATE
-      WHERE id_usuario = :id_usuario
-      `,
-      {
-        fotoUrl,
-        id_usuario,
-      }
-    )
+    await updateAuthUserPhoto({ idUsuario: id_usuario, empresaId: empresa_id, fotoUrl })
 
     return res.json({ foto_url: fotoUrl })
   } catch (error) {
     console.error("Erro ao fazer upload da foto:", error)
-    return res.status(500).json({ error: "Erro ao salvar foto do usuário" })
+    return res.status(500).json({ error: "Erro ao salvar foto do usuario" })
   }
 })
 
 router.put("/usuarios/atualizar-cpf", async (req, res) => {
   return res.status(403).json({
-    error: "A alteraÃ§Ã£o de CPF nÃ£o estÃ¡ disponÃ­vel para o usuÃ¡rio. Atualize esse dado pelo cadastro administrativo.",
+    error: "A alteracao de CPF nao esta disponivel para o usuario. Atualize esse dado pelo cadastro administrativo.",
   })
-
-  const { id_usuario, novo_cpf, novoCpf } = req.body
-  const cpfInformado = novo_cpf ?? novoCpf
-
-  if (!id_usuario || !cpfInformado) {
-    return res.status(400).json({ error: "Usuário e novo CPF são obrigatórios" })
-  }
-
-  if (!cpfValido(cpfInformado)) {
-    return res.status(400).json({ error: "CPF inválido" })
-  }
-
-  try {
-    const usuario = await buscarUsuarioPorId(id_usuario)
-    if (!usuario || usuario.ATIVO !== "S") {
-      return res.status(404).json({ error: "Usuário não encontrado" })
-    }
-
-    const userTable = await getUsersTableName()
-    const cpfNormalizado = normalizarCPF(cpfInformado)
-    const duplicados = await query(
-      `
-      SELECT id_usuario
-      FROM ${userTable}
-      WHERE id_usuario <> :id_usuario
-        AND REGEXP_REPLACE(login, '[^0-9]', '') = :cpf
-      `,
-      {
-        id_usuario,
-        cpf: cpfNormalizado,
-      }
-    )
-
-    if (duplicados.length > 0) {
-      return res.status(409).json({ error: "Já existe um usuário com esse CPF" })
-    }
-
-    const loginFormatado = formatarCPF(cpfNormalizado)
-
-    await query(
-      `
-      UPDATE ${userTable}
-      SET login = :login,
-          atualizado_em = SYSDATE
-      WHERE id_usuario = :id_usuario
-      `,
-      {
-        login: loginFormatado,
-        id_usuario,
-      }
-    )
-
-    return res.json({
-      message: "CPF atualizado com sucesso",
-      login: loginFormatado,
-    })
-  } catch (error) {
-    console.error("Erro ao atualizar CPF:", error)
-    return res.status(500).json({ error: "Erro ao atualizar CPF" })
-  }
 })
 
-router.put("/usuarios/alterar-senha", alterarSenha)
-router.post("/alterar-senha", alterarSenha)
+router.put("/usuarios/alterar-senha", requireAuth, alterarSenha)
 
 export default router

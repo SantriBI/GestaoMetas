@@ -1,6 +1,9 @@
 import express from "express"
 import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { getRankingVendorsViewName } from "../db/oracleObjectNames.js"
+import { requireAuth } from "../middleware/auth.js"
+import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
 
 const router = express.Router()
 
@@ -29,22 +32,41 @@ function selecionarTopCategorias(categorias, criterio, limite = 2) {
   return categorias.filter(criterio).slice(0, limite)
 }
 
-async function carregarRankingMensal() {
-  const rankingView = await getRankingVendorsViewName()
-  return query(`
+async function getQueryContext(empresaId) {
+  if (empresaId) {
+    return {
+      query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
+      rankingView: "VW_RANKING_VENDEDORES",
+      rfvVendedorTable: "FATO_RFV_VENDEDOR",
+      vendasLucratividadeTable: "FATO_VENDAS_LUCRATIVIDADE",
+      produtosTable: "DIM_PRODUTOS",
+    }
+  }
+
+  return {
+    query,
+    rankingView: await getRankingVendorsViewName(),
+    rfvVendedorTable: "DM_VENDAS.FATO_RFV_VENDEDOR",
+    vendasLucratividadeTable: "DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE",
+    produtosTable: "DM_VENDAS.DIM_PRODUTOS",
+  }
+}
+
+async function carregarRankingMensal(context) {
+  return context.query(`
     SELECT
       nome_vendedor,
       receita_mes,
       meta_mes,
       perc_atingimento,
       ranking_atingimento
-    FROM ${rankingView}
+    FROM ${context.rankingView}
     ORDER BY ranking_atingimento
   `)
 }
 
-async function carregarResumoRfv() {
-  const rows = await query(`
+async function carregarResumoRfv(context) {
+  const rows = await context.query(`
     SELECT
       SUM(
         CASE
@@ -60,14 +82,14 @@ async function carregarResumoRfv() {
           ELSE 0
         END
       ) AS clientes_fieis_esfriando
-    FROM DM_VENDAS.FATO_RFV_VENDEDOR
+    FROM ${context.rfvVendedorTable}
   `)
 
   return rows[0] ?? {}
 }
 
-async function carregarTendenciasCategorias() {
-  return query(`
+async function carregarTendenciasCategorias(context) {
+  return context.query(`
     WITH vendas_categoria AS (
       SELECT
         NVL(p.nome_pai_nivel1, 'Sem grupo') AS grupo,
@@ -77,8 +99,8 @@ async function carregarTendenciasCategorias() {
           ELSE NVL(f.valor_liquido_item, 0)
         END AS receita_liquida,
         f.sk_dt_recebimento AS sk_data
-      FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE f
-      JOIN DM_VENDAS.DIM_PRODUTOS p
+      FROM ${context.vendasLucratividadeTable} f
+      JOIN ${context.produtosTable} p
         ON p.sk_produto = f.sk_produto
       WHERE f.sk_dt_recebimento IS NOT NULL
     ),
@@ -219,13 +241,29 @@ function gerarAlertasCategorias(categoriasRows) {
   return alertas
 }
 
-router.get("/radar-vendas", async (req, res) => {
+router.get("/radar-vendas", requireAuth, async (req, res) => {
   try {
-    const [rankingRows, rfvResumo, categoriasRows] = await Promise.all([
-      carregarRankingMensal(),
-      carregarResumoRfv(),
-      carregarTendenciasCategorias(),
+    const empresaId = getScopedEmpresaId(req)
+    if (!empresaId && !canUseGlobalEmpresaScope(req)) {
+      return res.status(403).json({ error: "Empresa do usuario nao encontrada." })
+    }
+
+    const context = await getQueryContext(empresaId)
+    const rankingRows = await carregarRankingMensal(context)
+    const [rfvResumoResult, categoriasResult] = await Promise.allSettled([
+      carregarResumoRfv(context),
+      carregarTendenciasCategorias(context),
     ])
+    const rfvResumo = rfvResumoResult.status === "fulfilled" ? rfvResumoResult.value : {}
+    const categoriasRows = categoriasResult.status === "fulfilled" ? categoriasResult.value : []
+
+    if (rfvResumoResult.status === "rejected") {
+      console.warn("Radar de vendas sem resumo RFV:", rfvResumoResult.reason?.message ?? rfvResumoResult.reason)
+    }
+
+    if (categoriasResult.status === "rejected") {
+      console.warn("Radar de vendas sem tendencias de categorias:", categoriasResult.reason?.message ?? categoriasResult.reason)
+    }
 
     const alertas = [
       ...gerarAlertasVendedores(rankingRows),

@@ -3,17 +3,17 @@ import {
   getObjectivesTableName,
   getProfileTableName,
   getRankingVendorsViewName,
-  getUsersTableName,
 } from "../db/oracleObjectNames.js"
+import { findAuthUserBySkVendedor } from "./authUsersService.js"
 import { resolverEscopoVendedor } from "./vendedorScopeService.js"
 
-const OBJECTIVE_TABLE = "GM_TB_OBJETIVOS_VENDEDOR"
+const OBJECTIVE_TABLE = "OBJETIVOS_VENDEDOR"
 const OBJECTIVE_SEQUENCE = "OBJETIVOS_VENDEDOR_SEQ"
-const OBJECTIVE_SCRIPT_PATH = "Back/sql/objetivos_vendedor.sql"
-const OBJECTIVE_UPGRADE_SCRIPT_PATH = "Back/sql/objetivos_vendedor_upgrade_multiplos.sql"
-const PROFILE_TABLE = "GM_TB_PERFIL_VENDEDOR"
+const OBJECTIVE_SCRIPT_PATH = "Back/sql/ddl_gestao_metas.sql"
+const OBJECTIVE_UPGRADE_SCRIPT_PATH = "Back/sql/ddl_gestao_metas.sql"
+const PROFILE_TABLE = "PERFIL_VENDEDOR"
 const PROFILE_SEQUENCE = "PERFIL_VENDEDOR_SEQ"
-const PROFILE_SCRIPT_PATH = "Back/sql/perfil_vendedor.sql"
+const PROFILE_SCRIPT_PATH = "Back/sql/ddl_gestao_metas.sql"
 const DEFAULT_COMMISSION_RATE = 0.03
 const CHALLENGES_TABLE = "desafios_comerciais"
 const CHALLENGE_PROGRESS_TABLE = "desafios_comerciais_progresso"
@@ -261,7 +261,7 @@ async function ensureObjectiveModuleReady() {
       scriptPath: OBJECTIVE_SCRIPT_PATH,
       instructions: [
         "Execute o script SQL do modulo Minha Meta de Vida no banco Oracle.",
-        "Confirme a criacao da tabela GM_TB_OBJETIVOS_VENDEDOR e da sequence OBJETIVOS_VENDEDOR_SEQ.",
+        "Confirme a criacao da tabela OBJETIVOS_VENDEDOR e da sequence OBJETIVOS_VENDEDOR_SEQ.",
       ],
     }
   )
@@ -288,7 +288,7 @@ async function ensureProfileModuleReady() {
       scriptPath: PROFILE_SCRIPT_PATH,
       instructions: [
         "Execute o script SQL do perfil do vendedor no banco Oracle.",
-        "Confirme a criacao da tabela GM_TB_PERFIL_VENDEDOR e da sequence PERFIL_VENDEDOR_SEQ.",
+        "Confirme a criacao da tabela PERFIL_VENDEDOR e da sequence PERFIL_VENDEDOR_SEQ.",
       ],
     }
   )
@@ -312,18 +312,7 @@ async function nextSequenceValue(sequenceName) {
 async function loadSellerUser(skVendedor) {
   if (!skVendedor) return null
 
-  const userTable = await getUsersTableName()
-  const rows = await query(
-    `
-    SELECT nome, empresa_id, sk_vendedor
-    FROM ${userTable}
-    WHERE sk_vendedor = :sk_vendedor
-    FETCH FIRST 1 ROWS ONLY
-    `,
-    { sk_vendedor: skVendedor }
-  )
-
-  return rows[0] ? normalizeRow(rows[0]) : null
+  return findAuthUserBySkVendedor(skVendedor)
 }
 
 async function resolveSellerContext(vendorCode, fallback = {}) {
@@ -1352,7 +1341,7 @@ export async function createSellerLifeGoal(payload) {
         {
           scriptPath: OBJECTIVE_UPGRADE_SCRIPT_PATH,
           instructions: [
-            "Execute a migracao da tabela GM_TB_OBJETIVOS_VENDEDOR para remover a restricao de objetivo unico.",
+            "Execute o DDL principal para garantir a estrutura atualizada da tabela OBJETIVOS_VENDEDOR.",
             "Depois repita a criacao do novo objetivo.",
           ],
           originalMessage: error.message,

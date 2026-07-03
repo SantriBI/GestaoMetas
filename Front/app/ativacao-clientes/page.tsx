@@ -13,6 +13,7 @@ import {
   SegmentStep,
   SendStep,
 } from "@/components/ativacao-clientes"
+import type { ActivationScope } from "@/lib/activation-types"
 
 export default function AtivacaoClientesPage() {
   const router = useRouter()
@@ -35,12 +36,12 @@ export default function AtivacaoClientesPage() {
     setAuthUser(user)
   }, [router])
 
-  const scope = useMemo(
+  const scope = useMemo<ActivationScope | null>(
     () =>
       authUser
         && authUser.role !== "INDUSTRIA"
         ? {
-            role: authUser.role,
+            role: authUser.role === "VENDEDOR" ? "VENDEDOR" : "GERENTE",
             sk_vendedor: authUser.sk_vendedor ?? null,
             empresa_id: authUser.empresa_id ?? authUser.sk_empresa ?? null,
             id_usuario: authUser.id_usuario ?? null,

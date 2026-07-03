@@ -270,6 +270,35 @@ Backend padrao em:
 http://localhost:3001
 ```
 
+#### Jobs Prefect
+
+O projeto tambem possui uma camada opcional de jobs em `Back/jobs/` para diagnostico operacional das organizacoes. Ela valida conexao Oracle, views obrigatorias e contagens basicas de dados por cliente, gravando o resultado em `organizacoes_diagnosticos` no MySQL central.
+
+Instale as dependencias Python:
+
+```bash
+cd Back
+python -m pip install -r requirements-prefect.txt
+```
+
+Rodar uma validacao pontual:
+
+```bash
+npm run prefect:validate
+```
+
+Validar uma organizacao especifica:
+
+```bash
+python -m jobs.run_prefect validate --empresa-id 6
+```
+
+Servir o flow agendado localmente:
+
+```bash
+npm run prefect:serve
+```
+
 #### Frontend
 
 ```bash

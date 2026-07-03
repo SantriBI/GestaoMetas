@@ -89,6 +89,16 @@ const estadoInicial: AreaAtaqueData = {
   recomendacoes: [],
 }
 
+function buildEmpresaQuery(empresaId?: string | number | null) {
+  const params = new URLSearchParams()
+  if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
+    params.set("empresa_id", String(empresaId))
+  }
+
+  const query = params.toString()
+  return query ? `?${query}` : ""
+}
+
 function SkeletonCard() {
   return (
     <div className="theme-shell-panel rounded-[28px] border p-6">
@@ -181,14 +191,21 @@ export default function AreaAtaquePage() {
     setStoredUser(user)
     setAuthUser(user)
     const legacySellerId = (user as AuthUser & { vendedor_id?: number | string | null }).vendedor_id ?? null
-    const identificador = legacySellerId ?? user.sk_vendedor ?? null
+    const identificador = user.sk_vendedor ?? legacySellerId ?? null
+    const empresaId = user.empresa_id ?? user.sk_empresa ?? null
 
     async function carregarAreaAtaque() {
+      if (!identificador) {
+        setErro("Seu cadastro de vendedor ainda não está vinculado para carregar a Área de Ataque.")
+        setCarregando(false)
+        return
+      }
+
       try {
         setCarregando(true)
         setErro(null)
 
-        const response = await fetch(`/api/area-ataque/${identificador}`, {
+        const response = await fetch(`/api/area-ataque/${identificador}${buildEmpresaQuery(empresaId)}`, {
           cache: "no-store",
         })
 
@@ -219,6 +236,11 @@ export default function AreaAtaquePage() {
     }
 
     async function carregarAssistenteVendas() {
+      if (!identificador) {
+        setCarregandoInsights(false)
+        return
+      }
+
       try {
         setCarregandoInsights(true)
         setOrigemInsights(null)
@@ -228,7 +250,7 @@ export default function AreaAtaquePage() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ vendedor_id: identificador }),
+          body: JSON.stringify({ vendedor_id: identificador, empresa_id: empresaId }),
           cache: "no-store",
         })
 
