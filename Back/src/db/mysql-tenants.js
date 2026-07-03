@@ -1,8 +1,6 @@
 import mysql from "mysql2/promise"
 import bcrypt from "bcrypt"
-import dotenv from "dotenv"
-
-dotenv.config()
+import "../config/env.js"
 
 const IS_PROD = process.env.NODE_ENV === "production"
 const TENANT_GRANT_PRIVS = process.env.MYSQL_TENANT_GRANT_PRIVILEGES ?? "SELECT, INSERT, UPDATE, DELETE"

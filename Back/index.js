@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './src/config/env.js';
 import './src/db/oracleClient.js';
 import express from 'express';
 import cors from 'cors';

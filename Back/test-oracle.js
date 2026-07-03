@@ -1,4 +1,4 @@
-import "dotenv/config"
+import "./src/config/env.js"
 import oracledb, {
   explainOracleConnectionError,
   getOracleRuntimeInfo,

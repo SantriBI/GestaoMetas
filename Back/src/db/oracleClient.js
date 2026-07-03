@@ -1,7 +1,7 @@
-import "dotenv/config"
+import "../config/env.js"
 import oracledb from "oracledb"
 
-const mode = (process.env.ORACLE_CLIENT_MODE ?? "auto").trim().toLowerCase()
+const mode = (process.env.ORACLE_CLIENT_MODE ?? "thick").trim().toLowerCase()
 const requireThick =
   mode === "thick" ||
   ["1", "true", "yes"].includes((process.env.ORACLE_REQUIRE_THICK ?? "").trim().toLowerCase())

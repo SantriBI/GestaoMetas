@@ -1,7 +1,5 @@
 import mysql from "mysql2/promise"
-import dotenv from "dotenv"
-
-dotenv.config()
+import "../config/env.js"
 
 function readPositiveInt(value, fallback) {
   const parsed = Number(value)
