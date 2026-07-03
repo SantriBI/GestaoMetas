@@ -1,6 +1,6 @@
 import express from "express"
 import bcrypt from "bcrypt"
-import oracledb from "../db/oracleClient.js"
+import oracledb, { getOracleRuntimeInfo } from "../db/oracleClient.js"
 import { requireAuth } from "../middleware/auth.js"
 import { auditAction } from "../audit.js"
 import { encryptSecret, decryptSecret } from "../security/secrets.js"
@@ -63,6 +63,7 @@ function oracleTextExpr(columns, alias, candidates, fallback) {
 // ── Oracle connection test util ────────────────────────────────────────────────
 async function testOracleConnection(oracleUser, oraclePassword, oracleConnectString) {
   let conn = null
+  const runtime = getOracleRuntimeInfo()
   try {
     conn = await oracledb.getConnection({
       user: oracleUser,
@@ -70,9 +71,19 @@ async function testOracleConnection(oracleUser, oraclePassword, oracleConnectStr
       connectString: oracleConnectString,
     })
     await conn.execute("SELECT 1 FROM DUAL")
-    return { ok: true, message: "Conexao Oracle realizada com sucesso." }
+    return {
+      ok: true,
+      message: "Conexao Oracle realizada com sucesso.",
+      oracleMode: runtime.mode,
+      oracleClientVersion: runtime.oracleClientVersion,
+    }
   } catch (err) {
-    return { ok: false, error: String(err?.message ?? "").split("\n")[0] }
+    return {
+      ok: false,
+      error: String(err?.message ?? "").split("\n")[0],
+      oracleMode: runtime.mode,
+      oracleClientVersion: runtime.oracleClientVersion,
+    }
   } finally {
     if (conn) try { await conn.close() } catch {}
   }
