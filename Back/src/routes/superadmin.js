@@ -173,6 +173,14 @@ async function resolveFuncionarioByCpf(cpfNorm, requestedEmpresaId = null) {
   return matches[0]
 }
 
+async function getActiveOrgById(empresaId) {
+  const [orgRows] = await centralPool.query(
+    "SELECT * FROM organizacoes_auth WHERE id_organizacao = ? AND ativo = 'S'",
+    [empresaId]
+  )
+  return orgRows[0] ?? null
+}
+
 // ── Oracle connection test util ────────────────────────────────────────────────
 async function testOracleConnection(oracleUser, oraclePassword, oracleConnectString) {
   let conn = null
@@ -604,12 +612,33 @@ router.post("/superadmin/gerentes", async (req, res) => {
   if (!guard(req, res)) return
   const { cpf, senha, empresaId: requestedEmpresaId, nome } = req.body
   const cpfNorm = normalizeCPF(cpf)
+  const nomeManual = String(nome ?? "").trim()
 
   if (cpfNorm.length !== 11) return res.status(400).json({ error: "CPF deve ter 11 digitos" })
   if (!senha || String(senha).length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres" })
 
   try {
-    const { org, funcionario } = await resolveFuncionarioByCpf(cpfNorm, requestedEmpresaId || null)
+    let org = null
+    let funcionario = null
+
+    if (requestedEmpresaId) {
+      org = await getActiveOrgById(requestedEmpresaId)
+      if (!org) return res.status(404).json({ error: "Organizacao nao encontrada ou inativa" })
+
+      funcionario = await lookupFuncionarioInOrg(org, cpfNorm).catch((error) => {
+        console.warn("Falha ao validar CPF no Oracle da organizacao:", org.id_organizacao, error?.message ?? error)
+        return null
+      })
+
+      if (!funcionario && !nomeManual) {
+        return res.status(422).json({ error: "CPF nao encontrado no Oracle desta organizacao. Informe o nome para cadastro manual." })
+      }
+    } else {
+      const resolved = await resolveFuncionarioByCpf(cpfNorm)
+      org = resolved.org
+      funcionario = resolved.funcionario
+    }
+
     const empresaId = org.id_organizacao
 
     const dbName = await getTenantDbNameByEmpresaId(empresaId)
@@ -623,7 +652,7 @@ router.post("/superadmin/gerentes", async (req, res) => {
     )
 
     const hash = await bcrypt.hash(senha, 10)
-    const nomeGerente = String(nome ?? "").trim() || formatFuncionarioPreview(funcionario, org, cpfNorm).nome || await findEmployeeNameByCpf(empresaId, cpfNorm) || null
+    const nomeGerente = nomeManual || (funcionario ? formatFuncionarioPreview(funcionario, org, cpfNorm).nome : null) || await findEmployeeNameByCpf(empresaId, cpfNorm) || null
 
     if (dup.length) {
       // Converte para GERENTE se tiver outra role

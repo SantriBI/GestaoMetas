@@ -252,7 +252,9 @@ export default function AdminPage() {
   // Gerente form state
   const [showGerenteForm, setShowGerenteForm] = useState(false)
   const [gerenteCpf, setGerenteCpf] = useState("")
+  const [gerenteNome, setGerenteNome] = useState("")
   const [gerenteSenha, setGerenteSenha] = useState("")
+  const [gerenteEmpresaId, setGerenteEmpresaId] = useState("")
   const [funcionarioPreview, setFuncionarioPreview] = useState<FuncionarioPreview | null>(null)
   const [lookingUp, setLookingUp] = useState(false)
   const [savingGerente, setSavingGerente] = useState(false)
@@ -351,7 +353,12 @@ export default function AdminPage() {
     setLookingUp(true)
     setFuncionarioPreview(null)
     try {
-      const r = await apiFetch<FuncionarioPreview>("/api/superadmin/funcionario-lookup", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf }) })
+      const r = await apiFetch<FuncionarioPreview>("/api/superadmin/funcionario-lookup", {
+        method: "POST",
+        body: JSON.stringify({ cpf: gerenteCpf, empresaId: gerenteEmpresaId ? Number(gerenteEmpresaId) : undefined }),
+      })
+      setGerenteNome(r.nome)
+      setGerenteEmpresaId(String(r.empresa_id))
       setFuncionarioPreview(r)
     } catch (err) {
       toast.error((err as Error).message)
@@ -362,11 +369,13 @@ export default function AdminPage() {
 
   async function onCreateGerente(e: React.FormEvent) {
     e.preventDefault()
+    if (!gerenteEmpresaId) { toast.error("Selecione a organização."); return }
+    if (!gerenteNome.trim()) { toast.error("Informe o nome do gerente."); return }
     setSavingGerente(true)
     try {
-      await apiFetch("/api/superadmin/gerentes", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf, senha: gerenteSenha, empresaId: funcionarioPreview?.empresa_id, nome: funcionarioPreview?.nome }) })
+      await apiFetch("/api/superadmin/gerentes", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf, senha: gerenteSenha, empresaId: Number(gerenteEmpresaId), nome: gerenteNome.trim() }) })
       toast.success("Gerente cadastrado com sucesso!")
-      setGerenteCpf(""); setGerenteSenha(""); setFuncionarioPreview(null); setShowGerenteForm(false)
+      setGerenteCpf(""); setGerenteNome(""); setGerenteSenha(""); setGerenteEmpresaId(""); setFuncionarioPreview(null); setShowGerenteForm(false)
       void fetchData()
     } catch (err) {
       toast.error((err as Error).message)
@@ -552,15 +561,21 @@ export default function AdminPage() {
               <div className="mb-6 rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.98),rgba(10,14,22,0.99))] p-6">
                 <h3 className="mb-4 text-sm font-semibold">Novo Gerente por CPF</h3>
                 <form onSubmit={onCreateGerente} className="space-y-4">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <Field label="CPF" required>
                       <input className={inputCls} value={gerenteCpf} onChange={(e) => { setGerenteCpf(e.target.value); setFuncionarioPreview(null) }} placeholder="000.000.000-00" required />
+                    </Field>
+                    <Field label="Nome do gerente" required>
+                      <input className={inputCls} value={gerenteNome} onChange={(e) => setGerenteNome(e.target.value)} placeholder="Nome completo" required />
                     </Field>
                     <Field label="Senha inicial" required>
                       <PasswordInput value={gerenteSenha} onChange={setGerenteSenha} placeholder="Mínimo 6 caracteres" />
                     </Field>
-                    <Field label="Organização encontrada">
-                      <input className={inputCls} value={funcionarioPreview?.organizacao_nome ?? "Verifique o CPF"} readOnly />
+                    <Field label="Organização" required>
+                      <select className={inputCls} value={gerenteEmpresaId} onChange={(e) => { setGerenteEmpresaId(e.target.value); setFuncionarioPreview(null) }} required>
+                        <option value="">Selecione...</option>
+                        {activeOrgs.map((o) => <option key={o.id_organizacao} value={o.id_organizacao}>{o.nome}</option>)}
+                      </select>
                     </Field>
                   </div>
 
@@ -573,7 +588,7 @@ export default function AdminPage() {
                       {savingGerente ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                       Cadastrar gerente
                     </button>
-                    <button type="button" onClick={() => { setShowGerenteForm(false); setFuncionarioPreview(null) }} className={btnSecondary}>
+                    <button type="button" onClick={() => { setShowGerenteForm(false); setGerenteNome(""); setGerenteEmpresaId(""); setFuncionarioPreview(null) }} className={btnSecondary}>
                       <X className="h-4 w-4" />Cancelar
                     </button>
                   </div>
