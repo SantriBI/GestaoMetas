@@ -261,6 +261,7 @@ Dependendo dos modulos usados, estas tambem podem ser necessarias:
 ```bash
 cd Back
 npm install
+copy .env.example .env
 npm start
 ```
 
@@ -304,7 +305,7 @@ npm run prefect:serve
 ```bash
 cd Front
 npm install
-npm run dev
+npm run dev -- -p 3000
 ```
 
 Frontend padrao em:
@@ -318,6 +319,9 @@ Por padrao, o frontend reescreve `/api/*` para:
 ```bash
 http://localhost:3001/api/*
 ```
+
+Para desenvolvimento local usando os bancos de producao, mantenha as credenciais reais somente em `Back/.env`.
+Esse arquivo nao deve ser enviado ao GitHub. O `Back/.env.example` fica versionado apenas como modelo de portas, hosts e nomes de variaveis.
 
 ### Opcao 2: Docker Compose
 

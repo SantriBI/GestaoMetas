@@ -1,6 +1,5 @@
 ﻿"use client"
 
-import { useRankingVendedores } from "@/hooks/useRankingVendedores"
 import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -31,11 +30,9 @@ export default function LandingPage() {
   const router = useRouter()
   const [isHovered, setIsHovered] = useState(false)
 
-  const { data: ranking, loading, error } = useRankingVendedores()
-  const topSeller = ranking?.[0]
   const topSellerName = "Marina Diniz"
-  const topSellerProgress = topSeller?.percentual ?? 95
-  const rankingCount = ranking?.length ?? 24
+  const topSellerProgress = 95
+  const rankingCount = 24
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#06070a] text-white">

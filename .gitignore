@@ -3,3 +3,4 @@ Front/node_modules/
 Front/.next/
 .env
 Back/.env
+*.log
