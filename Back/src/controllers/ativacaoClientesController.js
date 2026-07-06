@@ -12,13 +12,12 @@ import {
 } from "../services/ativacaoClientesService.js"
 
 function getScopeFromRequest(req) {
-  const source = req.method === "GET" ? req.query : req.body
   return {
-    role: source.role,
-    sk_vendedor: source.sk_vendedor ?? source.vendedor_id ?? null,
-    empresa_id: source.empresa_id ?? null,
-    id_usuario: source.id_usuario ?? source.usuario_id ?? null,
-    nome_usuario: source.nome_usuario ?? source.usuario_nome ?? null,
+    role: req.auth?.role,
+    sk_vendedor: req.auth?.sk_vendedor ?? null,
+    empresa_id: req.auth?.empresa_id ?? null,
+    id_usuario: req.auth?.id_usuario ?? null,
+    nome_usuario: req.auth?.nome ?? req.auth?.nome_completo ?? req.auth?.login ?? null,
   }
 }
 
@@ -120,7 +119,7 @@ export async function getTemplates(req, res) {
 
 export async function postTemplate(req, res) {
   try {
-    res.status(201).json(await criarTemplate(req.body))
+    res.status(201).json(await criarTemplate({ ...req.body, ...getScopeFromRequest(req) }))
   } catch (error) {
     console.error("Erro ao criar template:", error)
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro ao criar template." })
@@ -130,7 +129,7 @@ export async function postTemplate(req, res) {
 export async function putTemplate(req, res) {
   try {
     const id = Number(req.params.id)
-    res.json(await atualizarTemplate(id, req.body))
+    res.json(await atualizarTemplate(id, { ...req.body, ...getScopeFromRequest(req) }))
   } catch (error) {
     console.error("Erro ao atualizar template:", error)
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro ao atualizar template." })

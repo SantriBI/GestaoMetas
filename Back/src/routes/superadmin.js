@@ -60,6 +60,119 @@ function oracleTextExpr(columns, alias, candidates, fallback) {
   return column ? `${column} AS ${alias}` : `${fallback} AS ${alias}`
 }
 
+function httpError(status, message) {
+  const error = new Error(message)
+  error.status = status
+  return error
+}
+
+async function lookupFuncionarioInOrg(org, cpfNorm) {
+  if (!org?.oracle_user || !org?.oracle_password || !org?.oracle_connect_string) {
+    return null
+  }
+
+  const plainPwd = decryptSecret(org.oracle_password)
+  let oracleConn = null
+
+  try {
+    oracleConn = await oracledb.getConnection({
+      user: org.oracle_user,
+      password: plainPwd,
+      connectString: org.oracle_connect_string,
+    })
+    oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
+
+    const columnsResult = await oracleConn.execute(
+      `SELECT column_name
+       FROM all_tab_columns
+       WHERE table_name = 'FATO_FUNCIONARIOS_ACESSOS'`
+    )
+    const columns = (columnsResult.rows ?? []).map((row) => row.COLUMN_NAME ?? row.column_name).filter(Boolean)
+    const nomeExpr = oracleTextExpr(
+      columns,
+      "nome",
+      ["NOME_FUNCIONARIO", "NOME_COMPLETO", "NOME_COLABORADOR", "COLABORADOR", "FUNCIONARIO", "NOME_PESSOA", "NOME"],
+      "'Funcionario encontrado'"
+    )
+    const lojaExpr = oracleTextExpr(
+      columns,
+      "loja",
+      ["NOME_LOJA", "LOJA", "NOME_FILIAL", "FILIAL", "NOME_EMPRESA", "NOME_RESUMIDO", "EMPRESA", "EMPRESA_ACESSO"],
+      "NULL"
+    )
+    const cargoExpr = oracleTextExpr(
+      columns,
+      "cargo",
+      ["NOME_CARGO", "CARGO", "CARGO_FUNCIONARIO", "DESCRICAO_CARGO", "DESC_CARGO", "FUNCAO", "NOME_FUNCAO", "FUNCAO_FUNCIONARIO", "DESCRICAO_FUNCAO"],
+      "NULL"
+    )
+
+    const queries = [
+      `SELECT ${nomeExpr}, ${lojaExpr}, ${cargoExpr}, cpf_cnpj_sem_pontos, 'S' AS ativo FROM fato_funcionarios_acessos WHERE TRIM(cpf_cnpj_sem_pontos) = :cpf AND ROWNUM = 1`,
+      `SELECT ${nomeExpr}, ${lojaExpr}, ${cargoExpr}, cpf_cnpj_sem_pontos, 'S' AS ativo FROM fato_funcionarios_acessos WHERE REGEXP_REPLACE(cpf_cnpj_sem_pontos,'[^0-9]','') = :cpf AND ROWNUM = 1`,
+    ]
+
+    for (const sql of queries) {
+      try {
+        const result = await oracleConn.execute(sql, { cpf: cpfNorm })
+        if (result.rows?.length) return result.rows[0]
+      } catch {}
+    }
+
+    return null
+  } finally {
+    if (oracleConn) try { await oracleConn.close() } catch {}
+  }
+}
+
+function formatFuncionarioPreview(funcionario, org, cpfNorm) {
+  return {
+    cpf: cpfNorm,
+    nome: funcionario.NOME ?? funcionario.nome ?? "Funcionario encontrado",
+    loja: funcionario.LOJA ?? funcionario.loja ?? null,
+    cargo: funcionario.CARGO ?? funcionario.cargo ?? null,
+    ativo: funcionario.ATIVO ?? funcionario.ativo ?? "S",
+    role_sugerido: "GERENTE",
+    empresa_id: org.id_organizacao,
+    organizacao_nome: org.nome,
+  }
+}
+
+async function resolveFuncionarioByCpf(cpfNorm, requestedEmpresaId = null) {
+  if (requestedEmpresaId) {
+    const [orgRows] = await centralPool.query(
+      "SELECT * FROM organizacoes_auth WHERE id_organizacao = ? AND ativo = 'S'",
+      [requestedEmpresaId]
+    )
+    if (!orgRows.length) throw httpError(404, "Organizacao nao encontrada ou inativa")
+
+    const org = orgRows[0]
+    const funcionario = await lookupFuncionarioInOrg(org, cpfNorm)
+    if (!funcionario) throw httpError(403, "CPF nao pertence a organizacao selecionada.")
+
+    return { org, funcionario }
+  }
+
+  const [orgs] = await centralPool.query(
+    "SELECT * FROM organizacoes_auth WHERE ativo = 'S' AND oracle_user IS NOT NULL AND oracle_password IS NOT NULL AND oracle_connect_string IS NOT NULL ORDER BY nome"
+  )
+  const matches = []
+
+  for (const org of orgs) {
+    try {
+      const funcionario = await lookupFuncionarioInOrg(org, cpfNorm)
+      if (funcionario) matches.push({ org, funcionario })
+    } catch (error) {
+      console.warn("Falha ao validar CPF na organizacao:", org.id_organizacao, error?.message ?? error)
+    }
+  }
+
+  if (matches.length === 0) throw httpError(404, "CPF nao encontrado em nenhuma organizacao ativa.")
+  if (matches.length > 1) throw httpError(409, "CPF encontrado em mais de uma organizacao. Informe a organizacao explicitamente no modo administrativo.")
+
+  return matches[0]
+}
+
 // ── Oracle connection test util ────────────────────────────────────────────────
 async function testOracleConnection(oracleUser, oraclePassword, oracleConnectString) {
   let conn = null
@@ -479,77 +592,8 @@ router.post("/superadmin/funcionario-lookup", async (req, res) => {
   }
 
   try {
-    const [orgRows] = await centralPool.query(
-      "SELECT * FROM organizacoes_auth WHERE id_organizacao = ? AND ativo = 'S'",
-      [empresaId]
-    )
-    if (!orgRows.length) return res.status(404).json({ error: "Organizacao nao encontrada ou inativa" })
-
-    const org = orgRows[0]
-    if (!org.oracle_user) return res.status(422).json({ error: "Organizacao sem credenciais Oracle" })
-
-    const plainPwd = decryptSecret(org.oracle_password)
-    let oracleConn = null
-    let funcionario = null
-
-    try {
-      oracleConn = await oracledb.getConnection({
-        user: org.oracle_user,
-        password: plainPwd,
-        connectString: org.oracle_connect_string,
-      })
-      oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
-
-      const columnsResult = await oracleConn.execute(
-        `SELECT column_name
-         FROM all_tab_columns
-         WHERE table_name = 'FATO_FUNCIONARIOS_ACESSOS'`
-      )
-      const columns = (columnsResult.rows ?? []).map((row) => row.COLUMN_NAME ?? row.column_name).filter(Boolean)
-      const nomeExpr = oracleTextExpr(
-        columns,
-        "nome",
-        ["NOME_FUNCIONARIO", "NOME_COMPLETO", "NOME_COLABORADOR", "COLABORADOR", "FUNCIONARIO", "NOME_PESSOA", "NOME"],
-        "'Funcionario encontrado'"
-      )
-      const lojaExpr = oracleTextExpr(
-        columns,
-        "loja",
-        ["NOME_LOJA", "LOJA", "NOME_FILIAL", "FILIAL", "NOME_EMPRESA", "NOME_RESUMIDO", "EMPRESA", "EMPRESA_ACESSO"],
-        "NULL"
-      )
-      const cargoExpr = oracleTextExpr(
-        columns,
-        "cargo",
-        ["NOME_CARGO", "CARGO", "CARGO_FUNCIONARIO", "DESCRICAO_CARGO", "DESC_CARGO", "FUNCAO", "NOME_FUNCAO", "FUNCAO_FUNCIONARIO", "DESCRICAO_FUNCAO"],
-        "NULL"
-      )
-
-      const queries = [
-        `SELECT ${nomeExpr}, ${lojaExpr}, ${cargoExpr}, cpf_cnpj_sem_pontos, 'S' AS ativo FROM fato_funcionarios_acessos WHERE TRIM(cpf_cnpj_sem_pontos) = :cpf AND ROWNUM = 1`,
-        `SELECT ${nomeExpr}, ${lojaExpr}, ${cargoExpr}, cpf_cnpj_sem_pontos, 'S' AS ativo FROM fato_funcionarios_acessos WHERE REGEXP_REPLACE(cpf_cnpj_sem_pontos,'[^0-9]','') = :cpf AND ROWNUM = 1`,
-      ]
-
-      for (const sql of queries) {
-        try {
-          const r = await oracleConn.execute(sql, { cpf: cpfNorm })
-          if (r.rows?.length) { funcionario = r.rows[0]; break }
-        } catch {}
-      }
-    } finally {
-      if (oracleConn) try { await oracleConn.close() } catch {}
-    }
-
-    if (!funcionario) return res.status(404).json({ error: "Funcionario nao encontrado no Oracle" })
-
-    return res.json({
-      cpf: cpfNorm,
-      nome: funcionario.NOME ?? funcionario.nome ?? "Funcionario encontrado",
-      loja: funcionario.LOJA ?? funcionario.loja ?? null,
-      cargo: funcionario.CARGO ?? funcionario.cargo ?? null,
-      ativo: funcionario.ATIVO ?? funcionario.ativo ?? "S",
-      role_sugerido: "GERENTE",
-    })
+    const { org, funcionario } = await resolveFuncionarioByCpf(cpfNorm, empresaId || null)
+    return res.json(formatFuncionarioPreview(funcionario, org, cpfNorm))
   } catch (error) {
     return handleError(res, error, "Erro ao buscar funcionario no Oracle.")
   }
@@ -558,19 +602,15 @@ router.post("/superadmin/funcionario-lookup", async (req, res) => {
 // POST /superadmin/gerentes
 router.post("/superadmin/gerentes", async (req, res) => {
   if (!guard(req, res)) return
-  const { cpf, senha, empresaId, nome } = req.body
+  const { cpf, senha, empresaId: requestedEmpresaId, nome } = req.body
   const cpfNorm = normalizeCPF(cpf)
 
   if (cpfNorm.length !== 11) return res.status(400).json({ error: "CPF deve ter 11 digitos" })
   if (!senha || String(senha).length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres" })
-  if (!empresaId) return res.status(400).json({ error: "empresaId obrigatorio" })
 
   try {
-    const [orgRows] = await centralPool.query(
-      "SELECT * FROM organizacoes_auth WHERE id_organizacao = ? AND ativo = 'S'",
-      [empresaId]
-    )
-    if (!orgRows.length) return res.status(404).json({ error: "Organizacao nao encontrada ou inativa" })
+    const { org, funcionario } = await resolveFuncionarioByCpf(cpfNorm, requestedEmpresaId || null)
+    const empresaId = org.id_organizacao
 
     const dbName = await getTenantDbNameByEmpresaId(empresaId)
     if (!dbName) return res.status(422).json({ error: "Database tenant nao provisionado para esta organizacao" })
@@ -583,7 +623,7 @@ router.post("/superadmin/gerentes", async (req, res) => {
     )
 
     const hash = await bcrypt.hash(senha, 10)
-    const nomeGerente = String(nome ?? "").trim() || await findEmployeeNameByCpf(empresaId, cpfNorm) || null
+    const nomeGerente = String(nome ?? "").trim() || formatFuncionarioPreview(funcionario, org, cpfNorm).nome || await findEmployeeNameByCpf(empresaId, cpfNorm) || null
 
     if (dup.length) {
       // Converte para GERENTE se tiver outra role

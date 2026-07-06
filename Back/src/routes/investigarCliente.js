@@ -1,5 +1,8 @@
 import express from "express"
 import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
+import { requireAuth } from "../middleware/auth.js"
+import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
 
 const router = express.Router()
 
@@ -14,9 +17,24 @@ function numero(value) {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-router.get("/investigar-cliente", async (req, res) => {
+function getQueryContext(req, res) {
+  const empresaId = getScopedEmpresaId(req)
+
+  if (!empresaId && !canUseGlobalEmpresaScope(req)) {
+    res.status(403).json({ error: "Empresa do usuario nao encontrada." })
+    return null
+  }
+
+  return empresaId
+    ? (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options)
+    : query
+}
+
+router.get("/investigar-cliente", requireAuth, async (req, res) => {
   try {
     const q = String(req.query.q ?? "").trim()
+    const dbQuery = getQueryContext(req, res)
+    if (!dbQuery) return
 
     if (!q) {
       return res.status(400).json({ error: "Informe CPF, CNPJ ou nome do cliente" })
@@ -24,7 +42,7 @@ router.get("/investigar-cliente", async (req, res) => {
 
     const qNumerico = q.replace(/\D/g, "")
 
-    const clienteRows = await query(
+    const clienteRows = await dbQuery(
       `
       SELECT *
       FROM (
@@ -66,7 +84,7 @@ router.get("/investigar-cliente", async (req, res) => {
 
     const [rfvRows, financeiroRows, ultimaVendaRows, topProdutosRows, topCategoriasRows, ultimasComprasRows] =
       await Promise.all([
-        query(
+        dbQuery(
           `
           SELECT
             classificacao,
@@ -79,7 +97,7 @@ router.get("/investigar-cliente", async (req, res) => {
           `,
           { sk_cliente }
         ),
-        query(
+        dbQuery(
           `
           WITH base AS (
             SELECT
@@ -107,7 +125,7 @@ router.get("/investigar-cliente", async (req, res) => {
           `,
           { sk_cliente }
         ),
-        query(
+        dbQuery(
           `
           SELECT
             v.sk_cliente,
@@ -133,7 +151,7 @@ router.get("/investigar-cliente", async (req, res) => {
           `,
           { sk_cliente }
         ),
-        query(
+        dbQuery(
           `
           SELECT
             p.nome,
@@ -154,7 +172,7 @@ router.get("/investigar-cliente", async (req, res) => {
           `,
           { sk_cliente }
         ),
-        query(
+        dbQuery(
           `
           SELECT
             p.nome_pai_nivel1 AS grupo,
@@ -174,7 +192,7 @@ router.get("/investigar-cliente", async (req, res) => {
           `,
           { sk_cliente }
         ),
-        query(
+        dbQuery(
           `
           SELECT
             p.nome,

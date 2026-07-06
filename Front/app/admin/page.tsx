@@ -42,6 +42,8 @@ interface FuncionarioPreview {
   cargo: string | null
   ativo: string
   role_sugerido: string
+  empresa_id: number
+  organizacao_nome: string
 }
 
 type Tab = "organizacoes" | "gerentes" | "usuarios"
@@ -251,7 +253,6 @@ export default function AdminPage() {
   const [showGerenteForm, setShowGerenteForm] = useState(false)
   const [gerenteCpf, setGerenteCpf] = useState("")
   const [gerenteSenha, setGerenteSenha] = useState("")
-  const [gerenteEmpresaId, setGerenteEmpresaId] = useState("")
   const [funcionarioPreview, setFuncionarioPreview] = useState<FuncionarioPreview | null>(null)
   const [lookingUp, setLookingUp] = useState(false)
   const [savingGerente, setSavingGerente] = useState(false)
@@ -346,11 +347,11 @@ export default function AdminPage() {
   // ── Gerente actions ──────────────────────────────────────────────────────────
 
   async function onLookupFuncionario() {
-    if (!gerenteCpf || !gerenteEmpresaId) { toast.error("Preencha CPF e organização."); return }
+    if (!gerenteCpf) { toast.error("Preencha o CPF."); return }
     setLookingUp(true)
     setFuncionarioPreview(null)
     try {
-      const r = await apiFetch<FuncionarioPreview>("/api/superadmin/funcionario-lookup", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf, empresaId: Number(gerenteEmpresaId) }) })
+      const r = await apiFetch<FuncionarioPreview>("/api/superadmin/funcionario-lookup", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf }) })
       setFuncionarioPreview(r)
     } catch (err) {
       toast.error((err as Error).message)
@@ -363,9 +364,9 @@ export default function AdminPage() {
     e.preventDefault()
     setSavingGerente(true)
     try {
-      await apiFetch("/api/superadmin/gerentes", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf, senha: gerenteSenha, empresaId: Number(gerenteEmpresaId), nome: funcionarioPreview?.nome }) })
+      await apiFetch("/api/superadmin/gerentes", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf, senha: gerenteSenha, empresaId: funcionarioPreview?.empresa_id, nome: funcionarioPreview?.nome }) })
       toast.success("Gerente cadastrado com sucesso!")
-      setGerenteCpf(""); setGerenteSenha(""); setGerenteEmpresaId(""); setFuncionarioPreview(null); setShowGerenteForm(false)
+      setGerenteCpf(""); setGerenteSenha(""); setFuncionarioPreview(null); setShowGerenteForm(false)
       void fetchData()
     } catch (err) {
       toast.error((err as Error).message)
@@ -558,11 +559,8 @@ export default function AdminPage() {
                     <Field label="Senha inicial" required>
                       <PasswordInput value={gerenteSenha} onChange={setGerenteSenha} placeholder="Mínimo 6 caracteres" />
                     </Field>
-                    <Field label="Organização" required>
-                      <select className={inputCls} value={gerenteEmpresaId} onChange={(e) => setGerenteEmpresaId(e.target.value)} required>
-                        <option value="">Selecione...</option>
-                        {activeOrgs.map((o) => <option key={o.id_organizacao} value={o.id_organizacao}>{o.nome}</option>)}
-                      </select>
+                    <Field label="Organização encontrada">
+                      <input className={inputCls} value={funcionarioPreview?.organizacao_nome ?? "Verifique o CPF"} readOnly />
                     </Field>
                   </div>
 
@@ -585,6 +583,7 @@ export default function AdminPage() {
                       <p className="font-semibold">{funcionarioPreview.nome}</p>
                       <p className="text-xs mt-1">Loja: {funcionarioPreview.loja || "-"}</p>
                       <p className="text-xs mt-0.5">Cargo: {funcionarioPreview.cargo || "-"}</p>
+                      <p className="text-xs mt-0.5">Organização: {funcionarioPreview.organizacao_nome}</p>
                       <p className="text-xs mt-0.5">CPF: {funcionarioPreview.cpf} · Status: {funcionarioPreview.ativo === "S" ? "Ativo" : "Inativo"} · Role sugerida: {funcionarioPreview.role_sugerido}</p>
                     </div>
                   )}

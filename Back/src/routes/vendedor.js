@@ -40,6 +40,12 @@ function getEmpresaScope(req, res) {
   return { allowed: true, empresaId }
 }
 
+function canAccessVendedor(req, skVendedor) {
+  const role = String(req.auth?.role ?? "").toUpperCase()
+  if (role !== "VENDEDOR") return true
+  return String(req.auth?.sk_vendedor ?? "") === String(skVendedor)
+}
+
 async function getQueryContext(empresaId) {
   if (empresaId) {
     return {
@@ -96,6 +102,9 @@ async function carregarUsuarioFallback(sk_vendedor) {
 router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
   try {
     const { sk_vendedor } = req.params
+    if (!canAccessVendedor(req, sk_vendedor)) {
+      return res.status(403).json({ error: "Acesso permitido apenas aos dados do vendedor autenticado." })
+    }
     const scope = getEmpresaScope(req, res)
     if (!scope.allowed) return
 
@@ -189,6 +198,9 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
 router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
   try {
     const { sk_vendedor } = req.params
+    if (!canAccessVendedor(req, sk_vendedor)) {
+      return res.status(403).json({ error: "Acesso permitido apenas aos dados do vendedor autenticado." })
+    }
     const scope = getEmpresaScope(req, res)
     if (!scope.allowed) return
 
@@ -467,6 +479,9 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
 router.get("/vendedor/:sk_vendedor/oportunidades", requireAuth, async (req, res) => {
   try {
     const { sk_vendedor } = req.params
+    if (!canAccessVendedor(req, sk_vendedor)) {
+      return res.status(403).json({ error: "Acesso permitido apenas aos dados do vendedor autenticado." })
+    }
     const scope = getEmpresaScope(req, res)
     if (!scope.allowed) return
 

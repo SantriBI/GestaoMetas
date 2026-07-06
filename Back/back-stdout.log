@@ -1,5 +1,8 @@
-[dotenv@17.2.3] injecting env (25) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  suppress all logs with { quiet: true }
-[dotenv@17.2.3] injecting env (0) from .env -- tip: 🗂️ backup and recover secrets: https://dotenvx.com/ops
-API rodando em http://localhost:3001
+
+> back@1.0.0 start
+> node index.js
+
+[oracle] node-oracledb inicializado em modo thick (libDir=C:\instantclient_23_5).
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 📡 add observability to secrets: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (0) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+API rodando em http://localhost:3001 (sem MySQL central)

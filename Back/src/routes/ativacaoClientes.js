@@ -9,8 +9,11 @@ import {
   postTemplate,
   putTemplate,
 } from "../controllers/ativacaoClientesController.js"
+import { requireAuth } from "../middleware/auth.js"
 
 const router = express.Router()
+
+router.use(requireAuth)
 
 router.get("/ativacao-clientes/segmentos", getSegmentos)
 router.get("/ativacao-clientes/resumo", getResumo)

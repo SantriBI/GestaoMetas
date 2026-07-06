@@ -5,6 +5,8 @@ import {
   getRankingVendorsDayViewName,
   getRankingVendorsViewName,
 } from "../db/oracleObjectNames.js"
+import { requireAuth } from "../middleware/auth.js"
+import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
 
 const router = express.Router()
 
@@ -44,10 +46,6 @@ function mapearCliente(row) {
     classificacao: item.classificacao ?? null,
     orcamentosAbertos: numero(item.orcamentos_abertos),
   }
-}
-
-function getEmpresaIdFromRequest(req) {
-  return req.query.empresa_id ?? req.query.empresaId ?? null
 }
 
 async function getQueryContext(empresaId) {
@@ -216,10 +214,13 @@ async function safeQuery(context, label, sql, binds = {}) {
   }
 }
 
-router.get("/area-ataque/:vendedor_id", async (req, res) => {
+router.get("/area-ataque/:vendedor_id", requireAuth, async (req, res) => {
   try {
     const { vendedor_id } = req.params
-    const empresa_id = getEmpresaIdFromRequest(req)
+    const empresa_id = getScopedEmpresaId(req)
+    if (!empresa_id && !canUseGlobalEmpresaScope(req)) {
+      return res.status(403).json({ error: "Empresa do usuario nao encontrada." })
+    }
     console.log(`[AreaAtaque] Requisicao: vendedor_id=${vendedor_id}, empresa_id=${empresa_id}`)
     const context = await getQueryContext(empresa_id)
     const vendedor = await resolverEscopoVendedor(vendedor_id, context).catch((err) => {
@@ -230,6 +231,9 @@ router.get("/area-ataque/:vendedor_id", async (req, res) => {
         nomeVendedor: null,
       }
     })
+    if (String(req.auth?.role ?? "").toUpperCase() === "VENDEDOR" && String(req.auth?.sk_vendedor ?? "") !== String(vendedor.skVendedor)) {
+      return res.status(403).json({ error: "Acesso permitido apenas aos dados do vendedor autenticado." })
+    }
     console.log(`[AreaAtaque] Vendedor resolvido: skVendedor=${vendedor.skVendedor}, vendedorId=${vendedor.vendedorId}`)
     const binds = {
       vendedor_id: vendedor.skVendedor,
