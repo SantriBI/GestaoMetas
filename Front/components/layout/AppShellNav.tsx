@@ -46,7 +46,7 @@ export function AppShellNav({ user }: AppShellNavProps) {
     setMounted(true)
   }, [])
 
-  const isDark = !mounted || resolvedTheme === "dark"
+  const isDark = mounted ? resolvedTheme === "dark" : false
 
   const darkPalette = {
     nav: "border-[#183424] bg-[#08130f]/84 backdrop-blur-xl text-white",
@@ -61,10 +61,10 @@ export function AppShellNav({ user }: AppShellNavProps) {
   }
 
   const lightPalette = {
-    nav: "border-green-200/60 bg-white/90 backdrop-blur-xl text-slate-900",
+    nav: "border-emerald-200/70 bg-white/92 backdrop-blur-xl text-slate-900 shadow-[0_8px_28px_rgba(15,23,42,0.05)]",
     logo: "invert",
     link: "text-slate-600 hover:bg-green-50 hover:text-slate-900",
-    active: "bg-[linear-gradient(135deg,rgba(11,59,46,0.85),rgba(34,197,94,0.85))] text-white shadow-[0_10px_24px_rgba(34,197,94,0.16)]",
+    active: "bg-[linear-gradient(135deg,rgba(5,150,105,0.96),rgba(34,197,94,0.94))] text-white shadow-[0_10px_24px_rgba(34,197,94,0.16)]",
     profile: "border-green-200/60 bg-green-50/80 text-slate-900",
     role: "text-green-600",
     logout: "border-green-200/60 bg-green-50/80 text-slate-600 hover:bg-green-100 hover:text-slate-900",

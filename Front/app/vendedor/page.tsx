@@ -757,7 +757,7 @@ export default function VendedorDashboard() {
   }
 
 
-  const isDark = !mounted || resolvedTheme === "dark"
+  const isDark = mounted ? resolvedTheme === "dark" : false
 
   if (!vendedor) {
     return (

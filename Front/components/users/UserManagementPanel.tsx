@@ -35,10 +35,10 @@ type UserManagementPanelProps = {
 }
 
 const inputCls =
-  "w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-emerald-400/45"
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-emerald-500/45 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-100 dark:placeholder:text-slate-500"
 const selectCls =
-  `${inputCls} bg-slate-950/70 text-slate-100 [color-scheme:dark] [&>option]:bg-slate-950 [&>option]:text-slate-100`
-const optionStyle = { backgroundColor: "#020617", color: "#f8fafc" }
+  `${inputCls} bg-background text-foreground dark:bg-slate-950/70 dark:text-slate-100 dark:[color-scheme:dark] dark:[&>option]:bg-slate-950 dark:[&>option]:text-slate-100`
+const optionStyle = undefined
 const btnBase =
   "inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50"
 
@@ -100,8 +100,8 @@ function formatCpf(value: string | number | null | undefined) {
 
 function statusClass(ativo: "S" | "N") {
   return ativo === "S"
-    ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200"
-    : "border-red-400/25 bg-red-500/10 text-red-200"
+    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400/25 dark:text-emerald-200"
+    : "border-red-500/25 bg-red-500/10 text-red-700 dark:border-red-400/25 dark:text-red-200"
 }
 
 export function UserManagementPanel({
@@ -221,18 +221,18 @@ export function UserManagementPanel({
   }
 
   return (
-    <section className={cn("rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(10,15,28,0.88))] p-5", className)}>
+    <section className={cn("rounded-[28px] border border-border bg-card p-5 shadow-sm dark:border-white/10 dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.94),rgba(10,15,28,0.88))]", className)}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-emerald-300" />
-            <h2 className="text-lg font-semibold text-slate-50">{title}</h2>
+            <Users className="h-5 w-5 text-emerald-500 dark:text-emerald-300" />
+            <h2 className="text-lg font-semibold text-foreground dark:text-slate-50">{title}</h2>
           </div>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">{description}</p>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground dark:text-slate-400">{description}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <div className="relative min-w-[240px] flex-1 sm:w-[280px]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground dark:text-slate-500" />
             <input
               type="search"
               className={cn(inputCls, "h-full pl-9 pr-9")}
@@ -245,7 +245,7 @@ export function UserManagementPanel({
               <button
                 type="button"
                 onClick={() => setSearchTerm("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition-colors hover:text-slate-200"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground dark:text-slate-500 dark:hover:text-slate-200"
                 aria-label="Limpar pesquisa"
               >
                 <X className="h-4 w-4" />
@@ -268,7 +268,7 @@ export function UserManagementPanel({
             type="button"
             onClick={loadUsers}
             disabled={loading}
-            className={cn(btnBase, "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10")}
+            className={cn(btnBase, "border-border bg-secondary text-foreground hover:bg-accent dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10")}
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Atualizar
@@ -287,11 +287,11 @@ export function UserManagementPanel({
         </div>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-2xl border border-white/10">
+      <div className="mt-5 overflow-hidden rounded-2xl border border-border dark:border-white/10">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-sm">
-            <thead className="bg-white/[0.03]">
-              <tr className="text-left text-xs uppercase tracking-[0.16em] text-slate-500">
+            <thead className="bg-muted/50 dark:bg-white/[0.03]">
+              <tr className="text-left text-xs uppercase tracking-[0.16em] text-muted-foreground dark:text-slate-500">
                 <th className="px-4 py-3">Usuario</th>
                 <th className="px-4 py-3">Perfil</th>
                 {allowOrganizationSelect ? <th className="px-4 py-3">Organizacao</th> : null}
@@ -299,22 +299,22 @@ export function UserManagementPanel({
                 <th className="px-4 py-3">Acoes</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/8">
+            <tbody className="divide-y divide-border dark:divide-white/8">
               {loading ? (
                 <tr>
-                  <td colSpan={allowOrganizationSelect ? 5 : 4} className="px-4 py-10 text-center text-slate-400">
+                  <td colSpan={allowOrganizationSelect ? 5 : 4} className="px-4 py-10 text-center text-muted-foreground dark:text-slate-400">
                     Carregando usuarios...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={allowOrganizationSelect ? 5 : 4} className="px-4 py-10 text-center text-slate-400">
+                  <td colSpan={allowOrganizationSelect ? 5 : 4} className="px-4 py-10 text-center text-muted-foreground dark:text-slate-400">
                     Nenhum usuario encontrado.
                   </td>
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={allowOrganizationSelect ? 5 : 4} className="px-4 py-10 text-center text-slate-400">
+                  <td colSpan={allowOrganizationSelect ? 5 : 4} className="px-4 py-10 text-center text-muted-foreground dark:text-slate-400">
                     Nenhum usuario encontrado para a pesquisa.
                   </td>
                 </tr>
@@ -324,9 +324,9 @@ export function UserManagementPanel({
                 return (
                   <tr key={`${user.empresa_id}-${user.id_usuario}`} className="align-top">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-100">{displayName(user)}</p>
-                      <p className="mt-1 text-xs text-slate-500">Login: {user.login}</p>
-                      {cpf ? <p className="mt-1 text-xs text-slate-500">CPF: {cpf}</p> : null}
+                      <p className="font-medium text-foreground dark:text-slate-100">{displayName(user)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground dark:text-slate-500">Login: {user.login}</p>
+                      {cpf ? <p className="mt-1 text-xs text-muted-foreground dark:text-slate-500">CPF: {cpf}</p> : null}
                       {editingPassword ? (
                         <div className="mt-3 flex gap-2">
                           <input
@@ -348,8 +348,8 @@ export function UserManagementPanel({
                         </div>
                       ) : null}
                     </td>
-                    <td className="px-4 py-3 text-slate-300">{user.role}</td>
-                    {allowOrganizationSelect ? <td className="px-4 py-3 text-slate-300">{user.organizacao_nome ?? user.empresa_id ?? "-"}</td> : null}
+                    <td className="px-4 py-3 text-muted-foreground dark:text-slate-300">{user.role}</td>
+                    {allowOrganizationSelect ? <td className="px-4 py-3 text-muted-foreground dark:text-slate-300">{user.organizacao_nome ?? user.empresa_id ?? "-"}</td> : null}
                     <td className="px-4 py-3">
                       <span className={cn("inline-flex rounded-full border px-2 py-1 text-xs font-semibold", statusClass(user.ativo))}>
                         {user.ativo === "S" ? "Ativo" : "Inativo"}
@@ -363,7 +363,7 @@ export function UserManagementPanel({
                             setPasswordUserId(editingPassword ? null : String(user.id_usuario))
                             setNewPassword("")
                           }}
-                          className={cn(btnBase, "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10")}
+                          className={cn(btnBase, "border-border bg-secondary text-foreground hover:bg-accent dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10")}
                         >
                           <KeyRound className="h-4 w-4" />
                           Senha

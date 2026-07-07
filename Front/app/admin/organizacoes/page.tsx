@@ -80,8 +80,8 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.98),rgba(10,14,22,0.99))] shadow-2xl shadow-black/40">
-        <div className="flex items-center justify-between border-b border-[#1c2940] px-6 py-4">
+      <div className="relative w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl shadow-black/10 dark:shadow-black/40">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <h2 className="text-base font-semibold text-foreground">{title}</h2>
           <button
             type="button"
@@ -265,7 +265,7 @@ function OrgFormModal({
             type="button"
             onClick={handleTestar}
             disabled={testing || saving}
-            className="flex items-center gap-2 rounded-lg border border-[#1c2940] bg-secondary px-4 py-2.5 text-sm font-medium text-foreground hover:bg-[#11251b] transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
           >
             {testing ? (
               <RefreshCw className="h-4 w-4 animate-spin" />
@@ -318,7 +318,7 @@ function DeleteModal({ org, onClose, onConfirm }: { org: Organizacao; onClose: (
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="flex-1 rounded-lg border border-[#1c2940] bg-secondary px-4 py-2.5 text-sm font-medium text-foreground hover:bg-[#1c2940] transition-colors disabled:opacity-50"
+            className="flex-1 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
           >
             Cancelar
           </button>
@@ -363,7 +363,7 @@ function TestModal({ org, onClose, onTestar }: {
   return (
     <Modal title="Testar Conexão Oracle" onClose={onClose}>
       <div className="space-y-5">
-        <div className="rounded-lg border border-[#1c2940] bg-secondary/40 px-4 py-3 space-y-1 text-sm">
+        <div className="rounded-lg border border-border bg-secondary/40 px-4 py-3 space-y-1 text-sm">
           <p className="text-muted-foreground">Organização:</p>
           <p className="font-semibold text-foreground">{org.nome}</p>
           <p className="text-muted-foreground font-mono text-xs mt-1">{org.db_user}@{org.db_connect_string}</p>
@@ -394,7 +394,7 @@ function TestModal({ org, onClose, onTestar }: {
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-lg border border-[#1c2940] bg-secondary px-4 py-2.5 text-sm font-medium text-foreground hover:bg-[#1c2940] transition-colors"
+            className="flex-1 rounded-lg border border-border bg-secondary px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
             Fechar
           </button>
@@ -575,7 +575,7 @@ export default function AdminOrganizacoesPage() {
             <button
               type="button"
               onClick={refetch}
-              className="mt-2 flex items-center gap-2 rounded-lg border border-[#1c2940] bg-secondary px-4 py-2 text-sm font-medium text-foreground hover:bg-[#1c2940] transition-colors"
+              className="mt-2 flex items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
             >
               <RefreshCw className="h-4 w-4" />
               Tentar novamente
@@ -600,11 +600,11 @@ export default function AdminOrganizacoesPage() {
                 </button>
               </div>
             ) : (
-              <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] overflow-hidden">
+              <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-[#1c2940]">
+                      <tr className="border-b border-border">
                         {["Nome", "Status", "Usuário Oracle", "Connect String", "Criado em", "Ações"].map((h) => (
                           <th
                             key={h}
@@ -615,9 +615,9 @@ export default function AdminOrganizacoesPage() {
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#1c2940]/60">
+                    <tbody className="divide-y divide-border">
                       {organizacoes.map((org) => (
-                        <tr key={org.id} className="hover:bg-white/[0.02] transition-colors">
+                        <tr key={org.id} className="transition-colors hover:bg-muted/50 dark:hover:bg-white/[0.02]">
                           <td className="px-4 py-3.5">
                             <div>
                               <p className="font-medium text-foreground">{org.nome}</p>
@@ -640,7 +640,7 @@ export default function AdminOrganizacoesPage() {
                                 type="button"
                                 title="Testar Conexão"
                                 onClick={() => setModal({ type: "test", org })}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#1c2940] text-muted-foreground hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30 transition-colors"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-500 dark:hover:text-emerald-400"
                               >
                                 <Wifi className="h-3.5 w-3.5" />
                               </button>
@@ -648,7 +648,7 @@ export default function AdminOrganizacoesPage() {
                                 type="button"
                                 title="Editar"
                                 onClick={() => setModal({ type: "edit", org })}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#1c2940] text-muted-foreground hover:bg-blue-500/10 hover:text-blue-400 hover:border-blue-500/30 transition-colors"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-500 dark:hover:text-blue-400"
                               >
                                 <Edit2 className="h-3.5 w-3.5" />
                               </button>
@@ -656,7 +656,7 @@ export default function AdminOrganizacoesPage() {
                                 type="button"
                                 title="Excluir"
                                 onClick={() => setModal({ type: "delete", org })}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#1c2940] text-muted-foreground hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 transition-colors"
+                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>
@@ -667,7 +667,7 @@ export default function AdminOrganizacoesPage() {
                     </tbody>
                   </table>
                 </div>
-                <div className="border-t border-[#1c2940] px-4 py-3 text-xs text-muted-foreground">
+                <div className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
                   {organizacoes.length} {organizacoes.length === 1 ? "organização encontrada" : "organizações encontradas"}
                 </div>
               </div>

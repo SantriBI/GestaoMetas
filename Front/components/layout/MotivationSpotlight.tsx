@@ -116,7 +116,7 @@ export function MotivationSpotlight({
     setMounted(true)
   }, [])
 
-  const isDark = !mounted || resolvedTheme === "dark"
+  const isDark = mounted ? resolvedTheme === "dark" : false
   const tone = getToneClasses(message.tone, isDark)
 
   return (

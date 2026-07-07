@@ -24,7 +24,7 @@ import { RankingTable } from "@/components/dashboard/ranking-table"
 import { Podium } from "@/components/dashboard/podium"
 import { ProgressTrail } from "@/components/dashboard/progress-trail"
 import { SidebarHUD } from "@/components/dashboard/sidebar-hud"
-import { CardDashboard, dashboardCardThemes, type CardDashboardConfig } from "@/components/dashboard/CardDashboard"
+import { CardDashboard, dashboardCardThemes, dashboardCardThemesLight, type CardDashboardConfig } from "@/components/dashboard/CardDashboard"
 import { DashboardSkeleton } from "@/components/dashboard/loading-skeleton"
 import RankingAlerts from "@/components/RankingAlerts"
 import { gerarResumoDiario } from "@/lib/diario"
@@ -260,6 +260,7 @@ export default function DashboardPage() {
       description: "Veja o desempenho da equipe hoje e onde agir primeiro.",
       icon: LineChart,
       gradient: dashboardCardThemes.emerald,
+      gradientLight: dashboardCardThemesLight.emerald,
       actionLabel: activeView === "jornada" ? "Fechar painel" : "Abrir painel",
       badge: desempenhoEquipe >= 100 ? "DESTAQUE" : "PRIORIDADE",
       tag: "VISAO GERAL",
@@ -273,6 +274,7 @@ export default function DashboardPage() {
       description: "Veja quem esta puxando o resultado e quem precisa de apoio.",
       icon: Trophy,
       gradient: dashboardCardThemes.violet,
+      gradientLight: dashboardCardThemesLight.violet,
       actionLabel: activeView === "grandprix" ? "Fechar corrida" : "Abrir corrida",
       badge: "DESTAQUE",
       tag: "RITMO DO TIME",
@@ -286,6 +288,7 @@ export default function DashboardPage() {
       description: "Acompanhe campanhas e ganhos por performance do time.",
       icon: Swords,
       gradient: dashboardCardThemes.amber,
+      gradientLight: dashboardCardThemesLight.amber,
       actionLabel: "Ver desafios",
       badge: vendedoresEmRisco > 0 ? "PRIORIDADE" : undefined,
       tag: "PERFORMANCE",
@@ -297,6 +300,7 @@ export default function DashboardPage() {
       description: "Descubra o historico e a proxima melhor oferta.",
       icon: Search,
       gradient: dashboardCardThemes.cyan,
+      gradientLight: dashboardCardThemesLight.cyan,
       actionLabel: "Buscar cliente",
       tag: "ANALISE",
       microcopy: `${vendedoresEmRisco} vendedor${vendedoresEmRisco === 1 ? "" : "es"} pedem atencao`,
@@ -307,6 +311,7 @@ export default function DashboardPage() {
       description: "Recupere clientes e aumente as vendas do time hoje.",
       icon: MessageCircle,
       gradient: dashboardCardThemes.rose,
+      gradientLight: dashboardCardThemesLight.rose,
       actionLabel: "Reativar clientes",
       badge: "DESTAQUE",
       highlight: true,
@@ -356,25 +361,25 @@ export default function DashboardPage() {
 
       <div className="flex">
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-5 sm:px-6 sm:py-8 xl:pr-[340px]">
-          <section className="relative mb-6 overflow-hidden rounded-[28px] border border-emerald-500/18 bg-[radial-gradient(circle_at_top_right,rgba(34,197,94,0.16),transparent_26%),linear-gradient(145deg,rgba(7,16,13,0.98),rgba(9,18,16,0.96),rgba(8,13,12,0.94))] p-4 shadow-[0_30px_90px_rgba(0,0,0,0.28)] sm:mb-8 sm:rounded-[32px] sm:p-8">
-            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_center,rgba(134,239,172,0.09),transparent_58%)]" />
+          <section className="relative mb-6 overflow-hidden rounded-[28px] border border-emerald-200/70 bg-[radial-gradient(circle_at_top_right,rgba(34,197,94,0.12),transparent_28%),linear-gradient(145deg,rgba(255,255,255,0.98),rgba(240,253,244,0.96),rgba(248,250,252,0.98))] p-4 shadow-[0_18px_54px_rgba(15,23,42,0.08)] dark:border-emerald-500/18 dark:bg-[radial-gradient(circle_at_top_right,rgba(34,197,94,0.16),transparent_26%),linear-gradient(145deg,rgba(7,16,13,0.98),rgba(9,18,16,0.96),rgba(8,13,12,0.94))] dark:shadow-[0_30px_90px_rgba(0,0,0,0.28)] sm:mb-8 sm:rounded-[32px] sm:p-8">
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_center,rgba(34,197,94,0.08),transparent_58%)] dark:bg-[radial-gradient(circle_at_center,rgba(134,239,172,0.09),transparent_58%)]" />
             <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start">
               <div className="space-y-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200 sm:text-[11px] sm:tracking-[0.18em]">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200 sm:text-[11px] sm:tracking-[0.18em]">
                     <Sparkles className="h-3.5 w-3.5" />
                     Visao gerencial
                   </span>
                   {dataReferenciaValida ? (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-white/65 sm:text-[11px] sm:tracking-[0.18em]">
+                    <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-white/65 sm:text-[11px] sm:tracking-[0.18em]">
                       {isToday(dataReferenciaNormalizada) ? "Atualizado hoje" : `Base ${formatDateBR(dataReferenciaNormalizada)}`}
                     </span>
                   ) : null}
                 </div>
 
                 <div>
-                  <h1 className="text-[1.85rem] font-bold tracking-tight text-white sm:text-4xl">Dashboard do Gerente</h1>
-                  <p className="mt-3 max-w-3xl text-sm leading-7 text-[#b6c6bc] sm:text-base">
+                  <h1 className="text-[1.85rem] font-bold tracking-tight text-slate-950 dark:text-white sm:text-4xl">Dashboard do Gerente</h1>
+                  <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600 dark:text-[#b6c6bc] sm:text-base">
                     {fraseSaudacao}
                   </p>
                 </div>
@@ -382,9 +387,9 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid gap-4">
-                <section className="justify-self-start w-full max-w-sm rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-2 backdrop-blur-sm">
+                <section className="justify-self-start w-full max-w-sm rounded-[24px] border border-border bg-card/90 p-2 shadow-sm backdrop-blur-sm">
                   <div
-                    className="flex w-full items-center gap-1 rounded-[20px] border border-white/10 bg-black/20 p-1"
+                    className="flex w-full items-center gap-1 rounded-[20px] border border-border bg-muted/60 p-1"
                     role="group"
                     aria-label="Modo de acompanhamento"
                   >
@@ -393,8 +398,8 @@ export default function DashboardPage() {
                       aria-pressed={viewMode === "diario"}
                       className={`flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-sm font-medium transition-all ${
                         viewMode === "diario"
-                          ? "bg-[linear-gradient(135deg,#0b3b2e,#22c55e)] text-white shadow-[0_12px_30px_rgba(34,197,94,0.24)]"
-                          : "text-white/70 hover:text-white"
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                       }`}
                     >
                       <Calendar className="h-4 w-4" />
@@ -405,8 +410,8 @@ export default function DashboardPage() {
                       aria-pressed={viewMode === "mensal"}
                       className={`flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-sm font-medium transition-all ${
                         viewMode === "mensal"
-                          ? "bg-[linear-gradient(135deg,#0b3b2e,#22c55e)] text-white shadow-[0_12px_30px_rgba(34,197,94,0.24)]"
-                          : "text-white/70 hover:text-white"
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                       }`}
                     >
                       <CalendarDays className="h-4 w-4" />
@@ -450,7 +455,7 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-6">
               {hasMetaHerdada ? (
-                <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-600/50 bg-amber-900/40 p-4 text-amber-200">
+                <div className="mb-6 flex items-start gap-3 rounded-xl border border-amber-300/70 bg-amber-50 p-4 text-amber-700 dark:border-amber-600/50 dark:bg-amber-900/40 dark:text-amber-200">
                   <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
                   <span className="text-sm">
                     Meta utilizada do mes anterior. A meta do mes atual ainda nao foi cadastrada no ADM.
@@ -511,21 +516,21 @@ export default function DashboardPage() {
                 }`}
                 aria-hidden={activeView !== "grandprix"}
               >
-                <section className="mt-1 overflow-visible rounded-[28px] border border-violet-400/16 bg-[linear-gradient(180deg,rgba(92,39,160,0.09),rgba(13,10,20,0.96))] px-4 pt-4 pb-10 shadow-[0_28px_90px_rgba(89,28,135,0.2)] sm:rounded-[30px] sm:px-6 sm:pt-6 sm:pb-12">
+                <section className="mt-1 overflow-visible rounded-[28px] border border-violet-200/80 bg-[linear-gradient(180deg,rgba(245,243,255,0.98),rgba(255,255,255,0.96))] px-4 pt-4 pb-10 shadow-[0_18px_54px_rgba(109,40,217,0.1)] dark:border-violet-400/16 dark:bg-[linear-gradient(180deg,rgba(92,39,160,0.09),rgba(13,10,20,0.96))] dark:shadow-[0_28px_90px_rgba(89,28,135,0.2)] sm:rounded-[30px] sm:px-6 sm:pt-6 sm:pb-12">
                   <div className="mb-6 flex flex-col items-start gap-3 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-violet-200/70">Modo corrida</p>
-                      <h2 className="mt-2 flex items-center gap-3 text-xl font-bold text-white sm:text-2xl">
-                        <Trophy className="h-6 w-6 text-violet-300" />
+                      <p className="text-xs uppercase tracking-[0.18em] text-violet-500 dark:text-violet-200/70">Modo corrida</p>
+                      <h2 className="mt-2 flex items-center gap-3 text-xl font-bold text-slate-950 dark:text-white sm:text-2xl">
+                        <Trophy className="h-6 w-6 text-violet-500 dark:text-violet-300" />
                         Grand Prix de Vendas
                       </h2>
                     </div>
-                    <span className="animate-pulse rounded-full border border-violet-300/18 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-100 shadow-[0_0_24px_rgba(168,85,247,0.18)]">
+                    <span className="animate-pulse rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700 shadow-[0_0_24px_rgba(168,85,247,0.1)] dark:border-violet-300/18 dark:bg-violet-500/10 dark:text-violet-100 dark:shadow-[0_0_24px_rgba(168,85,247,0.18)]">
                       Top 3 em destaque
                     </span>
                   </div>
 
-                  <div className="space-y-6 overflow-visible rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5">
+                  <div className="space-y-6 overflow-visible rounded-[24px] border border-violet-100 bg-white/76 p-4 shadow-sm dark:border-white/8 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5">
                     <Podium vendedores={vendedores} viewMode={viewMode} />
                     <ProgressTrail vendedores={vendedores} viewMode={viewMode} />
                   </div>
@@ -549,21 +554,21 @@ export default function DashboardPage() {
       {/* FEEDBACK FLUTUANTE */}
       {isFeedbackOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+          className="fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-sm dark:bg-black/40"
           onClick={closeFeedback}
         />
       )}
       {isFeedbackOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-80 rounded-2xl border border-white/10 bg-zinc-900/95 p-5 shadow-2xl backdrop-blur-md">
+        <div className="fixed bottom-24 right-6 z-50 w-80 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl backdrop-blur-md dark:border-white/10 dark:bg-zinc-900/95">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-white">Sugestão de melhoria</h3>
-              <p className="text-xs text-white/45">Sua opinião é muito importante!</p>
+              <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Sugestão de melhoria</h3>
+              <p className="text-xs text-slate-500 dark:text-white/45">Sua opinião é muito importante!</p>
             </div>
             <button
               type="button"
               onClick={closeFeedback}
-              className="rounded-lg p-1.5 text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-white/45 dark:hover:bg-white/10 dark:hover:text-white"
             >
               <X className="h-4 w-4" />
             </button>
@@ -573,8 +578,8 @@ export default function DashboardPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400">
                 <Zap className="h-5 w-5" />
               </div>
-              <p className="text-sm font-medium text-emerald-300">Feedback enviado!</p>
-              <p className="text-xs text-white/45">Obrigado pela sugestão 🙏</p>
+              <p className="text-sm font-medium text-emerald-600 dark:text-emerald-300">Feedback enviado!</p>
+              <p className="text-xs text-slate-500 dark:text-white/45">Obrigado pela sugestão 🙏</p>
             </div>
           ) : (
             <>
@@ -583,7 +588,7 @@ export default function DashboardPage() {
                 onChange={(e) => setFeedbackTexto(e.target.value)}
                 placeholder="Conte o que poderia ser melhor no sistema..."
                 rows={4}
-                className="w-full resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
+                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500/50 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/30"
               />
               {feedbackStatus === "error" && (
                 <p className="mt-1.5 text-xs text-red-400">Erro ao enviar. Tente novamente.</p>
