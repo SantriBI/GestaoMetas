@@ -1,5 +1,4 @@
 import ExcelJS from "exceljs"
-import { query } from "../db/oracle.js"
 import { getInstanceNameByVendedor } from "./evolutionApiService.js"
 import { dispatchCampanha } from "./whatsappDispatchService.js"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
@@ -128,7 +127,9 @@ const SEGMENTS = [
 const cachedCampanhaAtivacaoConfirmationSupport = new Map()
 
 function getScopedQuery(empresaId) {
-  if (!empresaId) return query
+  if (!empresaId) {
+    throw new Error("empresa_id e obrigatorio para ativacao de clientes.")
+  }
   return (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options)
 }
 
@@ -258,7 +259,11 @@ function buildAccessScope({ role, sk_vendedor, empresa_id }) {
   }
 }
 
-async function tableExists(tableName, dbQuery = query) {
+async function tableExists(tableName, dbQuery) {
+  if (typeof dbQuery !== "function") {
+    throw new Error("Contexto Oracle da organizacao ausente.")
+  }
+
   const rows = await dbQuery(
     `
     SELECT COUNT(*) AS total
@@ -1107,12 +1112,13 @@ export async function enviarCampanha(campanhaId, payload = {}) {
 
   if (process.env.EVOLUTION_API_URL && payload.sk_vendedor) {
     try {
-      const instanceName = await getInstanceNameByVendedor(payload.sk_vendedor)
+      const instanceName = await getInstanceNameByVendedor(payload.sk_vendedor, payload.empresa_id)
       if (instanceName) {
         const resultado = await dispatchCampanha({
           instanceName,
           clientes,
           campanhaId,
+          empresaId: payload.empresa_id,
           onProgress: null,
         })
         evolutionStatus = resultado.total_erros === 0 ? "enviado" : "parcial"

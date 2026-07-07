@@ -185,14 +185,27 @@ router.get("/usuarios/perfil/:id_usuario", requireAuth, async (req, res) => {
   const callerRole = actorRole(req)
   const callerId = String(req.auth?.id_usuario ?? "")
   const targetId = String(req.params.id_usuario)
-  const isAdmin = ["ADMIN", "SUPERADMIN", "GERENTE"].includes(callerRole)
+  const isAdmin = ["ADMIN", "SUPERADMIN"].includes(callerRole)
+  const isGerente = callerRole === "GERENTE"
 
-  if (!isAdmin && callerId !== targetId) {
+  if (!isAdmin && !isGerente && callerId !== targetId) {
     return res.status(403).json({ error: "Acesso negado." })
   }
 
   try {
-    const usuario = await findAuthUserById(req.params.id_usuario, req.query.empresa_id)
+    const empresaId = isAdmin
+      ? (req.query.empresa_id ?? req.query.empresaId ?? req.auth?.empresa_id ?? null)
+      : (req.auth?.empresa_id ?? null)
+
+    if (isGerente) {
+      if (!empresaId) return res.status(403).json({ error: "Empresa do gerente nao encontrada." })
+      const managedUser = await findManagedUserById({ idUsuario: req.params.id_usuario, empresaId })
+      if (!managedUser || !["VENDEDOR", "GERENTE"].includes(String(managedUser.role ?? "").toUpperCase())) {
+        return res.status(404).json({ error: "Usuario nao encontrado" })
+      }
+    }
+
+    const usuario = await findAuthUserById(req.params.id_usuario, empresaId)
 
     if (!usuario || usuario.ativo !== "S") {
       return res.status(404).json({ error: "Usuario nao encontrado" })
@@ -335,15 +348,17 @@ router.post("/usuarios/upload-foto", requireAuth, async (req, res) => {
   const { id_usuario, empresa_id, arquivo_base64, arquivoBase64, mime_type, mimeType } = req.body
   const conteudoBase64 = arquivo_base64 ?? arquivoBase64
   const tipoMime = mime_type ?? mimeType
-
-  if (!id_usuario || !conteudoBase64 || !tipoMime) {
-    return res.status(400).json({ error: "Usuario, arquivo e tipo da imagem sao obrigatorios" })
-  }
-
   const callerRole = actorRole(req)
   const callerId = String(req.auth?.id_usuario ?? "")
   const isAdmin = ["ADMIN", "SUPERADMIN"].includes(callerRole)
-  if (!isAdmin && callerId !== String(id_usuario)) {
+  const targetUserId = isAdmin ? id_usuario : req.auth?.id_usuario
+  const targetEmpresaId = isAdmin ? (empresa_id ?? req.auth?.empresa_id ?? null) : (req.auth?.empresa_id ?? null)
+
+  if (!targetUserId || !conteudoBase64 || !tipoMime) {
+    return res.status(400).json({ error: "Usuario, arquivo e tipo da imagem sao obrigatorios" })
+  }
+
+  if (!isAdmin && callerId !== String(targetUserId)) {
     return res.status(403).json({ error: "Acesso negado." })
   }
 
@@ -353,7 +368,7 @@ router.post("/usuarios/upload-foto", requireAuth, async (req, res) => {
   }
 
   try {
-    const usuario = await findAuthUserById(id_usuario, empresa_id)
+    const usuario = await findAuthUserById(targetUserId, targetEmpresaId)
     if (!usuario || usuario.ativo !== "S") {
       return res.status(404).json({ error: "Usuario nao encontrado" })
     }
@@ -368,11 +383,11 @@ router.post("/usuarios/upload-foto", requireAuth, async (req, res) => {
     }
 
     await fs.mkdir(uploadDir, { recursive: true })
-    const nomeArquivo = `${id_usuario}-${randomUUID()}.${extensao}`
+    const nomeArquivo = `${targetUserId}-${randomUUID()}.${extensao}`
     await fs.writeFile(path.join(uploadDir, nomeArquivo), buffer)
 
     const fotoUrl = `/api/usuarios/foto/${nomeArquivo}`
-    await updateAuthUserPhoto({ idUsuario: id_usuario, empresaId: empresa_id, fotoUrl })
+    await updateAuthUserPhoto({ idUsuario: targetUserId, empresaId: targetEmpresaId, fotoUrl })
 
     return res.json({ foto_url: fotoUrl })
   } catch (error) {

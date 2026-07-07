@@ -29,6 +29,7 @@ async function findUserInTenants(login) {
     "SELECT id_organizacao, db_name FROM organizacoes_auth WHERE ativo = 'S' AND db_name IS NOT NULL"
   )
 
+  const matches = []
   for (const org of orgs) {
     try {
       const rows = await queryTenantByEmpresaId(
@@ -36,10 +37,10 @@ async function findUserInTenants(login) {
         "SELECT * FROM usuarios_auth WHERE (login = ? OR (? != '' AND cpf = ?)) AND ativo = 'S' LIMIT 1",
         [login.trim(), loginNorm, loginNorm]
       )
-      if (rows.length) return { user: rows[0], empresa_id: org.id_organizacao }
+      if (rows.length) matches.push({ user: rows[0], empresa_id: org.id_organizacao })
     } catch {}
   }
-  return null
+  return matches
 }
 
 // POST /api/login
@@ -90,10 +91,10 @@ router.post("/login", async (req, res) => {
     }
 
     // 2. Tenta tenants MySQL
-    let tenantResult = null
+    let tenantMatches = []
 
     try {
-      tenantResult = await findUserInTenants(login)
+      tenantMatches = await findUserInTenants(login)
     } catch (error) {
       mysqlAuthUnavailable = true
       console.warn(
@@ -102,10 +103,24 @@ router.post("/login", async (req, res) => {
       )
     }
 
-    if (tenantResult) {
-      const { user, empresa_id } = tenantResult
-      const ok = await bcrypt.compare(senha, user.senha_hash)
-      if (!ok) return res.status(401).json({ error: "Usuario ou senha invalidos" })
+    if (tenantMatches.length) {
+      const validMatches = []
+      for (const match of tenantMatches) {
+        const ok = await bcrypt.compare(senha, match.user.senha_hash)
+        if (ok) validMatches.push(match)
+      }
+
+      if (!validMatches.length) return res.status(401).json({ error: "Usuario ou senha invalidos" })
+
+      if (validMatches.length > 1) {
+        return res.status(409).json({
+          error:
+            "Este login esta vinculado a mais de uma organizacao. " +
+            "Remova o usuario duplicado ou altere o login para evitar acesso na organizacao errada.",
+        })
+      }
+
+      const { user, empresa_id } = validMatches[0]
 
       await queryTenantByEmpresaId(
         empresa_id,

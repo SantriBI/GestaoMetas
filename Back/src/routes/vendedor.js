@@ -1,13 +1,13 @@
 import express from "express"
-import { query } from "../db/oracle.js"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
-import {
-  getRankingVendorsDayViewName,
-  getRankingVendorsViewName,
-} from "../db/oracleObjectNames.js"
 import { findAuthUserBySkVendedor } from "../services/authUsersService.js"
 import { requireAuth } from "../middleware/auth.js"
-import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId } from "../services/requestScope.js"
+import {
+  buildSellerInCondition,
+  getAllowedSellerCodesByEmpresaId,
+  isSellerAllowed,
+} from "../services/tenantSellerScope.js"
 
 const router = express.Router()
 
@@ -32,8 +32,8 @@ function normalizarClassificacao(value) {
 
 function getEmpresaScope(req, res) {
   const empresaId = getScopedEmpresaId(req)
-  if (!empresaId && !canUseGlobalEmpresaScope(req)) {
-    res.status(403).json({ error: "Empresa do usuario nao encontrada." })
+  if (!empresaId) {
+    res.status(400).json({ error: "empresa_id e obrigatorio para buscar dados do vendedor." })
     return { allowed: false, empresaId: null }
   }
 
@@ -47,25 +47,11 @@ function canAccessVendedor(req, skVendedor) {
 }
 
 async function getQueryContext(empresaId) {
-  if (empresaId) {
-    return {
-      query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
-      rankingView: "VW_RANKING_VENDEDORES",
-      rankingDayView: "VW_RANKING_VENDEDORES_DIA",
-      orcamentosView: "VW_ORCAMENTOS_GESTAO_METAS",
-    }
-  }
-
-  const [rankingView, rankingDayView] = await Promise.all([
-    getRankingVendorsViewName(),
-    getRankingVendorsDayViewName(),
-  ])
-
   return {
-    query,
-    rankingView,
-    rankingDayView,
-    orcamentosView: "DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS",
+    query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
+    rankingView: "VW_RANKING_VENDEDORES",
+    rankingDayView: "VW_RANKING_VENDEDORES_DIA",
+    orcamentosView: "VW_ORCAMENTOS_GESTAO_METAS",
   }
 }
 
@@ -95,8 +81,8 @@ async function resolverVendedorId(sk_vendedor, context = null) {
   )
 }
 
-async function carregarUsuarioFallback(sk_vendedor) {
-  return findAuthUserBySkVendedor(sk_vendedor)
+async function carregarUsuarioFallback(sk_vendedor, empresaId = null) {
+  return findAuthUserBySkVendedor(sk_vendedor, empresaId)
 }
 
 router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
@@ -108,7 +94,13 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
     const scope = getEmpresaScope(req, res)
     if (!scope.allowed) return
 
+    const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(scope.empresaId)
+    if (!isSellerAllowed(allowedSellerCodes, sk_vendedor)) {
+      return res.status(403).json({ error: "Vendedor fora da organizacao autenticada." })
+    }
+
     const context = await getQueryContext(scope.empresaId)
+    const sellerScope = buildSellerInCondition("sk_vendedor", allowedSellerCodes)
 
     const [mensalRows, diarioRows, totalVendedoresRows, usuarioFallback] = await Promise.all([
       context.query(
@@ -125,10 +117,11 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
             clientes_mes
           FROM ${context.rankingView}
           WHERE sk_vendedor = :sk_vendedor
+            AND ${sellerScope.clause}
         )
         WHERE ROWNUM = 1
         `,
-        { sk_vendedor }
+        { sk_vendedor, ...sellerScope.binds }
       ),
       context.query(
         `
@@ -145,18 +138,21 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
             perc_performance_dia
           FROM ${context.rankingDayView}
           WHERE sk_vendedor = :sk_vendedor
+            AND ${sellerScope.clause}
         )
         WHERE ROWNUM = 1
         `,
-        { sk_vendedor }
+        { sk_vendedor, ...sellerScope.binds }
       ),
       context.query(
         `
         SELECT COUNT(*) AS total_vendedores
         FROM ${context.rankingView}
-        `
+        WHERE ${sellerScope.clause}
+        `,
+        sellerScope.binds
       ),
-      carregarUsuarioFallback(sk_vendedor),
+      carregarUsuarioFallback(sk_vendedor, scope.empresaId),
     ])
 
     if (!mensalRows.length && !diarioRows.length && !usuarioFallback) {
@@ -204,7 +200,13 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
     const scope = getEmpresaScope(req, res)
     if (!scope.allowed) return
 
+    const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(scope.empresaId)
+    if (!isSellerAllowed(allowedSellerCodes, sk_vendedor)) {
+      return res.status(403).json({ error: "Vendedor fora da organizacao autenticada." })
+    }
+
     const context = await getQueryContext(scope.empresaId)
+    const sellerScope = buildSellerInCondition("sk_vendedor", allowedSellerCodes)
 
     // Parte das consultas depende apenas de sk_vendedor.
     // Elas rodam em paralelo enquanto resolvemos o vendedor_id usado nos orcamentos.
@@ -228,9 +230,10 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
           clientes_mes
         FROM ${context.rankingView}
         WHERE sk_vendedor = :sk_vendedor
+          AND ${sellerScope.clause}
         FETCH FIRST 1 ROWS ONLY
         `,
-        { sk_vendedor }
+        { sk_vendedor, ...sellerScope.binds }
       ),
       context.query(
         `
@@ -484,6 +487,11 @@ router.get("/vendedor/:sk_vendedor/oportunidades", requireAuth, async (req, res)
     }
     const scope = getEmpresaScope(req, res)
     if (!scope.allowed) return
+
+    const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(scope.empresaId)
+    if (!isSellerAllowed(allowedSellerCodes, sk_vendedor)) {
+      return res.status(403).json({ error: "Vendedor fora da organizacao autenticada." })
+    }
 
     const context = await getQueryContext(scope.empresaId)
     const vendedor_id = await resolverVendedorId(sk_vendedor, context)

@@ -1,26 +1,35 @@
-import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 
 function textValue(value) {
   const text = String(value ?? "").trim()
   return text || null
 }
 
-async function nextId() {
-  const rows = await query("SELECT TB_FEEDBACK_SEQ.NEXTVAL AS id FROM dual")
+async function nextId(dbQuery) {
+  const rows = await dbQuery("SELECT TB_FEEDBACK_SEQ.NEXTVAL AS id FROM dual")
   return Number(rows[0]?.ID ?? rows[0]?.id ?? 0)
 }
 
 export async function postFeedback(req, res) {
   try {
-    const { sk_vendedor, nome, feedback, tipo_usuario } = req.body
+    const { feedback } = req.body
+    const sk_vendedor = req.auth?.sk_vendedor ?? null
+    const nome = req.auth?.nome ?? req.auth?.nome_completo ?? req.auth?.login ?? null
+    const tipo_usuario = req.auth?.role ?? "USUARIO"
+    const empresaId = req.auth?.empresa_id ?? null
 
     const textoFeedback = textValue(feedback)
     if (!textoFeedback) {
       return res.status(400).json({ error: "O campo feedback é obrigatório." })
     }
 
-    const id = await nextId()
-    await query(
+    if (!empresaId) {
+      return res.status(400).json({ error: "Empresa do usuario nao encontrada." })
+    }
+
+    const dbQuery = (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options)
+    const id = await nextId(dbQuery)
+    await dbQuery(
       `INSERT INTO TB_FEEDBACK (ID_FEEDBACK, SK_VENDEDOR, NOME_VENDEDOR, TIPO_USUARIO, FEEDBACK, DT_CRIACAO)
        VALUES (:id, :sk_vendedor, :nome_vendedor, :tipo_usuario, :feedback, SYSDATE)`,
       {

@@ -1,9 +1,11 @@
 import express from "express"
-import { query } from "../db/oracle.js"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
-import { getRankingVendorsViewName } from "../db/oracleObjectNames.js"
 import { requireAuth } from "../middleware/auth.js"
-import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId } from "../services/requestScope.js"
+import {
+  buildSellerInCondition,
+  getAllowedSellerCodesByEmpresaId,
+} from "../services/tenantSellerScope.js"
 
 const router = express.Router()
 
@@ -33,26 +35,17 @@ function selecionarTopCategorias(categorias, criterio, limite = 2) {
 }
 
 async function getQueryContext(empresaId) {
-  if (empresaId) {
-    return {
-      query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
-      rankingView: "VW_RANKING_VENDEDORES",
-      rfvVendedorTable: "FATO_RFV_VENDEDOR",
-      vendasLucratividadeTable: "FATO_VENDAS_LUCRATIVIDADE",
-      produtosTable: "DIM_PRODUTOS",
-    }
-  }
-
   return {
-    query,
-    rankingView: await getRankingVendorsViewName(),
-    rfvVendedorTable: "DM_VENDAS.FATO_RFV_VENDEDOR",
-    vendasLucratividadeTable: "DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE",
-    produtosTable: "DM_VENDAS.DIM_PRODUTOS",
+    query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
+    rankingView: "VW_RANKING_VENDEDORES",
+    rfvVendedorTable: "FATO_RFV_VENDEDOR",
+    vendasLucratividadeTable: "FATO_VENDAS_LUCRATIVIDADE",
+    produtosTable: "DIM_PRODUTOS",
   }
 }
 
 async function carregarRankingMensal(context) {
+  const sellerScope = buildSellerInCondition("sk_vendedor", context.allowedSellerCodes, "ranking_seller")
   return context.query(`
     SELECT
       nome_vendedor,
@@ -61,11 +54,13 @@ async function carregarRankingMensal(context) {
       perc_atingimento,
       ranking_atingimento
     FROM ${context.rankingView}
+    WHERE ${sellerScope.clause}
     ORDER BY ranking_atingimento
-  `)
+  `, sellerScope.binds)
 }
 
 async function carregarResumoRfv(context) {
+  const sellerScope = buildSellerInCondition("sk_vendedor", context.allowedSellerCodes, "rfv_seller")
   const rows = await context.query(`
     SELECT
       SUM(
@@ -83,12 +78,14 @@ async function carregarResumoRfv(context) {
         END
       ) AS clientes_fieis_esfriando
     FROM ${context.rfvVendedorTable}
-  `)
+    WHERE ${sellerScope.clause}
+  `, sellerScope.binds)
 
   return rows[0] ?? {}
 }
 
 async function carregarTendenciasCategorias(context) {
+  const sellerScope = buildSellerInCondition("f.sk_vendedor", context.allowedSellerCodes, "cat_seller")
   return context.query(`
     WITH vendas_categoria AS (
       SELECT
@@ -103,6 +100,7 @@ async function carregarTendenciasCategorias(context) {
       JOIN ${context.produtosTable} p
         ON p.sk_produto = f.sk_produto
       WHERE f.sk_dt_recebimento IS NOT NULL
+        AND ${sellerScope.clause}
     ),
     consolidado AS (
       SELECT
@@ -137,7 +135,7 @@ async function carregarTendenciasCategorias(context) {
     FROM consolidado
     -- Evita alertas irrelevantes exigindo base minima no periodo anterior.
     WHERE receita_ant_30 > 5000
-  `)
+  `, sellerScope.binds)
 }
 
 function gerarAlertasVendedores(rankingRows) {
@@ -244,11 +242,12 @@ function gerarAlertasCategorias(categoriasRows) {
 router.get("/radar-vendas", requireAuth, async (req, res) => {
   try {
     const empresaId = getScopedEmpresaId(req)
-    if (!empresaId && !canUseGlobalEmpresaScope(req)) {
-      return res.status(403).json({ error: "Empresa do usuario nao encontrada." })
+    if (!empresaId) {
+      return res.status(400).json({ error: "empresa_id e obrigatorio para gerar radar de vendas." })
     }
 
     const context = await getQueryContext(empresaId)
+    context.allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(empresaId)
     const rankingRows = await carregarRankingMensal(context)
     const [rfvResumoResult, categoriasResult] = await Promise.allSettled([
       carregarResumoRfv(context),

@@ -4,11 +4,9 @@ const ALGORITHM = "aes-256-gcm"
 const KEY_HEX = process.env.APP_ENCRYPTION_KEY
 
 export class SecretDecryptError extends Error {
-  constructor(message, cause) {
+  constructor(message) {
     super(message)
     this.name = "SecretDecryptError"
-    this.code = "SECRET_DECRYPT_FAILED"
-    this.cause = cause
   }
 }
 
@@ -47,8 +45,7 @@ export function decryptSecret(ciphertext) {
     return decipher.update(Buffer.from(dataHex, "hex")) + decipher.final("utf8")
   } catch (error) {
     throw new SecretDecryptError(
-      "Falha ao decriptar segredo. A APP_ENCRYPTION_KEY atual nao corresponde a chave usada ao salvar este valor.",
-      error
+      "Nao foi possivel ler o segredo salvo."
     )
   }
 }

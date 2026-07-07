@@ -724,6 +724,7 @@ export function aggregateChallengesSummary(items: Challenge[]): ChallengesRespon
 async function request<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     cache: "no-store",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),

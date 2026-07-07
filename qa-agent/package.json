@@ -1,0 +1,20 @@
+{
+  "name": "qa-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Framework de QA automatizado do SIP - simula usuarios reais e valida regressoes antes de cada release.",
+  "scripts": {
+    "qa": "playwright test",
+    "qa:headed": "playwright test --headed",
+    "qa:ui": "playwright test --ui",
+    "qa:report": "playwright show-report reports",
+    "qa:smoke": "playwright test tests/smoke",
+    "postinstall": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.10.0",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.7.0"
+  }
+}

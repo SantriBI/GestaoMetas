@@ -1,12 +1,11 @@
 import express from "express"
-import { query } from "../db/oracle.js"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
-import {
-  getRankingVendorsDayViewName,
-  getRankingVendorsViewName,
-} from "../db/oracleObjectNames.js"
 import { requireAuth } from "../middleware/auth.js"
-import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId } from "../services/requestScope.js"
+import {
+  getAllowedSellerCodesByEmpresaId,
+  isSellerAllowed,
+} from "../services/tenantSellerScope.js"
 
 const router = express.Router()
 
@@ -49,25 +48,11 @@ function mapearCliente(row) {
 }
 
 async function getQueryContext(empresaId) {
-  if (empresaId) {
-    return {
-      query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
-      rankingView: "VW_RANKING_VENDEDORES",
-      rankingDayView: "VW_RANKING_VENDEDORES_DIA",
-      orcamentosView: "VW_ORCAMENTOS_GESTAO_METAS",
-    }
-  }
-
-  const [rankingView, rankingDayView] = await Promise.all([
-    getRankingVendorsViewName(),
-    getRankingVendorsDayViewName(),
-  ])
-
   return {
-    query,
-    rankingView,
-    rankingDayView,
-    orcamentosView: "DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS",
+    query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
+    rankingView: "VW_RANKING_VENDEDORES",
+    rankingDayView: "VW_RANKING_VENDEDORES_DIA",
+    orcamentosView: "VW_ORCAMENTOS_GESTAO_METAS",
   }
 }
 
@@ -218,11 +203,12 @@ router.get("/area-ataque/:vendedor_id", requireAuth, async (req, res) => {
   try {
     const { vendedor_id } = req.params
     const empresa_id = getScopedEmpresaId(req)
-    if (!empresa_id && !canUseGlobalEmpresaScope(req)) {
-      return res.status(403).json({ error: "Empresa do usuario nao encontrada." })
+    if (!empresa_id) {
+      return res.status(400).json({ error: "empresa_id e obrigatorio para buscar area de ataque." })
     }
     console.log(`[AreaAtaque] Requisicao: vendedor_id=${vendedor_id}, empresa_id=${empresa_id}`)
     const context = await getQueryContext(empresa_id)
+    const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(empresa_id)
     const vendedor = await resolverEscopoVendedor(vendedor_id, context).catch((err) => {
       console.warn("Area de ataque: falha ao resolver vendedor pelo ranking:", err?.message ?? err)
       return {
@@ -233,6 +219,9 @@ router.get("/area-ataque/:vendedor_id", requireAuth, async (req, res) => {
     })
     if (String(req.auth?.role ?? "").toUpperCase() === "VENDEDOR" && String(req.auth?.sk_vendedor ?? "") !== String(vendedor.skVendedor)) {
       return res.status(403).json({ error: "Acesso permitido apenas aos dados do vendedor autenticado." })
+    }
+    if (!isSellerAllowed(allowedSellerCodes, vendedor.skVendedor)) {
+      return res.status(403).json({ error: "Vendedor fora da organizacao autenticada." })
     }
     console.log(`[AreaAtaque] Vendedor resolvido: skVendedor=${vendedor.skVendedor}, vendedorId=${vendedor.vendedorId}`)
     const binds = {

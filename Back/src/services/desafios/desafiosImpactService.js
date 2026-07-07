@@ -1,4 +1,4 @@
-import { query } from "../../db/oracle.js"
+import { queryWithDesafiosDbContext as query } from "./desafiosDbContext.js"
 
 function numberValue(value) {
   const parsed = Number(value ?? 0)

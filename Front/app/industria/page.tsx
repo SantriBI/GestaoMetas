@@ -378,6 +378,7 @@ export default function IndustriaPage() {
       try {
         const response = await fetch(`/api/industria/dashboard?marca=${encodeURIComponent(activeBrand)}`, {
           cache: "no-store",
+          credentials: "include",
         })
         const rawText = await response.text()
 
@@ -432,6 +433,7 @@ export default function IndustriaPage() {
     try {
       const response = await fetch("/api/login-industria", {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

@@ -24,7 +24,7 @@ function getMysqlConfig({ admin = false } = {}) {
   return {
     host: process.env.MYSQL_HOST ?? process.env.DB_HOST,
     port: Number(process.env.MYSQL_PORT ?? 3306),
-    user: process.env.MYSQL_USER ?? process.env.DB_USER,
+    user: process.env.MYSQL_USER,
     database: process.env.MYSQL_DATABASE ?? process.env.MYSQL_DB_NAME ?? process.env.DB_NAME ?? "gestao_metas",
     connectTimeout: getMysqlConnectTimeoutMs(),
   }
@@ -62,8 +62,8 @@ export function formatDbError(error) {
 export function hasMysqlConfig() {
   return Boolean(
     (process.env.MYSQL_HOST ?? process.env.DB_HOST) &&
-    (process.env.MYSQL_USER ?? process.env.DB_USER) &&
-    (process.env.MYSQL_PASSWORD ?? process.env.DB_PASSWORD) &&
+    process.env.MYSQL_USER &&
+    process.env.MYSQL_PASSWORD &&
     (process.env.MYSQL_DATABASE ?? process.env.MYSQL_DB_NAME ?? process.env.DB_NAME)
   )
 }
@@ -72,7 +72,7 @@ const cfg = getMysqlConfig()
 const pool = mysql.createPool({
   host: cfg.host,
   user: cfg.user,
-  password: process.env.MYSQL_PASSWORD ?? process.env.DB_PASSWORD,
+  password: process.env.MYSQL_PASSWORD,
   database: cfg.database,
   port: cfg.port,
   connectTimeout: cfg.connectTimeout,

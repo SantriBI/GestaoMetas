@@ -3,8 +3,12 @@ import bcrypt from "bcrypt"
 import oracledb, { getOracleRuntimeInfo } from "../db/oracleClient.js"
 import { requireAuth } from "../middleware/auth.js"
 import { auditAction } from "../audit.js"
-import { encryptSecret, decryptSecret } from "../security/secrets.js"
-import { dropOracleProvisionedViews, provisionOracleViews } from "../services/oracleProvisioningService.js"
+import { encryptSecret, decryptSecret, SecretDecryptError } from "../security/secrets.js"
+import {
+  dropOracleProvisionedViews,
+  provisionOracleSchemaObjects,
+  provisionOracleViews,
+} from "../services/oracleProvisioningService.js"
 import centralPool from "../db/mysql.js"
 import {
   ensureTenantDatabaseForOrg,
@@ -33,6 +37,13 @@ function guard(req, res) {
 }
 
 function handleError(res, error, fallback) {
+  if (error instanceof SecretDecryptError) {
+    const msg = "Nao foi possivel ler a senha Oracle salva. Edite a organizacao e informe a senha novamente."
+    console.warn(`${fallback} ${msg}`)
+    return res.status(409).json({
+      error: msg,
+    })
+  }
   console.error(fallback, error)
   const msg = error instanceof Error ? error.message : fallback
   return res.status(Number(error?.status) || 500).json({ error: msg })
@@ -66,12 +77,16 @@ function httpError(status, message) {
   return error
 }
 
+async function decryptOraclePasswordForOrg(org) {
+  return decryptSecret(org.oracle_password)
+}
+
 async function lookupFuncionarioInOrg(org, cpfNorm) {
   if (!org?.oracle_user || !org?.oracle_password || !org?.oracle_connect_string) {
     return null
   }
 
-  const plainPwd = decryptSecret(org.oracle_password)
+  const plainPwd = await decryptOraclePasswordForOrg(org)
   let oracleConn = null
 
   try {
@@ -219,7 +234,7 @@ async function tryDropOracleViewsForDelete(org) {
   try {
     return await dropOracleProvisionedViews({
       user: org.oracle_user,
-      password: decryptSecret(org.oracle_password),
+      password: await decryptOraclePasswordForOrg(org),
       connectString: org.oracle_connect_string,
     })
   } catch (error) {
@@ -243,7 +258,7 @@ async function syncVendedoresOrg(org) {
     return { skipped: true, reason: "Organizacao sem credenciais Oracle ou database tenant" }
   }
 
-  const plainPwd = decryptSecret(oracle_password)
+  const plainPwd = await decryptOraclePasswordForOrg(org)
   let oracleConn = null
   let oracleRows = []
 
@@ -420,6 +435,12 @@ router.post("/superadmin/organizacoes", async (req, res) => {
       return res.status(422).json({ error: `Falha na conexao Oracle: ${testeConn.error}` })
     }
 
+    const oracleSchema = await provisionOracleSchemaObjects({
+      user: oracleUser,
+      password: oraclePassword,
+      connectString,
+    })
+
     const oracleViews = await provisionOracleViews({
       user: oracleUser,
       password: oraclePassword,
@@ -452,7 +473,14 @@ router.post("/superadmin/organizacoes", async (req, res) => {
     }
 
     auditAction(req, "CREATE_ORG", `org:${orgId}:${nome}`)
-    return res.status(201).json({ message: "Organizacao criada com sucesso.", db_name: dbName, oracle_views: oracleViews, vendor_sync: vendorSync, vendor_sync_warning: vendorSyncWarning })
+    return res.status(201).json({
+      message: "Organizacao criada com sucesso.",
+      db_name: dbName,
+      oracle_schema: oracleSchema,
+      oracle_views: oracleViews,
+      vendor_sync: vendorSync,
+      vendor_sync_warning: vendorSyncWarning,
+    })
   } catch (error) {
     return handleError(res, error, "Erro ao criar organizacao.")
   }
@@ -482,11 +510,17 @@ router.patch("/superadmin/organizacoes/:id", async (req, res) => {
     const current = existing[0]
 
     // Valida conexao com a senha (nova ou existente decriptada)
-    const passwordToTest = oraclePassword ? oraclePassword : decryptSecret(current.oracle_password)
+    const passwordToTest = oraclePassword ? oraclePassword : await decryptOraclePasswordForOrg(current)
     const testeConn = await testOracleConnection(oracleUser, passwordToTest, connectString)
     if (!testeConn.ok) {
       return res.status(422).json({ error: `Falha na conexao Oracle: ${testeConn.error}` })
     }
+
+    const oracleSchema = await provisionOracleSchemaObjects({
+      user: oracleUser,
+      password: passwordToTest,
+      connectString,
+    })
 
     const oracleViews = await provisionOracleViews({
       user: oracleUser,
@@ -502,7 +536,11 @@ router.patch("/superadmin/organizacoes/:id", async (req, res) => {
     )
 
     auditAction(req, "UPDATE_ORG", `org:${id}:${nome}`)
-    return res.json({ message: "Organizacao atualizada com sucesso.", oracle_views: oracleViews })
+    return res.json({
+      message: "Organizacao atualizada com sucesso.",
+      oracle_schema: oracleSchema,
+      oracle_views: oracleViews,
+    })
   } catch (error) {
     return handleError(res, error, "Erro ao atualizar organizacao.")
   }
@@ -560,26 +598,71 @@ router.get("/superadmin/gerentes", async (req, res) => {
   if (!guard(req, res)) return
   try {
     const [orgs] = await centralPool.query(
-      "SELECT id_organizacao, nome FROM organizacoes_auth WHERE ativo = 'S' AND db_name IS NOT NULL ORDER BY nome"
+      "SELECT id_organizacao, nome, ativo, db_name FROM organizacoes_auth ORDER BY nome"
     )
 
     const result = []
     for (const org of orgs) {
+      const seen = new Set()
+      const pushGerente = async (g, source) => {
+        const key = normalizeCPF(g.cpf || g.login) || String(g.login || g.id_usuario)
+        if (seen.has(key)) return
+        seen.add(key)
+
+        const gerente = await resolveAuthUserDisplayName({
+          ...g,
+          role: "GERENTE",
+          empresa_id: org.id_organizacao,
+          source,
+        })
+        result.push({
+          ...gerente,
+          empresa_id: org.id_organizacao,
+          organizacao_nome: org.nome,
+          source,
+        })
+      }
+
+      if (org.db_name) {
+        try {
+          const gerentes = await queryTenantByEmpresaId(
+            org.id_organizacao,
+            "SELECT id_usuario, nome, nome_completo, login, cpf, ativo, empresa_id, ultimo_login FROM usuarios_auth WHERE role = 'GERENTE' ORDER BY COALESCE(nome_completo, nome, login)"
+          )
+          for (const g of gerentes) {
+            await pushGerente(g, "tenant")
+          }
+        } catch (error) {
+          console.warn(
+            `[superadmin] Falha ao listar gerentes do tenant da organizacao ${org.id_organizacao}:`,
+            error?.message ?? error
+          )
+        }
+      }
+
       try {
-        const gerentes = await queryTenantByEmpresaId(
-          org.id_organizacao,
-          "SELECT id_usuario, nome, nome_completo, login, cpf, ativo, empresa_id, ultimo_login FROM usuarios_auth WHERE role = 'GERENTE' ORDER BY COALESCE(nome_completo, nome, login)"
+        const [gerentesCentrais] = await centralPool.query(
+          "SELECT id_usuario, nome, nome_completo, login, cpf, ativo, empresa_id, ultimo_login FROM usuarios_auth WHERE role = 'GERENTE' AND empresa_id = ? ORDER BY COALESCE(nome_completo, nome, login)",
+          [org.id_organizacao]
         )
-        for (const g of gerentes) {
+        for (const g of gerentesCentrais) {
           const gerente = await resolveAuthUserDisplayName({
             ...g,
             role: "GERENTE",
             empresa_id: org.id_organizacao,
-            source: "tenant",
+            source: "central",
           })
-          result.push({ ...gerente, empresa_id: org.id_organizacao, organizacao_nome: org.nome })
+          const key = normalizeCPF(gerente.cpf || gerente.login) || String(gerente.login || gerente.id_usuario)
+          if (seen.has(key)) continue
+          seen.add(key)
+          result.push({ ...gerente, empresa_id: org.id_organizacao, organizacao_nome: org.nome, source: "central" })
         }
-      } catch {}
+      } catch (error) {
+        console.warn(
+          `[superadmin] Falha ao listar gerentes centrais da organizacao ${org.id_organizacao}:`,
+          error?.message ?? error
+        )
+      }
     }
 
     result.sort((a, b) => String(a.organizacao_nome).localeCompare(String(b.organizacao_nome)) || String(a.nome_completo ?? "").localeCompare(String(b.nome_completo ?? "")))
@@ -683,21 +766,25 @@ router.patch("/superadmin/gerentes/:id", async (req, res) => {
   if (!guard(req, res)) return
   const { id } = req.params
   const empresaId = req.query.empresa_id
+  const source = req.query.source === "central" ? "central" : "tenant"
   const { empresaId: novaEmpresaId, novaSenha } = req.body
 
-  if (!empresaId) return res.status(400).json({ error: "empresa_id obrigatorio como query param" })
+  if (!empresaId && source !== "central") return res.status(400).json({ error: "empresa_id obrigatorio como query param" })
 
   try {
-    const gerenteRows = await queryTenantByEmpresaId(
-      empresaId,
-      "SELECT * FROM usuarios_auth WHERE id_usuario = ? LIMIT 1",
-      [id]
-    )
+    const gerenteRows = source === "central"
+      ? (await centralPool.query("SELECT * FROM usuarios_auth WHERE id_usuario = ? AND role = 'GERENTE' LIMIT 1", [id]))[0]
+      : await queryTenantByEmpresaId(
+          empresaId,
+          "SELECT * FROM usuarios_auth WHERE id_usuario = ? LIMIT 1",
+          [id]
+        )
     if (!gerenteRows.length) return res.status(404).json({ error: "Gerente nao encontrado" })
     const gerente = gerenteRows[0]
+    const origemEmpresaId = empresaId ?? gerente.empresa_id
 
     // Mover de organizacao
-    if (novaEmpresaId && String(novaEmpresaId) !== String(empresaId)) {
+    if (novaEmpresaId && String(novaEmpresaId) !== String(origemEmpresaId)) {
       const destDb = await getTenantDbNameByEmpresaId(novaEmpresaId)
       if (!destDb) return res.status(422).json({ error: "Database tenant de destino nao provisionado" })
 
@@ -714,21 +801,32 @@ router.patch("/superadmin/gerentes/:id", async (req, res) => {
         "INSERT INTO usuarios_auth (login, senha_hash, role, empresa_id, cpf, nome, nome_completo, ativo, senha_temporaria) VALUES (?, ?, 'GERENTE', ?, ?, ?, ?, 'S', 'N')",
         [gerente.login, hash, novaEmpresaId, gerente.cpf, gerente.nome, gerente.nome_completo]
       )
-      await queryTenantByEmpresaId(empresaId, "DELETE FROM usuarios_auth WHERE id_usuario = ?", [id])
-      auditAction(req, "MOVE_GERENTE", `id:${id} de:${empresaId} para:${novaEmpresaId}`)
+      if (source === "central") {
+        await centralPool.query("DELETE FROM usuarios_auth WHERE id_usuario = ?", [id])
+      } else {
+        await queryTenantByEmpresaId(empresaId, "DELETE FROM usuarios_auth WHERE id_usuario = ?", [id])
+      }
+      auditAction(req, "MOVE_GERENTE", `id:${id} de:${origemEmpresaId} para:${novaEmpresaId}`)
       return res.json({ message: "Gerente movido para nova organizacao." })
     }
 
     if (novaSenha) {
       const hash = await bcrypt.hash(novaSenha, 10)
-      await queryTenantByEmpresaId(
-        empresaId,
-        "UPDATE usuarios_auth SET senha_hash = ?, senha_temporaria = 'N' WHERE id_usuario = ?",
-        [hash, id]
-      )
+      if (source === "central") {
+        await centralPool.query(
+          "UPDATE usuarios_auth SET senha_hash = ?, senha_temporaria = 'N' WHERE id_usuario = ?",
+          [hash, id]
+        )
+      } else {
+        await queryTenantByEmpresaId(
+          empresaId,
+          "UPDATE usuarios_auth SET senha_hash = ?, senha_temporaria = 'N' WHERE id_usuario = ?",
+          [hash, id]
+        )
+      }
     }
 
-    auditAction(req, "UPDATE_GERENTE", `id:${id} empresa:${empresaId}`)
+    auditAction(req, "UPDATE_GERENTE", `id:${id} empresa:${origemEmpresaId} source:${source}`)
     return res.json({ message: "Gerente atualizado com sucesso." })
   } catch (error) {
     return handleError(res, error, "Erro ao atualizar gerente.")
@@ -740,18 +838,26 @@ router.patch("/superadmin/gerentes/:id/status", async (req, res) => {
   if (!guard(req, res)) return
   const { id } = req.params
   const empresaId = req.query.empresa_id
+  const source = req.query.source === "central" ? "central" : "tenant"
   const { ativo } = req.body
 
-  if (!empresaId) return res.status(400).json({ error: "empresa_id obrigatorio" })
+  if (!empresaId && source !== "central") return res.status(400).json({ error: "empresa_id obrigatorio" })
   if (!["S", "N"].includes(ativo)) return res.status(400).json({ error: "ativo deve ser S ou N" })
 
   try {
-    await queryTenantByEmpresaId(
-      empresaId,
-      "UPDATE usuarios_auth SET ativo = ? WHERE id_usuario = ?",
-      [ativo, id]
-    )
-    auditAction(req, ativo === "S" ? "ACTIVATE_GERENTE" : "DEACTIVATE_GERENTE", `id:${id} empresa:${empresaId}`)
+    if (source === "central") {
+      await centralPool.query(
+        "UPDATE usuarios_auth SET ativo = ? WHERE id_usuario = ?",
+        [ativo, id]
+      )
+    } else {
+      await queryTenantByEmpresaId(
+        empresaId,
+        "UPDATE usuarios_auth SET ativo = ? WHERE id_usuario = ?",
+        [ativo, id]
+      )
+    }
+    auditAction(req, ativo === "S" ? "ACTIVATE_GERENTE" : "DEACTIVATE_GERENTE", `id:${id} empresa:${empresaId ?? "central"} source:${source}`)
     return res.json({ message: `Gerente ${ativo === "S" ? "ativado" : "desativado"} com sucesso.` })
   } catch (error) {
     return handleError(res, error, "Erro ao alterar status do gerente.")
@@ -763,14 +869,15 @@ router.delete("/superadmin/gerentes/:id", async (req, res) => {
   if (!guard(req, res)) return
   const { id } = req.params
   const empresaId = req.query.empresa_id
+  const source = req.query.source === "central" ? "central" : "tenant"
 
   try {
-    if (empresaId) {
-      await queryTenantByEmpresaId(empresaId, "DELETE FROM usuarios_auth WHERE id_usuario = ?", [id])
-    } else {
+    if (source === "central" || !empresaId) {
       await centralPool.query("DELETE FROM usuarios_auth WHERE id_usuario = ?", [id])
+    } else {
+      await queryTenantByEmpresaId(empresaId, "DELETE FROM usuarios_auth WHERE id_usuario = ?", [id])
     }
-    auditAction(req, "DELETE_GERENTE", `id:${id} empresa:${empresaId ?? "central"}`)
+    auditAction(req, "DELETE_GERENTE", `id:${id} empresa:${empresaId ?? "central"} source:${source}`)
     return res.json({ message: "Gerente removido com sucesso." })
   } catch (error) {
     return handleError(res, error, "Erro ao remover gerente.")
@@ -780,6 +887,41 @@ router.delete("/superadmin/gerentes/:id", async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ROTAS DE SINCRONIZACAO DE VENDEDORES
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// POST /superadmin/organizacoes/:id/provisionar-schema
+router.post("/superadmin/organizacoes/:id/provisionar-schema", async (req, res) => {
+  if (!guard(req, res)) return
+  const { id } = req.params
+
+  try {
+    const [orgRows] = await centralPool.query("SELECT * FROM organizacoes_auth WHERE id_organizacao = ?", [id])
+    if (!orgRows.length) return res.status(404).json({ error: "Organizacao nao encontrada" })
+    const org = orgRows[0]
+
+    const password = await decryptOraclePasswordForOrg(org)
+    const connectString = normalizeConnectString(org.oracle_connect_string)
+
+    const oracleSchema = await provisionOracleSchemaObjects({
+      user: org.oracle_user,
+      password,
+      connectString,
+    })
+    const oracleViews = await provisionOracleViews({
+      user: org.oracle_user,
+      password,
+      connectString,
+    })
+
+    auditAction(req, "PROVISION_ORG_SCHEMA", `org:${id}:${org.nome}`)
+    return res.json({
+      message: "Verificacao concluida.",
+      oracle_schema: oracleSchema,
+      oracle_views: oracleViews,
+    })
+  } catch (error) {
+    return handleError(res, error, "Erro ao provisionar schema Oracle da organizacao.")
+  }
+})
 
 // POST /superadmin/organizacoes/:id/sync-vendedores
 router.post("/superadmin/organizacoes/:id/sync-vendedores", async (req, res) => {

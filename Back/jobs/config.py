@@ -29,8 +29,8 @@ def mysql_config() -> dict[str, object]:
     return {
         "host": os.getenv("MYSQL_HOST") or os.getenv("DB_HOST") or "localhost",
         "port": int(os.getenv("MYSQL_PORT", "3306")),
-        "user": os.getenv("MYSQL_USER") or os.getenv("DB_USER"),
-        "password": os.getenv("MYSQL_PASSWORD") or os.getenv("DB_PASSWORD"),
+        "user": os.getenv("MYSQL_USER"),
+        "password": os.getenv("MYSQL_PASSWORD"),
         "database": (
             os.getenv("MYSQL_DATABASE")
             or os.getenv("MYSQL_DB_NAME")

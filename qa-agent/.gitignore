@@ -1,0 +1,8 @@
+node_modules/
+.env
+reports/
+test-results/
+screenshots/
+videos/
+logs/*.json
+playwright/.cache/

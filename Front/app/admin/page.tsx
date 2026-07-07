@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   Building2, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, LogOut,
-  Plus, RefreshCw, Search, Trash2, UserCog, Users, Wifi, X,
+  Plus, RefreshCw, Search, Trash2, UserCog, Users, Wifi, Wrench, X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -24,6 +24,28 @@ interface Org {
   criado_em: string
 }
 
+interface OracleSchemaProvisionResult {
+  ok: boolean
+  tables: { created: string[]; skipped: string[] }
+  sequences: { created: string[]; skipped: string[] }
+  indexes: { created: string[]; skipped: string[] }
+  comments: number
+  triggers: string[]
+  failed: { type: string; name: string | null; error: string }[]
+}
+
+interface OracleViewsProvisionResult {
+  ok: boolean
+  created: string[]
+  updated: string[]
+}
+
+interface ProvisionSchemaResponse {
+  message: string
+  oracle_schema: OracleSchemaProvisionResult
+  oracle_views: OracleViewsProvisionResult
+}
+
 interface Gerente {
   id_usuario: number
   nome_completo: string | null
@@ -33,6 +55,7 @@ interface Gerente {
   empresa_id: number
   organizacao_nome: string
   ultimo_login: string | null
+  source?: "tenant" | "central"
 }
 
 interface FuncionarioPreview {
@@ -248,6 +271,7 @@ export default function AdminPage() {
   const [showOrgForm, setShowOrgForm] = useState(false)
   const [editOrg, setEditOrg] = useState<(OrgFormState & { _id: number }) | null>(null)
   const [syncingOrg, setSyncingOrg] = useState<number | null>(null)
+  const [provisioningOrg, setProvisioningOrg] = useState<number | null>(null)
 
   // Gerente form state
   const [showGerenteForm, setShowGerenteForm] = useState(false)
@@ -261,6 +285,7 @@ export default function AdminPage() {
   const [editGerente, setEditGerente] = useState<Gerente | null>(null)
   const [editGerenteNovaEmpresa, setEditGerenteNovaEmpresa] = useState("")
   const [editGerenteSenha, setEditGerenteSenha] = useState("")
+  const [expandedGerenteOrgs, setExpandedGerenteOrgs] = useState<Record<string, boolean>>({})
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -346,6 +371,39 @@ export default function AdminPage() {
     }
   }
 
+  async function onProvisionSchema(org: Org) {
+    setProvisioningOrg(org.id_organizacao)
+    try {
+      const r = await apiFetch<ProvisionSchemaResponse>(`/api/superadmin/organizacoes/${org.id_organizacao}/provisionar-schema`, { method: "POST" })
+      const s = r.oracle_schema
+      const v = r.oracle_views
+
+      const createdParts: string[] = []
+      if (s.tables.created.length) createdParts.push(`${s.tables.created.length} tabela(s)`)
+      if (s.sequences.created.length) createdParts.push(`${s.sequences.created.length} sequence(s)`)
+      if (s.indexes.created.length) createdParts.push(`${s.indexes.created.length} índice(s)`)
+      if (s.triggers.length) createdParts.push(`${s.triggers.length} trigger(s)`)
+      if (v.created.length) createdParts.push(`${v.created.length} view(s)`)
+
+      if (s.failed.length > 0) {
+        console.error("Falhas ao provisionar schema Oracle:", s.failed)
+        toast.error(
+          `${s.failed.length} objeto(s) falharam ao criar` +
+          (createdParts.length ? ` (mas criou: ${createdParts.join(", ")})` : "") +
+          `. Detalhes no console.`
+        )
+      } else if (createdParts.length === 0) {
+        toast.success(`Tudo em dia — nenhuma tabela, sequence, índice, trigger ou view faltando (${v.updated.length} view(s) revalidada(s)).`)
+      } else {
+        toast.success(`Banco atualizado: criado ${createdParts.join(", ")}.`)
+      }
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setProvisioningOrg(null)
+    }
+  }
+
   // ── Gerente actions ──────────────────────────────────────────────────────────
 
   async function onLookupFuncionario() {
@@ -388,7 +446,7 @@ export default function AdminPage() {
     if (!editGerente) return
     setSavingGerente(true)
     try {
-      await apiFetch(`/api/superadmin/gerentes/${editGerente.id_usuario}?empresa_id=${editGerente.empresa_id}`, {
+      await apiFetch(`/api/superadmin/gerentes/${editGerente.id_usuario}${gerenteQuery(editGerente)}`, {
         method: "PATCH",
         body: JSON.stringify({ empresaId: editGerenteNovaEmpresa ? Number(editGerenteNovaEmpresa) : undefined, novaSenha: editGerenteSenha || undefined }),
       })
@@ -404,25 +462,38 @@ export default function AdminPage() {
 
   async function onToggleGerente(g: Gerente) {
     const novoAtivo = g.ativo === "S" ? "N" : "S"
-    await apiFetch(`/api/superadmin/gerentes/${g.id_usuario}/status?empresa_id=${g.empresa_id}`, { method: "PATCH", body: JSON.stringify({ ativo: novoAtivo }) })
+    await apiFetch(`/api/superadmin/gerentes/${g.id_usuario}/status${gerenteQuery(g)}`, { method: "PATCH", body: JSON.stringify({ ativo: novoAtivo }) })
     toast.success(`Gerente ${novoAtivo === "S" ? "ativado" : "desativado"}.`)
     void fetchData()
   }
 
   async function onDeleteGerente(g: Gerente) {
     if (!confirm(`Excluir gerente "${g.nome_completo ?? g.login}"?`)) return
-    await apiFetch(`/api/superadmin/gerentes/${g.id_usuario}?empresa_id=${g.empresa_id}`, { method: "DELETE" })
+    await apiFetch(`/api/superadmin/gerentes/${g.id_usuario}${gerenteQuery(g)}`, { method: "DELETE" })
     toast.success("Gerente removido.")
     void fetchData()
   }
 
   // ── Agrupamento de gerentes por org ──────────────────────────────────────────
-  const gerentesPorOrg = gerentes.reduce<Record<string, { nome: string; items: Gerente[] }>>((acc, g) => {
+  function gerenteQuery(g: Gerente) {
+    const params = new URLSearchParams()
+    if (g.empresa_id) params.set("empresa_id", String(g.empresa_id))
+    if (g.source === "central") params.set("source", "central")
+    const query = params.toString()
+    return query ? `?${query}` : ""
+  }
+
+  const gerentesPorOrg = orgs.reduce<Record<string, { nome: string; items: Gerente[] }>>((acc, org) => {
+    acc[String(org.id_organizacao)] = { nome: org.nome, items: [] }
+    return acc
+  }, {})
+
+  gerentes.reduce<Record<string, { nome: string; items: Gerente[] }>>((acc, g) => {
     const key = String(g.empresa_id)
     if (!acc[key]) acc[key] = { nome: g.organizacao_nome, items: [] }
     acc[key].items.push(g)
     return acc
-  }, {})
+  }, gerentesPorOrg)
 
   const activeOrgs = orgs.filter((o) => o.ativo === "S")
 
@@ -521,6 +592,14 @@ export default function AdminPage() {
                             <div className="flex flex-wrap gap-1.5">
                               <button className={btnSuccess} onClick={() => onSyncOrg(org)} disabled={syncingOrg === org.id_organizacao}>
                                 {syncingOrg === org.id_organizacao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}Sync
+                              </button>
+                              <button
+                                className={btnSecondary + " py-1.5 text-xs"}
+                                onClick={() => onProvisionSchema(org)}
+                                disabled={provisioningOrg === org.id_organizacao}
+                                title="Cria no Oracle da organização as tabelas, sequences, índices, triggers e views que estiverem faltando"
+                              >
+                                {provisioningOrg === org.id_organizacao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}Atualizar banco
                               </button>
                               <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => {
                                 setEditOrg({ nome: org.nome, codigo: org.codigo, oracleUser: org.oracle_user ?? "", oraclePassword: "", oracleConnectString: org.oracle_connect_string ?? "", ativo: org.ativo, _id: org.id_organizacao } as OrgFormState & { _id: number })
@@ -641,15 +720,32 @@ export default function AdminPage() {
               <div className="py-16 text-center text-muted-foreground">Nenhum gerente cadastrado.</div>
             ) : (
               <div className="space-y-4">
-                {Object.entries(gerentesPorOrg).map(([empresaId, { nome, items }]) => (
+                {Object.entries(gerentesPorOrg).map(([empresaId, { nome, items }]) => {
+                  const isExpanded = expandedGerenteOrgs[empresaId] ?? false
+
+                  return (
                   <div key={empresaId} className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] overflow-hidden">
-                    <div className="flex items-center justify-between border-b border-[#1c2940] px-4 py-3">
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      onClick={() => setExpandedGerenteOrgs((current) => ({ ...current, [empresaId]: !isExpanded }))}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]",
+                        isExpanded && "border-b border-[#1c2940]"
+                      )}
+                    >
                       <span className="text-sm font-semibold text-foreground">{nome}</span>
-                      <span className="text-xs text-muted-foreground">{items.length} gerente(s)</span>
-                    </div>
+                        <span className="flex items-center gap-3">
+                          {isExpanded && <span className="text-xs text-muted-foreground">{items.length} gerente(s)</span>}
+                        {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                      </span>
+                    </button>
+                    {isExpanded && (
                     <div className="divide-y divide-[#1c2940]/60">
-                      {items.map((g) => (
-                        <div key={g.id_usuario} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                      {items.length === 0 ? (
+                        <div className="px-4 py-4 text-sm text-muted-foreground">Nenhum gerente cadastrado nesta organização.</div>
+                      ) : items.map((g) => (
+                        <div key={`${g.source ?? "tenant"}-${g.empresa_id}-${g.id_usuario}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                           <div>
                             <p className="text-sm font-medium">{g.nome_completo ?? g.login}</p>
                             <p className="text-xs text-muted-foreground">Login: {g.login}{g.cpf ? ` · CPF: ${g.cpf}` : ""}</p>
@@ -669,8 +765,10 @@ export default function AdminPage() {
                         </div>
                       ))}
                     </div>
+                    )}
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

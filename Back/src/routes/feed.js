@@ -11,8 +11,11 @@ import {
   postFeedPost,
   putFeedPost,
 } from "../controllers/feedController.js"
+import { requireAuth } from "../middleware/auth.js"
 
 const router = express.Router()
+
+router.use(requireAuth)
 
 router.get("/feed/posts", getFeedPosts)
 router.get("/feed/usuarios", getFeedRecipients)

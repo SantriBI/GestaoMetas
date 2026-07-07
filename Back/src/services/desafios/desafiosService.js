@@ -1,8 +1,11 @@
 import { readFile } from "node:fs/promises"
-import { query as oracleQuery } from "../../db/oracle.js"
-import { resolveOracleObjectNames } from "../../db/oracleObjectNames.js"
 import { calculateParticipantProgress } from "./desafiosProgressService.js"
 import { calculateBonusSummary, calculateChallengeImpact, calculateDraftChallengeImpact } from "./desafiosImpactService.js"
+import { getDesafiosDbContext, queryWithDesafiosDbContext, runWithDesafiosDbContext } from "./desafiosDbContext.js"
+import {
+  buildSellerInCondition,
+  getAllowedSellerCodesByEmpresaId,
+} from "../tenantSellerScope.js"
 
 const TABLE_REQUIREMENTS = [
   {
@@ -97,7 +100,7 @@ function boolFromOracle(value) {
 }
 
 async function getChallengeTableNames() {
-  return resolveOracleObjectNames(TABLE_REQUIREMENTS.map((item) => item.key))
+  return Object.fromEntries(TABLE_REQUIREMENTS.map((item) => [item.key, item.legacyName]))
 }
 
 async function getChallengeGoalsColumns() {
@@ -138,8 +141,44 @@ async function resolveChallengeSql(sql) {
     .reduce((statement, item) => statement.replaceAll(item.legacyName, resolvedNames[item.key]), sql)
 }
 
-async function query(sql, params) {
-  return oracleQuery(await resolveChallengeSql(sql), params)
+async function query(sql, params = {}, options = {}) {
+  return queryWithDesafiosDbContext(await resolveChallengeSql(sql), params, options)
+}
+
+function withChallengeContext(contextOrCallback, maybeCallback) {
+  if (typeof contextOrCallback === "function") {
+    return runWithDesafiosDbContext(getDesafiosDbContext(), contextOrCallback)
+  }
+
+  return runWithDesafiosDbContext(
+    { ...getDesafiosDbContext(), ...(contextOrCallback ?? {}) },
+    maybeCallback
+  )
+}
+
+function getContextEmpresaId() {
+  return getDesafiosDbContext().empresaId ?? null
+}
+
+function applyContextEmpresaId(payload) {
+  const empresaId = getContextEmpresaId()
+  if (!empresaId) return payload
+
+  return {
+    ...payload,
+    empresaId,
+  }
+}
+
+function buildEmpresaFilter(alias = null) {
+  const empresaId = getContextEmpresaId()
+  if (!empresaId) return { clause: "", binds: {} }
+
+  const column = alias ? `${alias}.empresa_id` : "empresa_id"
+  return {
+    clause: `${column} = :empresa_id`,
+    binds: { empresa_id: empresaId },
+  }
 }
 
 function normalizeRow(row) {
@@ -468,15 +507,20 @@ async function insertChallengeMeta(idDesafio, meta, index) {
 }
 
 async function resolveTargetSellers(payload) {
-  const {
-    rankingVendorsView: rankingView,
-    rankingVendorsDayView: rankingDayView,
-  } = await resolveOracleObjectNames(["rankingVendorsView", "rankingVendorsDayView"])
+  const contextEmpresaId = getContextEmpresaId()
+  const { rankingView, rankingDayView } = await getRankingViewNames()
+  const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(contextEmpresaId)
   const explicitSellers = Array.isArray(payload.sellerIds)
     ? payload.sellerIds.map(Number).filter(Number.isFinite)
     : []
 
   if (explicitSellers.length) {
+    const explicitAllowed = allowedSellerCodes
+      ? explicitSellers.filter((sellerId) => allowedSellerCodes.has(String(sellerId)))
+      : explicitSellers
+    const where = [explicitAllowed.length ? `sk_vendedor IN (${explicitAllowed.join(",")})` : "1 = 0"]
+    const binds = {}
+
     const rows = await query(
       `
       SELECT DISTINCT sk_vendedor, nome_vendedor, sk_empresa
@@ -487,8 +531,9 @@ async function resolveTargetSellers(payload) {
         SELECT sk_vendedor, nome_vendedor, sk_empresa
         FROM ${rankingDayView}
       )
-      WHERE sk_vendedor IN (${explicitSellers.join(",")})
-      `
+      WHERE ${where.join(" AND ")}
+      `,
+      binds
     )
     return rows.map((row) => normalizeRow(row)).map((row) => ({
       skVendedor: row.sk_vendedor,
@@ -499,9 +544,10 @@ async function resolveTargetSellers(payload) {
 
   const binds = {}
   const where = []
-  if (payload.empresaId) {
-    where.push("base.sk_empresa = :empresa_id")
-    binds.empresa_id = payload.empresaId
+  const sellerScope = buildSellerInCondition("base.sk_vendedor", allowedSellerCodes, "target_seller")
+  if (allowedSellerCodes) {
+    where.push(sellerScope.clause)
+    Object.assign(binds, sellerScope.binds)
   }
 
   const rows = await query(
@@ -524,6 +570,13 @@ async function resolveTargetSellers(payload) {
     nomeVendedor: row.nome_vendedor ?? `Vendedor ${row.sk_vendedor}`,
     empresaId: row.sk_empresa ?? null,
   }))
+}
+
+async function getRankingViewNames() {
+  return {
+    rankingView: "VW_RANKING_VENDEDORES",
+    rankingDayView: "VW_RANKING_VENDEDORES_DIA",
+  }
 }
 
 async function insertLog(idDesafio, evento, descricao, skVendedor = null) {
@@ -763,7 +816,8 @@ function validatePayload(payload) {
   }
 }
 
-export async function getChallengeModuleSetup() {
+export async function getChallengeModuleSetup(context = {}) {
+  return withChallengeContext(context, async () => {
   const readiness = await inspectModuleReadiness()
   const sqlScript = await readModuleSqlScript()
 
@@ -781,13 +835,17 @@ export async function getChallengeModuleSetup() {
       "Recarregue a pagina para liberar criacao, edicao e acompanhamento das campanhas.",
     ],
   }
+  })
 }
 
-export async function listChallengeMetadata() {
-  const {
-    rankingVendorsView: rankingView,
-    rankingVendorsDayView: rankingDayView,
-  } = await resolveOracleObjectNames(["rankingVendorsView", "rankingVendorsDayView"])
+export async function listChallengeMetadata(context = {}) {
+  return withChallengeContext(context, async () => {
+  const contextEmpresaId = getContextEmpresaId()
+  const { rankingView, rankingDayView } = await getRankingViewNames()
+  const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(contextEmpresaId)
+  const sellerScope = buildSellerInCondition("sk_vendedor", allowedSellerCodes, "metadata_seller")
+  const where = allowedSellerCodes ? `WHERE ${sellerScope.clause}` : ""
+  const binds = allowedSellerCodes ? sellerScope.binds : {}
   const rows = await query(
     `
     SELECT DISTINCT sk_vendedor, nome_vendedor, sk_empresa
@@ -798,8 +856,10 @@ export async function listChallengeMetadata() {
       SELECT sk_vendedor, nome_vendedor, sk_empresa
       FROM ${rankingDayView}
     )
+    ${where}
     ORDER BY nome_vendedor
-    `
+    `,
+    binds
   )
 
   return {
@@ -814,9 +874,11 @@ export async function listChallengeMetadata() {
     }),
     themes: ["amber", "emerald", "electric", "royal"],
   }
+  })
 }
 
-export async function searchChallengeProducts(rawSearch) {
+export async function searchChallengeProducts(rawSearch, context = {}) {
+  return withChallengeContext(context, async () => {
   const search = buildCatalogSearch(rawSearch)
   if (!search.ready) {
     return { items: [] }
@@ -878,9 +940,11 @@ export async function searchChallengeProducts(rawSearch) {
       }
     }),
   }
+  })
 }
 
-export async function searchChallengeBrands(rawSearch) {
+export async function searchChallengeBrands(rawSearch, context = {}) {
+  return withChallengeContext(context, async () => {
   const search = buildCatalogSearch(rawSearch)
   if (!search.ready) {
     return { items: [] }
@@ -943,12 +1007,15 @@ export async function searchChallengeBrands(rawSearch) {
       }
     }),
   }
+  })
 }
 
-export async function previewChallengeImpact(payload) {
-  validatePayload(payload)
-  const targetSellers = await resolveTargetSellers(payload)
-  const impact = await calculateDraftChallengeImpact(payload, targetSellers)
+export async function previewChallengeImpact(payload, context = {}) {
+  return withChallengeContext(context, async () => {
+  const scopedPayload = applyContextEmpresaId(payload)
+  validatePayload(scopedPayload)
+  const targetSellers = await resolveTargetSellers(scopedPayload)
+  const impact = await calculateDraftChallengeImpact(scopedPayload, targetSellers)
 
   return {
     impact,
@@ -957,9 +1024,11 @@ export async function previewChallengeImpact(payload) {
       companies: Array.from(new Set(targetSellers.map((seller) => String(seller.empresaId ?? "")).filter(Boolean))).length,
     },
   }
+  })
 }
 
-export async function listChallenges() {
+export async function listChallenges(context = {}) {
+  return withChallengeContext(context, async () => {
   const readiness = await inspectModuleReadiness()
   if (!readiness.ready) {
     return {
@@ -985,12 +1054,16 @@ export async function listChallenges() {
     }
   }
 
+  const empresaFilter = buildEmpresaFilter()
+  const where = empresaFilter.clause ? `WHERE ${empresaFilter.clause}` : ""
   const rows = await query(
     `
     SELECT *
     FROM DESAFIOS_COMERCIAIS
+    ${where}
     ORDER BY data_inicio DESC, id_desafio DESC
-    `
+    `,
+    empresaFilter.binds
   )
 
   const items = await Promise.all(
@@ -1020,9 +1093,11 @@ export async function listChallenges() {
     initialization: { ready: true, code: null, error: null },
     mock: false,
   }
+  })
 }
 
-export async function getChallengeById(idDesafio) {
+export async function getChallengeById(idDesafio, context = {}) {
+  return withChallengeContext(context, async () => {
   const ready = await ensureTablesReady()
   if (!ready) {
     throw createServiceError(
@@ -1033,25 +1108,31 @@ export async function getChallengeById(idDesafio) {
     )
   }
 
+  const empresaFilter = buildEmpresaFilter()
+  const extraWhere = empresaFilter.clause ? `AND ${empresaFilter.clause}` : ""
   const rows = await query(
     `
     SELECT *
     FROM DESAFIOS_COMERCIAIS
     WHERE id_desafio = :id_desafio
+      ${extraWhere}
     `,
-    { id_desafio: idDesafio }
+    { id_desafio: idDesafio, ...empresaFilter.binds }
   )
   if (!rows.length) throw new Error("Desafio nao encontrado.")
 
   const challenge = await hydrateChallenge(normalizeChallenge(rows[0]))
   return { ...challenge, timeline: await loadTimeline(idDesafio), mock: false }
+  })
 }
 
-export async function createChallenge(payload) {
+export async function createChallenge(payload, context = {}) {
+  return withChallengeContext(context, async () => {
   await ensureModuleReadyForWrite()
-  validatePayload(payload)
+  const scopedPayload = applyContextEmpresaId(payload)
+  validatePayload(scopedPayload)
   const idDesafio = await nextSequenceValue("DESAFIOS_COMERCIAIS_SEQ")
-  const targetSellers = await resolveTargetSellers(payload)
+  const targetSellers = await resolveTargetSellers(scopedPayload)
 
   await query(
     `
@@ -1083,18 +1164,18 @@ export async function createChallenge(payload) {
     `,
     {
       id_desafio: idDesafio,
-      empresa_id: payload.empresaId ?? null,
-      titulo: payload.titulo,
-      descricao: payload.descricao ?? null,
-      data_inicio: normalizeChallengeDate(payload.dataInicio, "start"),
-      data_fim: normalizeChallengeDate(payload.dataFim, "end"),
-      status: resolveChallengeStatus(payload.dataInicio, payload.dataFim),
-      exige_aceite: payload.exigeAceite === false ? "N" : "S",
-      criado_por: payload.criadoPor ?? "Sistema",
+      empresa_id: scopedPayload.empresaId ?? null,
+      titulo: scopedPayload.titulo,
+      descricao: scopedPayload.descricao ?? null,
+      data_inicio: normalizeChallengeDate(scopedPayload.dataInicio, "start"),
+      data_fim: normalizeChallengeDate(scopedPayload.dataFim, "end"),
+      status: resolveChallengeStatus(scopedPayload.dataInicio, scopedPayload.dataFim),
+      exige_aceite: scopedPayload.exigeAceite === false ? "N" : "S",
+      criado_por: scopedPayload.criadoPor ?? "Sistema",
     }
   )
 
-  for (const [index, meta] of payload.metas.entries()) {
+  for (const [index, meta] of scopedPayload.metas.entries()) {
     await insertChallengeMeta(idDesafio, meta, index)
   }
 
@@ -1123,19 +1204,23 @@ export async function createChallenge(payload) {
         id_desafio: idDesafio,
         sk_vendedor: seller.skVendedor,
         nome_vendedor: seller.nomeVendedor,
-        status_participacao: payload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL",
+        status_participacao: scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL",
       }
     )
   }
 
-  await insertLog(idDesafio, "CRIADO", `Desafio publicado com ${payload.metas.length} meta(s).`)
+  await insertLog(idDesafio, "CRIADO", `Desafio publicado com ${scopedPayload.metas.length} meta(s).`)
   return getChallengeById(idDesafio)
+  })
 }
 
-export async function updateChallenge(idDesafio, payload) {
+export async function updateChallenge(idDesafio, payload, context = {}) {
+  return withChallengeContext(context, async () => {
   await ensureModuleReadyForWrite()
-  validatePayload(payload)
-  const targetSellers = await resolveTargetSellers(payload)
+  await assertChallengeInScope(idDesafio)
+  const scopedPayload = applyContextEmpresaId(payload)
+  validatePayload(scopedPayload)
+  const targetSellers = await resolveTargetSellers(scopedPayload)
   await query(
     `
     UPDATE DESAFIOS_COMERCIAIS
@@ -1151,20 +1236,20 @@ export async function updateChallenge(idDesafio, payload) {
     `,
     {
       id_desafio: idDesafio,
-      empresa_id: payload.empresaId ?? null,
-      titulo: payload.titulo,
-      descricao: payload.descricao ?? null,
-      data_inicio: normalizeChallengeDate(payload.dataInicio, "start"),
-      data_fim: normalizeChallengeDate(payload.dataFim, "end"),
-      status: resolveChallengeStatus(payload.dataInicio, payload.dataFim),
-      exige_aceite: payload.exigeAceite === false ? "N" : "S",
+      empresa_id: scopedPayload.empresaId ?? null,
+      titulo: scopedPayload.titulo,
+      descricao: scopedPayload.descricao ?? null,
+      data_inicio: normalizeChallengeDate(scopedPayload.dataInicio, "start"),
+      data_fim: normalizeChallengeDate(scopedPayload.dataFim, "end"),
+      status: resolveChallengeStatus(scopedPayload.dataInicio, scopedPayload.dataFim),
+      exige_aceite: scopedPayload.exigeAceite === false ? "N" : "S",
     }
   )
 
   await query(`DELETE FROM DESAFIOS_COMERCIAIS_PROGRESSO WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
   await query(`DELETE FROM DESAFIOS_COMERCIAIS_VENDEDORES WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
   await query(`DELETE FROM DESAFIOS_COMERCIAIS_METAS WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
-  for (const [index, meta] of payload.metas.entries()) {
+  for (const [index, meta] of scopedPayload.metas.entries()) {
     await insertChallengeMeta(idDesafio, meta, index)
   }
 
@@ -1193,17 +1278,20 @@ export async function updateChallenge(idDesafio, payload) {
         id_desafio: idDesafio,
         sk_vendedor: seller.skVendedor,
         nome_vendedor: seller.nomeVendedor,
-        status_participacao: payload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL",
+        status_participacao: scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL",
       }
     )
   }
 
   await insertLog(idDesafio, "ATUALIZADO", "Desafio reconfigurado pelo gerente.")
   return getChallengeById(idDesafio)
+  })
 }
 
-export async function closeChallenge(idDesafio, status = "ENCERRADO") {
+export async function closeChallenge(idDesafio, status = "ENCERRADO", context = {}) {
+  return withChallengeContext(context, async () => {
   await ensureModuleReadyForWrite()
+  await assertChallengeInScope(idDesafio)
   await query(
     `
     UPDATE DESAFIOS_COMERCIAIS
@@ -1228,6 +1316,25 @@ export async function closeChallenge(idDesafio, status = "ENCERRADO") {
   )
   await insertLog(idDesafio, "ENCERRADO", `Desafio marcado como ${status}.`)
   return getChallengeById(idDesafio)
+  })
+}
+
+async function assertChallengeInScope(idDesafio) {
+  const empresaFilter = buildEmpresaFilter()
+  const extraWhere = empresaFilter.clause ? `AND ${empresaFilter.clause}` : ""
+  const rows = await query(
+    `
+    SELECT id_desafio
+    FROM DESAFIOS_COMERCIAIS
+    WHERE id_desafio = :id_desafio
+      ${extraWhere}
+    `,
+    { id_desafio: idDesafio, ...empresaFilter.binds }
+  )
+
+  if (!rows.length) {
+    throw new Error("Desafio nao encontrado.")
+  }
 }
 
 async function markViewed(idDesafio, skVendedor) {
@@ -1272,7 +1379,8 @@ async function buildSellerChallengeDetail(idDesafio, skVendedor) {
   }
 }
 
-export async function markChallengeSeen(idDesafio, skVendedor) {
+export async function markChallengeSeen(idDesafio, skVendedor, context = {}) {
+  return withChallengeContext(context, async () => {
   const ready = await ensureTablesReady()
   if (!ready) {
     throw createServiceError(
@@ -1283,15 +1391,18 @@ export async function markChallengeSeen(idDesafio, skVendedor) {
     )
   }
 
+  await assertChallengeInScope(idDesafio)
   await markViewed(idDesafio, skVendedor)
   return {
     success: true,
     id: numberValue(idDesafio),
     visualizadoEm: new Date().toISOString(),
   }
+  })
 }
 
-export async function acceptChallenge(idDesafio, skVendedor) {
+export async function acceptChallenge(idDesafio, skVendedor, context = {}) {
+  return withChallengeContext(context, async () => {
   const detail = await getChallengeById(idDesafio)
   if (isClosedChallengeStatus(detail.status)) throw new Error("Nao e possivel aceitar um desafio encerrado.")
   if (!isCampaignWithAcceptance(detail)) throw new Error("Bonus mensal nao precisa de aceite.")
@@ -1316,9 +1427,11 @@ export async function acceptChallenge(idDesafio, skVendedor) {
   )
   await insertLog(idDesafio, "ACEITO", "Desafio aceito pelo vendedor.", skVendedor)
   return buildSellerChallengeDetail(idDesafio, skVendedor)
+  })
 }
 
-export async function declineChallenge(idDesafio, skVendedor) {
+export async function declineChallenge(idDesafio, skVendedor, context = {}) {
+  return withChallengeContext(context, async () => {
   const detail = await getChallengeById(idDesafio)
   if (isClosedChallengeStatus(detail.status)) throw new Error("Nao e possivel recusar um desafio encerrado.")
   if (!isCampaignWithAcceptance(detail)) throw new Error("Bonus mensal nao precisa de aceite.")
@@ -1344,9 +1457,11 @@ export async function declineChallenge(idDesafio, skVendedor) {
 
   await insertLog(idDesafio, "RECUSADO", "Desafio recusado pelo vendedor.", skVendedor)
   return buildSellerChallengeDetail(idDesafio, skVendedor)
+  })
 }
 
-export async function refreshChallengeProgress(idDesafio, sellerFilter = null) {
+export async function refreshChallengeProgress(idDesafio, sellerFilter = null, context = {}) {
+  return withChallengeContext(context, async () => {
   const ready = await ensureTablesReady()
   if (!ready) {
     throw createServiceError(
@@ -1357,7 +1472,17 @@ export async function refreshChallengeProgress(idDesafio, sellerFilter = null) {
     )
   }
 
-  const challengeRows = await query(`SELECT * FROM DESAFIOS_COMERCIAIS WHERE id_desafio = :id_desafio`, { id_desafio: idDesafio })
+  const empresaFilter = buildEmpresaFilter()
+  const extraWhere = empresaFilter.clause ? `AND ${empresaFilter.clause}` : ""
+  const challengeRows = await query(
+    `
+    SELECT *
+    FROM DESAFIOS_COMERCIAIS
+    WHERE id_desafio = :id_desafio
+      ${extraWhere}
+    `,
+    { id_desafio: idDesafio, ...empresaFilter.binds }
+  )
   if (!challengeRows.length) throw new Error("Desafio nao encontrado.")
 
   const challenge = normalizeChallenge(challengeRows[0])
@@ -1381,9 +1506,11 @@ export async function refreshChallengeProgress(idDesafio, sellerFilter = null) {
 
   const refreshed = await getChallengeById(idDesafio)
   return { challenge: refreshed, participants: sellerFilter ? details : refreshed.participants, mock: false }
+  })
 }
 
-export async function getChallengeParticipants(idDesafio) {
+export async function getChallengeParticipants(idDesafio, context = {}) {
+  return withChallengeContext(context, async () => {
   const refreshed = await refreshChallengeProgress(idDesafio)
   return {
     challenge: {
@@ -1394,9 +1521,11 @@ export async function getChallengeParticipants(idDesafio) {
     participants: refreshed.challenge.participants,
     stats: refreshed.challenge.stats,
   }
+  })
 }
 
-export async function listSellerChallenges(skVendedor, mode = "all") {
+export async function listSellerChallenges(skVendedor, mode = "all", context = {}) {
+  return withChallengeContext(context, async () => {
   const readiness = await inspectModuleReadiness()
   if (!readiness.ready) {
     return {
@@ -1406,6 +1535,8 @@ export async function listSellerChallenges(skVendedor, mode = "all") {
     }
   }
 
+  const empresaFilter = buildEmpresaFilter("d")
+  const extraWhere = empresaFilter.clause ? `AND ${empresaFilter.clause}` : ""
   const rows = await query(
     `
     SELECT d.*
@@ -1413,9 +1544,10 @@ export async function listSellerChallenges(skVendedor, mode = "all") {
     JOIN DESAFIOS_COMERCIAIS_VENDEDORES v
       ON v.id_desafio = d.id_desafio
     WHERE v.sk_vendedor = :sk_vendedor
+      ${extraWhere}
     ORDER BY d.data_inicio DESC, d.id_desafio DESC
     `,
-    { sk_vendedor: skVendedor }
+    { sk_vendedor: skVendedor, ...empresaFilter.binds }
   )
 
   const items = await Promise.all(
@@ -1445,9 +1577,11 @@ export async function listSellerChallenges(skVendedor, mode = "all") {
     },
     mock: false,
   }
+  })
 }
 
-export async function getSellerChallengeAlert(skVendedor) {
+export async function getSellerChallengeAlert(skVendedor, context = {}) {
+  return withChallengeContext(context, async () => {
   const readiness = await inspectModuleReadiness()
   if (!readiness.ready) {
     return {
@@ -1458,6 +1592,8 @@ export async function getSellerChallengeAlert(skVendedor) {
     }
   }
 
+  const empresaFilter = buildEmpresaFilter("d")
+  const extraWhere = empresaFilter.clause ? `AND ${empresaFilter.clause}` : ""
   const rows = await query(
     `
     SELECT d.id_desafio,
@@ -1472,11 +1608,12 @@ export async function getSellerChallengeAlert(skVendedor) {
     JOIN DESAFIOS_COMERCIAIS_VENDEDORES v
       ON v.id_desafio = d.id_desafio
     WHERE v.sk_vendedor = :sk_vendedor
+      ${extraWhere}
       AND d.status IN ('ATIVO', 'AGENDADO')
       AND v.status_participacao <> 'RECUSADO'
     ORDER BY d.data_inicio DESC, d.id_desafio DESC
     `,
-    { sk_vendedor: skVendedor }
+    { sk_vendedor: skVendedor, ...empresaFilter.binds }
   )
 
   if (!rows.length) {
@@ -1514,9 +1651,13 @@ export async function getSellerChallengeAlert(skVendedor) {
     items,
     mock: false,
   }
+  })
 }
 
-export async function getSellerChallengeById(idDesafio, skVendedor) {
+export async function getSellerChallengeById(idDesafio, skVendedor, context = {}) {
+  return withChallengeContext(context, async () => {
+  await assertChallengeInScope(idDesafio)
   await markViewed(idDesafio, skVendedor)
   return buildSellerChallengeDetail(idDesafio, skVendedor)
+  })
 }

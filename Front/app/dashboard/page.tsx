@@ -153,6 +153,17 @@ export default function DashboardPage() {
     return `/api/ranking-vendedores?${params.toString()}`
   }
 
+  async function parseApiError(response: Response) {
+    try {
+      const payload = await response.json()
+      if (payload?.error) return String(payload.error)
+      if (payload?.message) return String(payload.message)
+    } catch {
+      // Mantem a mensagem generica quando a resposta nao for JSON.
+    }
+    return "Falha ao carregar dados"
+  }
+
   useEffect(() => {
     const userStr = sessionStorage.getItem("user")
 
@@ -182,10 +193,13 @@ export default function DashboardPage() {
 
       setIsLoading(true)
       try {
-        const response = await fetch(buildRankingUrl(viewMode))
+        const response = await fetch(buildRankingUrl(viewMode), {
+          credentials: "include",
+          cache: "no-store",
+        })
 
         if (!response.ok) {
-          throw new Error("Falha ao carregar dados")
+          throw new Error(await parseApiError(response))
         }
 
         const json = await response.json()
@@ -198,7 +212,10 @@ export default function DashboardPage() {
           setFallbackDataReferencia(dataRef)
         } else if (viewMode === "mensal") {
           try {
-            const dailyResponse = await fetch(buildRankingUrl("diario"))
+            const dailyResponse = await fetch(buildRankingUrl("diario"), {
+              credentials: "include",
+              cache: "no-store",
+            })
             if (dailyResponse.ok) {
               const dailyJson = await dailyResponse.json()
               const dailyRef = extractDataReferencia(dailyJson)
@@ -315,6 +332,7 @@ export default function DashboardPage() {
     try {
       const res = await fetch("/api/feedback", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sk_vendedor: null,

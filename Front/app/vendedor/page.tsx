@@ -335,7 +335,7 @@ export default function VendedorDashboard() {
       try {
         const response = await fetch(
           `/api/vendedor/${user.sk_vendedor}${buildEmpresaQuery(currentEmpresaId)}`,
-          { cache: "no-store" }
+          { cache: "no-store", credentials: "include" }
         )
 
         if (!response.ok) {
@@ -368,7 +368,7 @@ export default function VendedorDashboard() {
         setIsLoadingOportunidades(true)
         const res = await fetch(
           `/api/vendedor/${skVendedorParam}/oportunidades${buildEmpresaQuery(currentEmpresaId)}`,
-          { cache: "no-store" }
+          { cache: "no-store", credentials: "include" }
         )
         if (!res.ok) {
           throw new Error("Erro ao carregar oportunidades")
@@ -989,6 +989,7 @@ export default function VendedorDashboard() {
     try {
       const res = await fetch("/api/feedback", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sk_vendedor: skVendedor,

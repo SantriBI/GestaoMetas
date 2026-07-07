@@ -2,7 +2,11 @@ import crypto from "node:crypto"
 import oracledb from "../db/oracleClient.js"
 import { query } from "../db/oracle.js"
 import { resolveOracleObjectName } from "../db/oracleObjectNames.js"
-import { dropOracleProvisionedViews, provisionOracleViews } from "./oracleProvisioningService.js"
+import {
+  dropOracleProvisionedViews,
+  provisionOracleSchemaObjects,
+  provisionOracleViews,
+} from "./oracleProvisioningService.js"
 
 const ENCRYPT_ALGORITHM = "aes-256-gcm"
 const ENCRYPT_KEY_LENGTH = 32
@@ -104,6 +108,11 @@ export async function createOrganizacao(data) {
   const { nome, dbUser, dbPassword, dbConnectString, status, descricao } = validatePayload(data)
   const table = await getOrgsTable()
   const dbPasswordEnc = encryptPassword(dbPassword)
+  const oracleSchema = await provisionOracleSchemaObjects({
+    user: dbUser,
+    password: dbPassword,
+    connectString: dbConnectString,
+  })
   const oracleViews = await provisionOracleViews({
     user: dbUser,
     password: dbPassword,
@@ -125,7 +134,7 @@ export async function createOrganizacao(data) {
     { nome, dbUser }
   )
 
-  return { ...normalizeRow(rows[0]), oracle_views: oracleViews }
+  return { ...normalizeRow(rows[0]), oracle_schema: oracleSchema, oracle_views: oracleViews }
 }
 
 export async function updateOrganizacao(id, data) {
@@ -154,6 +163,11 @@ export async function updateOrganizacao(id, data) {
     ? String(data.db_password).trim()
     : decryptPassword(currentEnc)
 
+  const oracleSchema = await provisionOracleSchemaObjects({
+    user: dbUser,
+    password: dbPasswordToProvision,
+    connectString: dbConnectString,
+  })
   const oracleViews = await provisionOracleViews({
     user: dbUser,
     password: dbPasswordToProvision,
@@ -174,7 +188,7 @@ export async function updateOrganizacao(id, data) {
   )
 
   const updated = await getOrganizacaoById(id)
-  return { ...updated, oracle_views: oracleViews }
+  return { ...updated, oracle_schema: oracleSchema, oracle_views: oracleViews }
 }
 
 export async function deleteOrganizacao(id) {

@@ -5,9 +5,10 @@ const BACKEND_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001")
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
+    const cookie = req.headers.get("cookie") ?? ""
     const res = await fetch(`${BACKEND_URL}/api/feedback`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     })

@@ -1,6 +1,5 @@
 import oracledb from "../db/oracleClient.js"
-import { query } from "../db/oracle.js"
-import { resolveOracleObjectNames } from "../db/oracleObjectNames.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import {
   findAuthUserForPrivateMessage,
   searchAuthUsersForPrivateMessage,
@@ -82,6 +81,7 @@ function normalizeActor(actor) {
     empresaId,
     nomeUsuario,
     tipoUsuario,
+    query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
   }
 }
 
@@ -182,8 +182,8 @@ function mapComment(row) {
   }
 }
 
-async function getNextId(sequenceName) {
-  const rows = await query(`SELECT ${sequenceName}.NEXTVAL AS ID FROM DUAL`)
+async function getNextId(sequenceName, dbQuery) {
+  const rows = await dbQuery(`SELECT ${sequenceName}.NEXTVAL AS ID FROM DUAL`)
   return toNumber(rows[0]?.ID ?? rows[0]?.id, 0)
 }
 
@@ -194,17 +194,11 @@ function nvarchar(value) {
   }
 }
 
-async function getFeedTableNames() {
-  const resolvedNames = await resolveOracleObjectNames([
-    "feedPostsTable",
-    "feedLikesTable",
-    "feedCommentsTable",
-  ])
-
+function getFeedTableNames() {
   return {
-    postsTable: resolvedNames.feedPostsTable,
-    likesTable: resolvedNames.feedLikesTable,
-    commentsTable: resolvedNames.feedCommentsTable,
+    postsTable: "FEED_POSTS",
+    likesTable: "FEED_CURTIDAS",
+    commentsTable: "FEED_COMENTARIOS",
   }
 }
 
@@ -240,9 +234,9 @@ async function findPrivateMessageRecipient(actor, destinatarioUsuarioId) {
   }
 }
 
-async function refreshPostCounters(postId) {
-  const { postsTable, likesTable, commentsTable } = await getFeedTableNames()
-  await query(
+async function refreshPostCounters(postId, actor) {
+  const { postsTable, likesTable, commentsTable } = getFeedTableNames()
+  await actor.query(
     `
     UPDATE ${postsTable} p
     SET
@@ -263,8 +257,8 @@ async function refreshPostCounters(postId) {
 }
 
 async function findPostRow(postId, actor) {
-  const { postsTable } = await getFeedTableNames()
-  const rows = await query(
+  const { postsTable } = getFeedTableNames()
+  const rows = await actor.query(
     `
     SELECT
       p.ID,
@@ -297,8 +291,8 @@ async function findPostRow(postId, actor) {
 }
 
 async function findPostForActor(postId, actor) {
-  const { postsTable, likesTable } = await getFeedTableNames()
-  const rows = await query(
+  const { postsTable, likesTable } = getFeedTableNames()
+  const rows = await actor.query(
     `
     SELECT
       p.ID,
@@ -349,8 +343,8 @@ export async function listFeedPosts(input) {
     MAX_PAGE_SIZE
   )
   const offset = Math.max(toNumber(input?.offset, 0), 0)
-  const { postsTable, likesTable } = await getFeedTableNames()
-  const rows = await query(
+  const { postsTable, likesTable } = getFeedTableNames()
+  const rows = await actor.query(
     `
     SELECT
       p.ID,
@@ -430,10 +424,10 @@ export async function createFeedPost(input) {
   )
   const visibilidade = normalizeVisibility(destinatarioUsuarioId)
   const destinatario = await findPrivateMessageRecipient(actor, destinatarioUsuarioId)
-  const id = await getNextId("FEED_POSTS_SEQ")
-  const { postsTable } = await getFeedTableNames()
+  const id = await getNextId("FEED_POSTS_SEQ", actor.query)
+  const { postsTable } = getFeedTableNames()
 
-  await query(
+  await actor.query(
     `
     INSERT INTO ${postsTable} (
       ID,
@@ -489,7 +483,7 @@ export async function updateFeedPost(postIdInput, input) {
   const postId = toNumber(postIdInput, NaN)
   const mensagem = sanitizeText(input?.mensagem, MAX_POST_LENGTH, "Mensagem")
   const post = await findPostRow(postId, actor)
-  const { postsTable } = await getFeedTableNames()
+  const { postsTable } = getFeedTableNames()
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
@@ -499,7 +493,7 @@ export async function updateFeedPost(postIdInput, input) {
     throw new FeedError("Apenas o autor pode editar este post.", 403)
   }
 
-  await query(
+  await actor.query(
     `
     UPDATE ${postsTable}
     SET MENSAGEM = :mensagem
@@ -518,7 +512,7 @@ export async function deleteFeedPost(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
   const post = await findPostRow(postId, actor)
-  const { postsTable } = await getFeedTableNames()
+  const { postsTable } = getFeedTableNames()
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
@@ -529,7 +523,7 @@ export async function deleteFeedPost(postIdInput, input) {
     throw new FeedError("Voce nao tem permissao para excluir este post.", 403)
   }
 
-  await query(`DELETE FROM ${postsTable} WHERE ID = :postId`, { postId })
+  await actor.query(`DELETE FROM ${postsTable} WHERE ID = :postId`, { postId })
 
   return { success: true }
 }
@@ -537,14 +531,14 @@ export async function deleteFeedPost(postIdInput, input) {
 export async function toggleFeedLike(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
-  const { likesTable } = await getFeedTableNames()
+  const { likesTable } = getFeedTableNames()
   const post = await findPostRow(postId, actor)
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
   }
 
-  const existing = await query(
+  const existing = await actor.query(
     `
     SELECT ID
     FROM ${likesTable}
@@ -560,7 +554,7 @@ export async function toggleFeedLike(postIdInput, input) {
 
   let liked
   if (existing.length) {
-    await query(
+    await actor.query(
       `
       DELETE FROM ${likesTable}
       WHERE POST_ID = :postId
@@ -573,8 +567,8 @@ export async function toggleFeedLike(postIdInput, input) {
     )
     liked = false
   } else {
-    const id = await getNextId("FEED_CURTIDAS_SEQ")
-    await query(
+    const id = await getNextId("FEED_CURTIDAS_SEQ", actor.query)
+    await actor.query(
       `
       INSERT INTO ${likesTable} (
         ID,
@@ -597,7 +591,7 @@ export async function toggleFeedLike(postIdInput, input) {
     liked = true
   }
 
-  await refreshPostCounters(postId)
+  await refreshPostCounters(postId, actor)
 
   return {
     liked,
@@ -609,13 +603,13 @@ export async function listFeedComments(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
   const post = await findPostRow(postId, actor)
-  const { commentsTable } = await getFeedTableNames()
+  const { commentsTable } = getFeedTableNames()
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
   }
 
-  const rows = await query(
+  const rows = await actor.query(
     `
     SELECT
       ID,
@@ -639,14 +633,14 @@ export async function createFeedComment(postIdInput, input) {
   const postId = toNumber(postIdInput, NaN)
   const comentario = sanitizeText(input?.comentario, MAX_COMMENT_LENGTH, "Comentario")
   const post = await findPostRow(postId, actor)
-  const { commentsTable } = await getFeedTableNames()
+  const { commentsTable } = getFeedTableNames()
 
   if (!post) {
     throw new FeedError("Post nao encontrado.", 404)
   }
 
-  const id = await getNextId("FEED_COMENTARIOS_SEQ")
-  await query(
+  const id = await getNextId("FEED_COMENTARIOS_SEQ", actor.query)
+  await actor.query(
     `
     INSERT INTO ${commentsTable} (
       ID,
@@ -673,9 +667,9 @@ export async function createFeedComment(postIdInput, input) {
       }
     )
 
-  await refreshPostCounters(postId)
+  await refreshPostCounters(postId, actor)
 
-  const rows = await query(
+  const rows = await actor.query(
     `
     SELECT
       ID,
@@ -700,7 +694,7 @@ export async function createFeedComment(postIdInput, input) {
 export async function toggleFeedHighlight(postIdInput, input) {
   const actor = normalizeActor(input)
   const postId = toNumber(postIdInput, NaN)
-  const { postsTable } = await getFeedTableNames()
+  const { postsTable } = getFeedTableNames()
 
   if (actor.tipoUsuario !== "GERENTE") {
     throw new FeedError("Apenas gerentes podem destacar posts.", 403)
@@ -720,7 +714,7 @@ export async function toggleFeedHighlight(postIdInput, input) {
   }
 
   if (nextValue === 1) {
-    await query(
+    await actor.query(
       `
       UPDATE ${postsTable}
       SET POST_DESTAQUE = 0
@@ -730,7 +724,7 @@ export async function toggleFeedHighlight(postIdInput, input) {
     )
   }
 
-  await query(
+  await actor.query(
     `
     UPDATE ${postsTable}
     SET POST_DESTAQUE = :nextValue

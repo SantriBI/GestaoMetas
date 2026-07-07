@@ -1,8 +1,11 @@
 import express from "express"
-import { query } from "../db/oracle.js"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { requireAuth } from "../middleware/auth.js"
-import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId } from "../services/requestScope.js"
+import {
+  buildSellerInCondition,
+  getAllowedSellerCodesByEmpresaId,
+} from "../services/tenantSellerScope.js"
 
 const router = express.Router()
 
@@ -20,21 +23,24 @@ function numero(value) {
 function getQueryContext(req, res) {
   const empresaId = getScopedEmpresaId(req)
 
-  if (!empresaId && !canUseGlobalEmpresaScope(req)) {
-    res.status(403).json({ error: "Empresa do usuario nao encontrada." })
+  if (!empresaId) {
+    res.status(400).json({ error: "empresa_id e obrigatorio para investigar cliente." })
     return null
   }
 
-  return empresaId
-    ? (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options)
-    : query
+  return (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options)
 }
 
 router.get("/investigar-cliente", requireAuth, async (req, res) => {
   try {
     const q = String(req.query.q ?? "").trim()
+    const empresaId = getScopedEmpresaId(req)
     const dbQuery = getQueryContext(req, res)
     if (!dbQuery) return
+    const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(empresaId)
+    const clienteSellerScope = buildSellerInCondition("vend.sk_vendedor", allowedSellerCodes, "cliente_seller")
+    const vendaSellerScope = buildSellerInCondition("f.sk_vendedor", allowedSellerCodes, "venda_seller")
+    const vendaAliasSellerScope = buildSellerInCondition("v.sk_vendedor", allowedSellerCodes, "venda_alias_seller")
 
     if (!q) {
       return res.status(400).json({ error: "Informe CPF, CNPJ ou nome do cliente" })
@@ -54,10 +60,18 @@ router.get("/investigar-cliente", requireAuth, async (req, res) => {
           tipo_cliente,
           cliente_desde,
           nome_grupo
-        FROM DM_VENDAS.DIM_CLIENTE
-        WHERE REGEXP_REPLACE(NVL(cpf, ''), '[^0-9]', '') = :qNumerico
-           OR REGEXP_REPLACE(NVL(cnpj, ''), '[^0-9]', '') = :qNumerico
-           OR UPPER(nome_cliente) LIKE '%' || UPPER(:qTexto) || '%'
+        FROM DM_VENDAS.DIM_CLIENTE c
+        WHERE (
+          REGEXP_REPLACE(NVL(cpf, ''), '[^0-9]', '') = :qNumerico
+          OR REGEXP_REPLACE(NVL(cnpj, ''), '[^0-9]', '') = :qNumerico
+          OR UPPER(nome_cliente) LIKE '%' || UPPER(:qTexto) || '%'
+        )
+          AND EXISTS (
+            SELECT 1
+            FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE vend
+            WHERE vend.sk_cliente = c.sk_cliente
+              AND ${clienteSellerScope.clause}
+          )
         ORDER BY
           CASE
             WHEN REGEXP_REPLACE(NVL(cpf, ''), '[^0-9]', '') = :qNumerico THEN 1
@@ -71,7 +85,8 @@ router.get("/investigar-cliente", requireAuth, async (req, res) => {
       `,
       {
         qTexto: q,
-        qNumerico
+        qNumerico,
+        ...clienteSellerScope.binds,
       }
     )
 
@@ -109,6 +124,7 @@ router.get("/investigar-cliente", requireAuth, async (req, res) => {
               sk_dt_fechamento
             FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE
             WHERE sk_cliente = :sk_cliente
+              AND ${buildSellerInCondition("sk_vendedor", allowedSellerCodes, "financeiro_seller").clause}
           )
           SELECT
             NVL(SUM(faturamento_item), 0) AS total_gasto,
@@ -123,7 +139,7 @@ router.get("/investigar-cliente", requireAuth, async (req, res) => {
             MAX(sk_dt_fechamento) AS ultima_compra
           FROM base
           `,
-          { sk_cliente }
+          { sk_cliente, ...buildSellerInCondition("sk_vendedor", allowedSellerCodes, "financeiro_seller").binds }
         ),
         dbQuery(
           `
@@ -143,13 +159,14 @@ router.get("/investigar-cliente", requireAuth, async (req, res) => {
           LEFT JOIN DM_VENDAS.DIM_VENDEDOR d
             ON v.sk_vendedor = d.sk_vendedor
           WHERE v.sk_cliente = :sk_cliente
+            AND ${vendaAliasSellerScope.clause}
           GROUP BY
             v.sk_cliente,
             d.nome_vendedor
           ORDER BY data_ultima_compra DESC
           FETCH FIRST 1 ROWS ONLY
           `,
-          { sk_cliente }
+          { sk_cliente, ...vendaAliasSellerScope.binds }
         ),
         dbQuery(
           `
@@ -166,11 +183,12 @@ router.get("/investigar-cliente", requireAuth, async (req, res) => {
           JOIN DM_VENDAS.DIM_PRODUTOS p
             ON p.sk_produto = f.sk_produto
           WHERE f.sk_cliente = :sk_cliente
+            AND ${vendaSellerScope.clause}
           GROUP BY p.nome
           ORDER BY valor DESC
           FETCH FIRST 5 ROWS ONLY
           `,
-          { sk_cliente }
+          { sk_cliente, ...vendaSellerScope.binds }
         ),
         dbQuery(
           `
@@ -186,11 +204,12 @@ router.get("/investigar-cliente", requireAuth, async (req, res) => {
           JOIN DM_VENDAS.DIM_PRODUTOS p
             ON p.sk_produto = f.sk_produto
           WHERE f.sk_cliente = :sk_cliente
+            AND ${vendaSellerScope.clause}
           GROUP BY p.nome_pai_nivel1
           ORDER BY valor DESC
           FETCH FIRST 5 ROWS ONLY
           `,
-          { sk_cliente }
+          { sk_cliente, ...vendaSellerScope.binds }
         ),
         dbQuery(
           `
@@ -202,10 +221,11 @@ router.get("/investigar-cliente", requireAuth, async (req, res) => {
           JOIN DM_VENDAS.DIM_PRODUTOS p
             ON p.sk_produto = f.sk_produto
           WHERE f.sk_cliente = :sk_cliente
+            AND ${vendaSellerScope.clause}
           ORDER BY f.sk_dt_fechamento DESC
           FETCH FIRST 3 ROWS ONLY
           `,
-          { sk_cliente }
+          { sk_cliente, ...vendaSellerScope.binds }
         )
       ])
 

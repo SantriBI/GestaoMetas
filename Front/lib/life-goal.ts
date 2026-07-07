@@ -163,6 +163,7 @@ export class LifeGoalApiError extends Error {
 async function request<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     cache: "no-store",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),

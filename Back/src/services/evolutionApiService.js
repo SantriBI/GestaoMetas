@@ -1,7 +1,14 @@
-import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 
-async function tableExists(tableName) {
-  const rows = await query(
+function getScopedQuery(empresaId) {
+  if (!empresaId) {
+    throw new Error("empresa_id e obrigatorio para consultar instancias WhatsApp.")
+  }
+  return (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options)
+}
+
+async function tableExists(tableName, dbQuery) {
+  const rows = await dbQuery(
     `
     SELECT COUNT(*) AS total
     FROM USER_TABLES
@@ -43,13 +50,14 @@ async function evolutionFetch(path, options = {}) {
   return body
 }
 
-export async function getInstanceNameByVendedor(sk_vendedor) {
-  if (!(await tableExists("TB_WHATSAPP_INSTANCIAS"))) {
+export async function getInstanceNameByVendedor(sk_vendedor, empresaId) {
+  const dbQuery = getScopedQuery(empresaId)
+  if (!(await tableExists("TB_WHATSAPP_INSTANCIAS", dbQuery))) {
     return null
   }
 
   if (sk_vendedor === null || sk_vendedor === undefined) {
-    const rows = await query(
+    const rows = await dbQuery(
       `
       SELECT instance_name
       FROM TB_WHATSAPP_INSTANCIAS
@@ -59,7 +67,7 @@ export async function getInstanceNameByVendedor(sk_vendedor) {
     return rows[0]?.INSTANCE_NAME ?? rows[0]?.instance_name ?? null
   }
 
-  const rows = await query(
+  const rows = await dbQuery(
     `
     SELECT instance_name
     FROM TB_WHATSAPP_INSTANCIAS

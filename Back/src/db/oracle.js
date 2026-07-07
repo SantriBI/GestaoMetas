@@ -14,13 +14,14 @@ const RETRY_DELAY_MS = 150
 let poolPromise = null
 
 function getLegacyOracleConfig() {
-  const user = process.env.DB_USER
-  const password = process.env.DB_PASSWORD
-  const connectString = process.env.DB_CONNECT_STRING
+  const user = process.env.ORACLE_LEGACY_USER
+  const password = process.env.ORACLE_LEGACY_PASSWORD
+  const connectString = process.env.ORACLE_LEGACY_CONNECT_STRING
 
   if (!user || !password || !connectString) {
     throw new Error(
-      "Oracle legado nao configurado. Defina DB_USER, DB_PASSWORD e DB_CONNECT_STRING no Back/.env."
+      "Oracle legado desabilitado. Use queryOracleByEmpresaId(empresa_id, ...) para consultar o Oracle da organizacao. " +
+      "Se uma rotina administrativa realmente precisar do legado, configure ORACLE_LEGACY_USER, ORACLE_LEGACY_PASSWORD e ORACLE_LEGACY_CONNECT_STRING."
     )
   }
 

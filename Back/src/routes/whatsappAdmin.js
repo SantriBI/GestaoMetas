@@ -6,8 +6,12 @@ import {
   getStatus,
   postInstancia,
 } from "../controllers/whatsappAdminController.js"
+import { requireAuth, requireRole } from "../middleware/auth.js"
 
 const router = express.Router()
+const requireWhatsappManager = requireRole("GERENTE", "ADMIN", "SUPERADMIN")
+
+router.use("/whatsapp-admin", requireAuth, requireWhatsappManager)
 
 router.get("/whatsapp-admin/instancias", getInstancias)
 router.post("/whatsapp-admin/instancias", postInstancia)

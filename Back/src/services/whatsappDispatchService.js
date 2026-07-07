@@ -1,8 +1,15 @@
-import { query } from "../db/oracle.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { sendTextMessage } from "./evolutionApiService.js"
 
-async function tableExists(tableName) {
-  const rows = await query(
+function getScopedQuery(empresaId) {
+  if (!empresaId) {
+    throw new Error("empresa_id e obrigatorio para atualizar campanha WhatsApp.")
+  }
+  return (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options)
+}
+
+async function tableExists(tableName, dbQuery) {
+  const rows = await dbQuery(
     `
     SELECT COUNT(*) AS total
     FROM USER_TABLES
@@ -42,12 +49,12 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function atualizarStatusEnvio(campanhaId, skCliente, status) {
-  if (!(await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES"))) {
+async function atualizarStatusEnvio(campanhaId, skCliente, status, dbQuery) {
+  if (!(await tableExists("GM_TB_CAMPANHAS_ATIVACAO_CLIENTES", dbQuery))) {
     return
   }
 
-  await query(
+  await dbQuery(
     `
     UPDATE GM_TB_CAMPANHAS_ATIVACAO_CLIENTES
     SET status_envio = :status_envio
@@ -57,7 +64,8 @@ async function atualizarStatusEnvio(campanhaId, skCliente, status) {
   )
 }
 
-export async function dispatchCampanha({ instanceName, clientes, campanhaId, onProgress }) {
+export async function dispatchCampanha({ instanceName, clientes, campanhaId, empresaId, onProgress }) {
+  const dbQuery = getScopedQuery(empresaId)
   const elegiveis = (clientes ?? [])
     .map((cliente) => ({ cliente, numero: limparNumeroWhatsApp(cliente.telefone) }))
     .filter(({ numero }) => Boolean(numero))
@@ -82,7 +90,7 @@ export async function dispatchCampanha({ instanceName, clientes, campanhaId, onP
       console.error(`Erro ao enviar mensagem Evolution API para ${numero}:`, err)
     }
 
-    await atualizarStatusEnvio(campanhaId, cliente.sk_cliente, status)
+    await atualizarStatusEnvio(campanhaId, cliente.sk_cliente, status, dbQuery)
 
     const resultado = {
       sk_cliente: cliente.sk_cliente,

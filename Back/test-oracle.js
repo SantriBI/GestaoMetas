@@ -19,7 +19,7 @@ async function test() {
     const runtime = getOracleRuntimeInfo()
     console.log(
       `[oracle-smoke] mode=${runtime.mode}; client=${runtime.oracleClientVersion}; ` +
-      `connectString=${sanitizeConnectString(process.env.DB_CONNECT_STRING)}`
+      `connectString=${sanitizeConnectString(process.env.ORACLE_LEGACY_CONNECT_STRING)}`
     )
 
     if (isThickRequired() && oracledb.thin) {
@@ -27,9 +27,9 @@ async function test() {
     }
 
     connection = await oracledb.getConnection({
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      connectString: process.env.DB_CONNECT_STRING,
+      user: process.env.ORACLE_LEGACY_USER,
+      password: process.env.ORACLE_LEGACY_PASSWORD,
+      connectString: process.env.ORACLE_LEGACY_CONNECT_STRING,
     })
 
     console.log("Conectado com sucesso ao Oracle.")

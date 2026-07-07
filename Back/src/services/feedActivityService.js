@@ -1,6 +1,5 @@
 import { FeedError } from "./feedService.js"
-import { query } from "../db/oracle.js"
-import { resolveOracleObjectNames } from "../db/oracleObjectNames.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 
 const FEED_VISIBILITY_PUBLIC = "PUBLICO"
 
@@ -50,6 +49,7 @@ function normalizeActor(actor) {
     empresaId,
     nomeUsuario,
     tipoUsuario,
+    query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
   }
 }
 
@@ -70,13 +70,11 @@ function normalizeSince(value) {
 export async function getFeedActivityCount(input) {
   const actor = normalizeActor(input)
   const since = normalizeSince(input?.since)
-  const {
-    feedPostsTable: postsTable,
-    feedCommentsTable: commentsTable,
-    feedLikesTable: likesTable,
-  } = await resolveOracleObjectNames(["feedPostsTable", "feedCommentsTable", "feedLikesTable"])
+  const postsTable = "FEED_POSTS"
+  const commentsTable = "FEED_COMENTARIOS"
+  const likesTable = "FEED_CURTIDAS"
 
-  const rows = await query(
+  const rows = await actor.query(
     `
     SELECT
       (

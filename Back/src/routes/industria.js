@@ -1,6 +1,7 @@
 import express from "express"
 import bcrypt from "bcrypt"
 import { query } from "../db/oracle.js"
+import { AUTH_COOKIE_NAME, issueAuthToken, setAuthCookie, verifyAuthToken } from "../auth/token.js"
 
 const router = express.Router()
 const ORACLE_TABLE_NOT_FOUND = 942
@@ -53,6 +54,21 @@ function buildSignedRevenueSql(alias = "f") {
 
 function normalizeBrand(value) {
   return String(value ?? "").trim().toUpperCase()
+}
+
+function getBearerToken(req) {
+  return req.headers?.authorization?.replace(/^Bearer\s+/i, "") ?? null
+}
+
+function getIndustryClaims(req) {
+  const token = req.cookies?.[AUTH_COOKIE_NAME] ?? getBearerToken(req)
+  const claims = verifyAuthToken(token)
+
+  if (!claims || String(claims.role ?? "").toUpperCase() !== "INDUSTRIA") {
+    return null
+  }
+
+  return claims
 }
 
 function createDateAtStart(year, month, day) {
@@ -730,7 +746,7 @@ router.post("/login-industria", async (req, res) => {
       return res.status(401).json({ error: "Codigo ou senha invalidos." })
     }
 
-    return res.json({
+    const publicUser = {
       id_usuario: fornecedor.id,
       nome: fornecedor.nome,
       login: fornecedor.codigo,
@@ -738,7 +754,10 @@ router.post("/login-industria", async (req, res) => {
       marca: fornecedor.marca,
       foto_url: null,
       senha_temporaria: "N",
-    })
+    }
+
+    setAuthCookie(res, issueAuthToken(publicUser))
+    return res.json(publicUser)
   } catch (err) {
     console.error("Erro no login da industria:", err)
 
@@ -754,7 +773,12 @@ router.post("/login-industria", async (req, res) => {
 })
 
 router.get("/industria/dashboard", async (req, res) => {
-  const marca = normalizeBrand(req.query?.marca)
+  const claims = getIndustryClaims(req)
+  if (!claims) {
+    return res.status(401).json({ error: "Nao autenticado." })
+  }
+
+  const marca = normalizeBrand(claims.marca)
 
   if (!marca) {
     return res.status(400).json({ error: "Informe a marca do parceiro." })

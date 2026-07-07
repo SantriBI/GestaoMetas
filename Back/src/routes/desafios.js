@@ -21,24 +21,29 @@ import {
   postVisualizarDesafio,
   putDesafio,
 } from "../controllers/desafiosController.js"
+import { requireAuth, requireRole } from "../middleware/auth.js"
 
 const router = express.Router()
 
-router.get("/desafios/metadata", getDesafioMetadata)
-router.get("/desafios/catalogo/produtos", getDesafioProdutosCatalogo)
-router.get("/desafios/catalogo/marcas", getDesafioMarcasCatalogo)
-router.get("/desafios/setup", getDesafioSetup)
-router.post("/desafios/impact-preview", postDesafioImpactPreview)
-router.get("/desafios", getDesafios)
-router.post("/desafios", postDesafio)
-router.get("/desafios/:id", getDesafioById)
-router.put("/desafios/:id", putDesafio)
-router.delete("/desafios/:id", deleteDesafio)
-router.get("/desafios/:id/participantes", getDesafioParticipantes)
-router.post("/desafios/:id/aceitar", postAceitarDesafio)
-router.post("/desafios/:id/recusar", postRecusarDesafio)
-router.post("/desafios/:id/visualizar", postVisualizarDesafio)
-router.get("/desafios/:id/progresso", getDesafioProgresso)
+router.use(requireAuth)
+
+const requireChallengeManager = requireRole("GERENTE", "ADMIN", "SUPERADMIN")
+
+router.get("/desafios/metadata", requireChallengeManager, getDesafioMetadata)
+router.get("/desafios/catalogo/produtos", requireChallengeManager, getDesafioProdutosCatalogo)
+router.get("/desafios/catalogo/marcas", requireChallengeManager, getDesafioMarcasCatalogo)
+router.get("/desafios/setup", requireChallengeManager, getDesafioSetup)
+router.post("/desafios/impact-preview", requireChallengeManager, postDesafioImpactPreview)
+router.get("/desafios", requireChallengeManager, getDesafios)
+router.post("/desafios", requireChallengeManager, postDesafio)
+router.get("/desafios/:id", requireChallengeManager, getDesafioById)
+router.put("/desafios/:id", requireChallengeManager, putDesafio)
+router.delete("/desafios/:id", requireChallengeManager, deleteDesafio)
+router.get("/desafios/:id/participantes", requireChallengeManager, getDesafioParticipantes)
+router.post("/desafios/:id/aceitar", requireRole("VENDEDOR"), postAceitarDesafio)
+router.post("/desafios/:id/recusar", requireRole("VENDEDOR"), postRecusarDesafio)
+router.post("/desafios/:id/visualizar", requireRole("VENDEDOR"), postVisualizarDesafio)
+router.get("/desafios/:id/progresso", requireChallengeManager, getDesafioProgresso)
 
 router.get("/vendedor/:sk_vendedor/desafios", getVendedorDesafios)
 router.get("/vendedor/:sk_vendedor/desafios/novos", getVendedorDesafiosNovos)

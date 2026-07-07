@@ -1,9 +1,5 @@
-import { query } from "../db/oracle.js"
-import {
-  getObjectivesTableName,
-  getProfileTableName,
-  getRankingVendorsViewName,
-} from "../db/oracleObjectNames.js"
+import { AsyncLocalStorage } from "node:async_hooks"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { findAuthUserBySkVendedor } from "./authUsersService.js"
 import { resolverEscopoVendedor } from "./vendedorScopeService.js"
 
@@ -26,6 +22,43 @@ const CURRENCY_FORMATTER = new Intl.NumberFormat("pt-BR", {
 })
 const DAY_IN_MS = 24 * 60 * 60 * 1000
 let cachedProfileIncomeBreakdownSupport = null
+const objetivoDbContext = new AsyncLocalStorage()
+
+function getEmpresaIdFromPayload(payload = {}) {
+  return payload?.empresa_id ?? payload?.empresaId ?? null
+}
+
+function requireEmpresaId(payload = {}, action = "executar esta operacao") {
+  const empresaId = getEmpresaIdFromPayload(payload)
+  if (!empresaId) {
+    throw createServiceError("COMPANY_REQUIRED", `empresa_id e obrigatorio para ${action}.`, 400)
+  }
+  return empresaId
+}
+
+function withObjetivoDbContext(empresaId, callback) {
+  return objetivoDbContext.run({ empresaId }, callback)
+}
+
+function query(sql, binds = {}, options = {}) {
+  const empresaId = objetivoDbContext.getStore()?.empresaId
+  if (!empresaId) {
+    throw createServiceError("COMPANY_REQUIRED", "Contexto Oracle da organizacao ausente.", 400)
+  }
+  return queryOracleByEmpresaId(empresaId, sql, binds, options)
+}
+
+async function getObjectivesTableName() {
+  return OBJECTIVE_TABLE
+}
+
+async function getProfileTableName() {
+  return PROFILE_TABLE
+}
+
+async function getRankingVendorsViewName() {
+  return "VW_RANKING_VENDEDORES"
+}
 
 function numberValue(value) {
   const parsed = Number(value ?? 0)
@@ -309,15 +342,20 @@ async function nextSequenceValue(sequenceName) {
   return numberValue(rows[0]?.ID ?? rows[0]?.id)
 }
 
-async function loadSellerUser(skVendedor) {
+async function loadSellerUser(skVendedor, empresaId = null) {
   if (!skVendedor) return null
 
-  return findAuthUserBySkVendedor(skVendedor)
+  return findAuthUserBySkVendedor(skVendedor, empresaId)
 }
 
 async function resolveSellerContext(vendorCode, fallback = {}) {
-  const scope = await resolverEscopoVendedor(vendorCode)
-  const user = await loadSellerUser(scope.skVendedor ?? fallback.sk_vendedor ?? null)
+  const fallbackEmpresaId = fallback.empresa_id ?? fallback.empresaId ?? null
+  if (!fallbackEmpresaId) {
+    throw createServiceError("COMPANY_REQUIRED", "empresa_id e obrigatorio para resolver o vendedor.", 400)
+  }
+
+  const scope = await resolverEscopoVendedor(vendorCode, fallbackEmpresaId)
+  const user = await loadSellerUser(scope.skVendedor ?? fallback.sk_vendedor ?? null, fallbackEmpresaId)
 
   return {
     codigoRecebido: vendorCode,
@@ -1243,32 +1281,35 @@ function validateProfilePayload(payload) {
   }
 }
 
-export async function getSellerLifeGoal(vendorCode) {
-  await ensureObjectiveModuleReady()
+export async function getSellerLifeGoal(vendorCode, fallback = {}) {
+  const empresaId = requireEmpresaId(fallback, "buscar a meta de vida")
+  return withObjetivoDbContext(empresaId, async () => {
+    await ensureObjectiveModuleReady()
 
-  const seller = await resolveSellerContext(vendorCode)
-  const objectives = await loadObjectivesBySeller(seller)
-  const trackingStartDate = getTrackingStartDate(objectives)
-  const [profileContext, commissionSnapshot, challengeRewards] = await Promise.all([
-    loadProfileContext(seller),
-    resolveCommissionSnapshot(seller, trackingStartDate),
-    calculateChallengeRewards(seller.skVendedor, trackingStartDate, seller.empresaId),
-  ])
-  const marketInsights = await loadMarketInsights(seller, profileContext.profile)
+    const seller = await resolveSellerContext(vendorCode, fallback)
+    const objectives = await loadObjectivesBySeller(seller)
+    const trackingStartDate = getTrackingStartDate(objectives)
+    const [profileContext, commissionSnapshot, challengeRewards] = await Promise.all([
+      loadProfileContext(seller),
+      resolveCommissionSnapshot(seller, trackingStartDate),
+      calculateChallengeRewards(seller.skVendedor, trackingStartDate, seller.empresaId),
+    ])
+    const marketInsights = await loadMarketInsights(seller, profileContext.profile)
 
-  return buildGoalPayload({
-    context: seller,
-    objectives,
-    profile: profileContext.profile,
-    profileEnabled: profileContext.profileEnabled,
-    commissionSnapshot,
-    challengeRewards,
-    marketInsights,
+    return buildGoalPayload({
+      context: seller,
+      objectives,
+      profile: profileContext.profile,
+      profileEnabled: profileContext.profileEnabled,
+      commissionSnapshot,
+      challengeRewards,
+      marketInsights,
+    })
   })
 }
 
-export async function getSellerLifeGoals(vendorCode) {
-  const panel = await getSellerLifeGoal(vendorCode)
+export async function getSellerLifeGoals(vendorCode, fallback = {}) {
+  const panel = await getSellerLifeGoal(vendorCode, fallback)
   return {
     seller: panel.seller,
     objectives: panel.objectives,
@@ -1277,7 +1318,9 @@ export async function getSellerLifeGoals(vendorCode) {
 }
 
 export async function createSellerLifeGoal(payload) {
-  await ensureObjectiveModuleReady()
+  const empresaId = requireEmpresaId(payload, "criar o objetivo")
+  return withObjetivoDbContext(empresaId, async () => {
+    await ensureObjectiveModuleReady()
 
   const sellerCode = payload?.sk_vendedor ?? payload?.skVendedor ?? payload?.vendedor_id ?? payload?.vendedorId
   if (!sellerCode) {
@@ -1352,11 +1395,14 @@ export async function createSellerLifeGoal(payload) {
     throw error
   }
 
-  return getSellerLifeGoal(seller.skVendedor ?? seller.vendedorId)
+    return getSellerLifeGoal(seller.skVendedor ?? seller.vendedorId, { empresa_id: seller.empresaId })
+  })
 }
 
 export async function updateSellerLifeGoal(idObjetivo, payload) {
-  await ensureObjectiveModuleReady()
+  const empresaId = requireEmpresaId(payload, "atualizar o objetivo")
+  return withObjetivoDbContext(empresaId, async () => {
+    await ensureObjectiveModuleReady()
 
   const currentObjective = await loadObjectiveById(idObjetivo)
   if (!currentObjective) {
@@ -1380,11 +1426,7 @@ export async function updateSellerLifeGoal(idObjetivo, payload) {
     throw createServiceError("OBJECTIVE_FORBIDDEN", "Este objetivo nao pertence ao vendedor informado.", 403)
   }
 
-  if (
-    seller.empresaId &&
-    currentObjective.empresaId &&
-    String(currentObjective.empresaId) !== String(seller.empresaId)
-  ) {
+  if (seller.empresaId && String(currentObjective.empresaId ?? "") !== String(seller.empresaId)) {
     throw createServiceError("OBJECTIVE_FORBIDDEN", "Este objetivo nao pertence a empresa informada.", 403)
   }
 
@@ -1408,28 +1450,34 @@ export async function updateSellerLifeGoal(idObjetivo, payload) {
     }
   )
 
-  return getSellerLifeGoal(currentObjective.skVendedor ?? currentObjective.vendedorId)
+    return getSellerLifeGoal(currentObjective.skVendedor ?? currentObjective.vendedorId, { empresa_id: seller.empresaId ?? currentObjective.empresaId })
+  })
 }
 
-export async function getSellerProfile(vendorCode) {
-  await ensureProfileModuleReady()
+export async function getSellerProfile(vendorCode, fallback = {}) {
+  const empresaId = requireEmpresaId(fallback, "buscar o perfil")
+  return withObjetivoDbContext(empresaId, async () => {
+    await ensureProfileModuleReady()
 
-  const seller = await resolveSellerContext(vendorCode)
-  const profile = await loadProfileBySeller(seller)
+    const seller = await resolveSellerContext(vendorCode, fallback)
+    const profile = await loadProfileBySeller(seller)
 
-  return {
-    seller: {
-      skVendedor: seller.skVendedor,
-      vendedorId: seller.vendedorId,
-      empresaId: seller.empresaId,
-      nomeVendedor: seller.nomeVendedor,
-    },
-    profile,
-  }
+    return {
+      seller: {
+        skVendedor: seller.skVendedor,
+        vendedorId: seller.vendedorId,
+        empresaId: seller.empresaId,
+        nomeVendedor: seller.nomeVendedor,
+      },
+      profile,
+    }
+  })
 }
 
 export async function createSellerProfile(payload) {
-  await ensureProfileModuleReady()
+  const empresaId = requireEmpresaId(payload, "criar o perfil")
+  return withObjetivoDbContext(empresaId, async () => {
+    await ensureProfileModuleReady()
 
   const sellerCode = payload?.sk_vendedor ?? payload?.skVendedor ?? payload?.vendedor_id ?? payload?.vendedorId
   if (!sellerCode) {
@@ -1507,11 +1555,14 @@ export async function createSellerProfile(payload) {
     insertBinds
   )
 
-  return getSellerProfile(seller.skVendedor ?? seller.vendedorId)
+    return getSellerProfile(seller.skVendedor ?? seller.vendedorId, { empresa_id: seller.empresaId })
+  })
 }
 
 export async function updateSellerProfile(idPerfil, payload) {
-  await ensureProfileModuleReady()
+  const empresaId = requireEmpresaId(payload, "atualizar o perfil")
+  return withObjetivoDbContext(empresaId, async () => {
+    await ensureProfileModuleReady()
 
   const currentProfile = await loadProfileById(idPerfil)
   if (!currentProfile) {
@@ -1531,11 +1582,7 @@ export async function updateSellerProfile(idPerfil, payload) {
     throw createServiceError("PROFILE_FORBIDDEN", "Este perfil nao pertence ao vendedor informado.", 403)
   }
 
-  if (
-    seller.empresaId &&
-    currentProfile.empresaId &&
-    String(currentProfile.empresaId) !== String(seller.empresaId)
-  ) {
+  if (seller.empresaId && String(currentProfile.empresaId ?? "") !== String(seller.empresaId)) {
     throw createServiceError("PROFILE_FORBIDDEN", "Este perfil nao pertence a empresa informada.", 403)
   }
 
@@ -1573,5 +1620,6 @@ export async function updateSellerProfile(idPerfil, payload) {
     updateBinds
   )
 
-  return getSellerProfile(currentProfile.vendedorId)
+    return getSellerProfile(currentProfile.vendedorId, { empresa_id: seller.empresaId ?? currentProfile.empresaId })
+  })
 }

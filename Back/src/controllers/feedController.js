@@ -18,12 +18,11 @@ function getSource(req) {
 }
 
 function getActorFromRequest(req) {
-  const source = getSource(req)
   return {
-    usuario_id: source.usuario_id,
-    nome_usuario: source.nome_usuario,
-    tipo_usuario: source.tipo_usuario,
-    empresa_id: source.empresa_id,
+    usuario_id: req.auth?.id_usuario,
+    nome_usuario: req.auth?.nome ?? req.auth?.nome_completo ?? req.auth?.login,
+    tipo_usuario: req.auth?.role,
+    empresa_id: req.auth?.empresa_id,
   }
 }
 

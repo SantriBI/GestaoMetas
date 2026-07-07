@@ -1,28 +1,25 @@
-import { query } from "../db/oracle.js"
-import {
-  getRankingVendorsDayViewName,
-  getRankingVendorsViewName,
-} from "../db/oracleObjectNames.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 
 function normalizarLinha(row) {
   return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key.toLowerCase(), value]))
 }
 
-export async function resolverEscopoVendedor(codigoRecebido) {
-  const [rankingView, rankingDayView] = await Promise.all([
-    getRankingVendorsViewName(),
-    getRankingVendorsDayViewName(),
-  ])
-  const rows = await query(
+export async function resolverEscopoVendedor(codigoRecebido, empresaId) {
+  if (!empresaId) {
+    throw new Error("empresa_id e obrigatorio para resolver o vendedor.")
+  }
+
+  const rows = await queryOracleByEmpresaId(
+    empresaId,
     `
     SELECT *
     FROM (
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM ${rankingView}
+      FROM VW_RANKING_VENDEDORES
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
       UNION ALL
       SELECT sk_vendedor, vendedor_id, nome_vendedor
-      FROM ${rankingDayView}
+      FROM VW_RANKING_VENDEDORES_DIA
       WHERE sk_vendedor = :codigo OR vendedor_id = :codigo
     )
     WHERE ROWNUM = 1

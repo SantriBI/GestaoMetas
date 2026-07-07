@@ -1,6 +1,12 @@
 import express from "express"
-import { query } from "../db/oracle.js"
-import { getRankingVendorsDayHistViewName } from "../db/oracleObjectNames.js"
+import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
+import { requireAuth } from "../middleware/auth.js"
+import { getScopedEmpresaId } from "../services/requestScope.js"
+import {
+  buildSellerInCondition,
+  getAllowedSellerCodesByEmpresaId,
+  isSellerAllowed,
+} from "../services/tenantSellerScope.js"
 
 const router = express.Router()
 
@@ -35,24 +41,24 @@ function formatPercentBR(value) {
   })}%`
 }
 
-async function loadHistorico(empresaId) {
-  const rankingDayHistView = await getRankingVendorsDayHistViewName()
-  let filtroEmpresa = ""
-  const bindsBase = {}
-
-  if (empresaId) {
-    filtroEmpresa = " AND SK_EMPRESA = :empresaId "
-    bindsBase.empresaId = empresaId
+async function getQueryContext(empresaId) {
+  return {
+    query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
+    rankingDayHistView: "VW_RANKING_VENDEDORES_DIA_HIST",
   }
+}
 
-  const refs = await query(
+async function loadHistorico(context) {
+  const sellerScope = buildSellerInCondition("SK_VENDEDOR", context.allowedSellerCodes, "hist_seller")
+  const bindsBase = sellerScope.binds
+
+  const refs = await context.query(
     `
       SELECT DATA_REF
       FROM (
         SELECT DISTINCT DATA_REF
-        FROM ${rankingDayHistView}
-        WHERE 1 = 1
-        ${filtroEmpresa}
+        FROM ${context.rankingDayHistView}
+        WHERE ${sellerScope.clause}
       ORDER BY DATA_REF DESC
     )
     WHERE ROWNUM <= 2
@@ -61,13 +67,13 @@ async function loadHistorico(empresaId) {
   )
 
   if (!refs.length) {
-    return { refs: [], hoje: [], ontem: [], empresaFiltrada: !!empresaId }
+    return { refs: [], hoje: [], ontem: [] }
   }
 
   const dataHoje = refs[0].DATA_REF
   const dataOntem = refs[1]?.DATA_REF || null
 
-  const hoje = await query(
+  const hoje = await context.query(
     `
     SELECT
       DATA_REF,
@@ -76,15 +82,15 @@ async function loadHistorico(empresaId) {
       NOME_VENDEDOR,
       RECEITA_DIA,
       RANKING_DIA
-    FROM ${rankingDayHistView}
+    FROM ${context.rankingDayHistView}
     WHERE DATA_REF = :dataHoje
-    ${filtroEmpresa}
+      AND ${sellerScope.clause}
     `,
     { ...bindsBase, dataHoje }
   )
 
   const ontem = dataOntem
-    ? await query(
+    ? await context.query(
         `
         SELECT
           DATA_REF,
@@ -93,29 +99,40 @@ async function loadHistorico(empresaId) {
           NOME_VENDEDOR,
           RECEITA_DIA,
           RANKING_DIA
-        FROM ${rankingDayHistView}
+        FROM ${context.rankingDayHistView}
         WHERE DATA_REF = :dataOntem
-        ${filtroEmpresa}
+          AND ${sellerScope.clause}
         `,
         { ...bindsBase, dataOntem }
       )
     : []
 
-  return { refs, hoje, ontem, empresaFiltrada: !!empresaId }
+  return { refs, hoje, ontem }
 }
 
-router.get("/alertas-ranking", async (req, res) => {
+router.get("/alertas-ranking", requireAuth, async (req, res) => {
   try {
-    const empresaId = req.query.empresa_id ? Number(req.query.empresa_id) : null
-    const skVendedor = req.query.sk_vendedor ? Number(req.query.sk_vendedor) : null
-
-    // Primeiro tenta com empresa_id; se vier vazio, faz fallback sem empresa
-    // porque SK_EMPRESA na view pode ser diferente do EMPRESA_ID do auth.
-    let historico = await loadHistorico(empresaId)
-    if ((!historico.refs.length || !historico.hoje.length) && empresaId) {
-      historico = await loadHistorico(null)
+    const empresaId = getScopedEmpresaId(req)
+    if (!empresaId) {
+      return res.status(400).json({ error: "empresa_id e obrigatorio para gerar alertas de ranking." })
     }
 
+    const role = String(req.auth?.role ?? "").toUpperCase()
+    const requestedSkVendedor = req.query.sk_vendedor ? Number(req.query.sk_vendedor) : null
+    const skVendedor = role === "VENDEDOR"
+      ? Number(req.auth?.sk_vendedor ?? 0) || null
+      : requestedSkVendedor
+
+    if (role === "VENDEDOR" && requestedSkVendedor && String(requestedSkVendedor) !== String(req.auth?.sk_vendedor ?? "")) {
+      return res.status(403).json({ error: "Acesso permitido apenas aos alertas do vendedor autenticado." })
+    }
+
+    const context = await getQueryContext(empresaId)
+    context.allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(empresaId)
+    if (skVendedor && !isSellerAllowed(context.allowedSellerCodes, skVendedor)) {
+      return res.status(403).json({ error: "Vendedor fora da organizacao autenticada." })
+    }
+    const historico = await loadHistorico(context)
     const { refs, hoje, ontem } = historico
 
     if (!refs.length || !hoje.length) {
