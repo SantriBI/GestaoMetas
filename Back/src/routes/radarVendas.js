@@ -79,7 +79,7 @@ async function carregarResumoRfv(context) {
       ) AS clientes_fieis_esfriando
     FROM ${context.rfvVendedorTable}
     WHERE ${sellerScope.clause}
-  `, sellerScope.binds)
+  `, sellerScope.binds, { suppressErrorLog: true })
 
   return rows[0] ?? {}
 }
@@ -135,7 +135,7 @@ async function carregarTendenciasCategorias(context) {
     FROM consolidado
     -- Evita alertas irrelevantes exigindo base minima no periodo anterior.
     WHERE receita_ant_30 > 5000
-  `, sellerScope.binds)
+  `, sellerScope.binds, { suppressErrorLog: true })
 }
 
 function gerarAlertasVendedores(rankingRows) {

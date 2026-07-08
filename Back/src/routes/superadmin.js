@@ -19,6 +19,10 @@ import {
   describeTenantProvisioningError,
 } from "../db/mysql-tenants.js"
 import { findEmployeeNameByCpf, resolveAuthUserDisplayName } from "../services/authUsersService.js"
+import {
+  listSystemManagerOrganizations,
+  replaceSystemManagerOrganizations,
+} from "../services/gerenteSistemasService.js"
 
 const router = express.Router()
 
@@ -27,6 +31,7 @@ router.use(requireAuth)
 const IS_PROD = process.env.NODE_ENV === "production"
 const ALLOW_DESTRUCTIVE = process.env.ALLOW_DESTRUCTIVE_ORG_DELETE === "true"
 const VENDOR_DEFAULT_PASSWORD = "sip123"
+const LEGACY_ENCRYPTED_PASSWORD_RE = /^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/i
 
 function guard(req, res) {
   if (req.auth?.role !== "SUPERADMIN") {
@@ -53,6 +58,11 @@ function normalizeCPF(v) {
   return String(v ?? "").replace(/\D/g, "")
 }
 
+function normalizeOrganizationIds(value) {
+  const source = Array.isArray(value) ? value : []
+  return [...new Set(source.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0))]
+}
+
 function normalizeConnectString(raw) {
   const s = String(raw ?? "").trim()
   if (!s.includes(":") && s.includes("/")) {
@@ -71,14 +81,35 @@ function oracleTextExpr(columns, alias, candidates, fallback) {
   return column ? `${column} AS ${alias}` : `${fallback} AS ${alias}`
 }
 
+function oracleCoalesceTextExpr(columns, alias, candidates, fallback) {
+  const available = new Set(columns.map((column) => String(column).toUpperCase()))
+  const expressions = candidates
+    .filter((candidate) => available.has(candidate))
+    .map((candidate) => `NULLIF(TRIM(TO_CHAR(${candidate})), '')`)
+
+  return expressions.length ? `COALESCE(${expressions.join(", ")}) AS ${alias}` : `${fallback} AS ${alias}`
+}
+
+function cleanOracleText(value) {
+  const text = String(value ?? "").trim()
+  return text || null
+}
+
 function httpError(status, message) {
   const error = new Error(message)
   error.status = status
   return error
 }
 
-async function decryptOraclePasswordForOrg(org) {
-  return decryptSecret(org.oracle_password)
+async function getOraclePasswordForOrg(org) {
+  const password = String(org?.oracle_password ?? "")
+  if (!LEGACY_ENCRYPTED_PASSWORD_RE.test(password)) {
+    throw httpError(
+      409,
+      `Senha Oracle da organizacao ${org?.id_organizacao ?? ""} nao esta criptografada. Rode Back/scripts/migrate-oracle-passwords.js antes de usar esta organizacao.`
+    )
+  }
+  return decryptSecret(password)
 }
 
 async function lookupFuncionarioInOrg(org, cpfNorm) {
@@ -86,7 +117,7 @@ async function lookupFuncionarioInOrg(org, cpfNorm) {
     return null
   }
 
-  const plainPwd = await decryptOraclePasswordForOrg(org)
+  const plainPwd = await getOraclePasswordForOrg(org)
   let oracleConn = null
 
   try {
@@ -115,10 +146,27 @@ async function lookupFuncionarioInOrg(org, cpfNorm) {
       ["NOME_LOJA", "LOJA", "NOME_FILIAL", "FILIAL", "NOME_EMPRESA", "NOME_RESUMIDO", "EMPRESA", "EMPRESA_ACESSO"],
       "NULL"
     )
-    const cargoExpr = oracleTextExpr(
+    const cargoExpr = oracleCoalesceTextExpr(
       columns,
       "cargo",
-      ["NOME_CARGO", "CARGO", "CARGO_FUNCIONARIO", "DESCRICAO_CARGO", "DESC_CARGO", "FUNCAO", "NOME_FUNCAO", "FUNCAO_FUNCIONARIO", "DESCRICAO_FUNCAO"],
+      [
+        "NOME_CARGO",
+        "CARGO",
+        "CARGO_FUNCIONARIO",
+        "DESCRICAO_CARGO",
+        "DESC_CARGO",
+        "DS_CARGO",
+        "FUNCAO",
+        "NOME_FUNCAO",
+        "FUNCAO_FUNCIONARIO",
+        "DESCRICAO_FUNCAO",
+        "DESC_FUNCAO",
+        "DS_FUNCAO",
+        "NOME_PERFIL",
+        "PERFIL",
+        "DESCRICAO_PERFIL",
+        "DESC_PERFIL",
+      ],
       "NULL"
     )
 
@@ -143,9 +191,9 @@ async function lookupFuncionarioInOrg(org, cpfNorm) {
 function formatFuncionarioPreview(funcionario, org, cpfNorm) {
   return {
     cpf: cpfNorm,
-    nome: funcionario.NOME ?? funcionario.nome ?? "Funcionario encontrado",
-    loja: funcionario.LOJA ?? funcionario.loja ?? null,
-    cargo: funcionario.CARGO ?? funcionario.cargo ?? null,
+    nome: cleanOracleText(funcionario.NOME ?? funcionario.nome) ?? "Funcionario encontrado",
+    loja: cleanOracleText(funcionario.LOJA ?? funcionario.loja),
+    cargo: cleanOracleText(funcionario.CARGO ?? funcionario.cargo),
     ativo: funcionario.ATIVO ?? funcionario.ativo ?? "S",
     role_sugerido: "GERENTE",
     empresa_id: org.id_organizacao,
@@ -197,6 +245,190 @@ async function getActiveOrgById(empresaId) {
 }
 
 // ── Oracle connection test util ────────────────────────────────────────────────
+router.get("/superadmin/gerentes-sistemas", async (req, res) => {
+  if (!guard(req, res)) return
+
+  try {
+    const [users] = await centralPool.query(
+      `
+      SELECT id_usuario, nome, nome_completo, login, cpf, ativo, ultimo_login, criado_em
+      FROM usuarios_auth
+      WHERE role = 'GERENTE_SISTEMAS'
+      ORDER BY COALESCE(nome_completo, nome, login)
+      `
+    )
+
+    const data = await Promise.all(
+      users.map(async (user) => ({
+        ...user,
+        role: "GERENTE_SISTEMAS",
+        organizacoes: await listSystemManagerOrganizations(user.id_usuario),
+      }))
+    )
+
+    return res.json({ data })
+  } catch (error) {
+    return handleError(res, error, "Erro ao listar Gerentes de Sistemas.")
+  }
+})
+
+router.post("/superadmin/gerentes-sistemas", async (req, res) => {
+  if (!guard(req, res)) return
+
+  const login = String(req.body?.login ?? "").trim()
+  const senha = String(req.body?.senha ?? "")
+  const nome = String(req.body?.nome ?? "").trim()
+  const cpf = normalizeCPF(req.body?.cpf ?? login)
+  const organizacoes = normalizeOrganizationIds(req.body?.organizacoes ?? req.body?.empresaIds)
+
+  if (!login) return res.status(400).json({ error: "Login e obrigatorio." })
+  if (senha.length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." })
+  if (!organizacoes.length) return res.status(400).json({ error: "Informe pelo menos uma organizacao." })
+
+  try {
+    const [orgRows] = await centralPool.query(
+      `SELECT id_organizacao FROM organizacoes_auth WHERE id_organizacao IN (${organizacoes.map(() => "?").join(",")}) AND ativo = 'S'`,
+      organizacoes
+    )
+    if (orgRows.length !== organizacoes.length) {
+      return res.status(422).json({ error: "Uma ou mais organizacoes nao existem ou estao inativas." })
+    }
+
+    const [duplicates] = await centralPool.query(
+      "SELECT id_usuario, role FROM usuarios_auth WHERE login = ? LIMIT 1",
+      [login]
+    )
+    if (duplicates.length && String(duplicates[0].role ?? "").toUpperCase() !== "GERENTE_SISTEMAS") {
+      return res.status(409).json({ error: "Ja existe um usuario com esse login em outro perfil." })
+    }
+
+    const hash = await bcrypt.hash(senha, 10)
+    let idUsuario = duplicates[0]?.id_usuario ?? null
+
+    if (idUsuario) {
+      await centralPool.query(
+        `
+        UPDATE usuarios_auth
+        SET senha_hash = ?,
+            nome = COALESCE(NULLIF(?, ''), nome),
+            nome_completo = COALESCE(NULLIF(?, ''), nome_completo),
+            cpf = COALESCE(NULLIF(?, ''), cpf),
+            ativo = 'S',
+            senha_temporaria = 'N',
+            token_version = token_version + 1
+        WHERE id_usuario = ?
+        `,
+        [hash, nome, nome, cpf, idUsuario]
+      )
+    } else {
+      const [result] = await centralPool.query(
+        `
+        INSERT INTO usuarios_auth
+          (login, senha_hash, role, nome, nome_completo, cpf, ativo, senha_temporaria)
+        VALUES (?, ?, 'GERENTE_SISTEMAS', ?, ?, ?, 'S', 'N')
+        `,
+        [login, hash, nome || login, nome || login, cpf || null]
+      )
+      idUsuario = result.insertId
+    }
+
+    await replaceSystemManagerOrganizations({ idUsuario, empresaIds: organizacoes })
+    auditAction(req, "UPSERT_GERENTE_SISTEMAS", `id:${idUsuario} orgs:${organizacoes.join(",")}`)
+
+    return res.status(duplicates.length ? 200 : 201).json({
+      message: duplicates.length ? "Gerente de Sistemas atualizado com sucesso." : "Gerente de Sistemas cadastrado com sucesso.",
+      id_usuario: idUsuario,
+      role: "GERENTE_SISTEMAS",
+      organizacoes,
+    })
+  } catch (error) {
+    return handleError(res, error, "Erro ao salvar Gerente de Sistemas.")
+  }
+})
+
+router.patch("/superadmin/gerentes-sistemas/:id", async (req, res) => {
+  if (!guard(req, res)) return
+
+  const { id } = req.params
+  const nome = req.body?.nome === undefined ? undefined : String(req.body.nome ?? "").trim()
+  const novaSenha = req.body?.novaSenha ? String(req.body.novaSenha) : null
+  const organizacoes = req.body?.organizacoes === undefined && req.body?.empresaIds === undefined
+    ? null
+    : normalizeOrganizationIds(req.body?.organizacoes ?? req.body?.empresaIds)
+
+  if (novaSenha && novaSenha.length < 6) {
+    return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." })
+  }
+  if (organizacoes && !organizacoes.length) {
+    return res.status(400).json({ error: "Informe pelo menos uma organizacao." })
+  }
+
+  try {
+    const [users] = await centralPool.query(
+      "SELECT id_usuario FROM usuarios_auth WHERE id_usuario = ? AND role = 'GERENTE_SISTEMAS' LIMIT 1",
+      [id]
+    )
+    if (!users.length) return res.status(404).json({ error: "Gerente de Sistemas nao encontrado." })
+
+    const updates = []
+    const params = []
+
+    if (nome !== undefined) {
+      updates.push("nome = ?", "nome_completo = ?")
+      params.push(nome || null, nome || null)
+    }
+
+    if (novaSenha) {
+      updates.push("senha_hash = ?", "senha_temporaria = 'N'", "token_version = token_version + 1")
+      params.push(await bcrypt.hash(novaSenha, 10))
+    }
+
+    if (updates.length) {
+      params.push(id)
+      await centralPool.query(`UPDATE usuarios_auth SET ${updates.join(", ")} WHERE id_usuario = ?`, params)
+    }
+
+    if (organizacoes) {
+      const [orgRows] = await centralPool.query(
+        `SELECT id_organizacao FROM organizacoes_auth WHERE id_organizacao IN (${organizacoes.map(() => "?").join(",")}) AND ativo = 'S'`,
+        organizacoes
+      )
+      if (orgRows.length !== organizacoes.length) {
+        return res.status(422).json({ error: "Uma ou mais organizacoes nao existem ou estao inativas." })
+      }
+      await replaceSystemManagerOrganizations({ idUsuario: id, empresaIds: organizacoes })
+    }
+
+    auditAction(req, "UPDATE_GERENTE_SISTEMAS", `id:${id}`)
+    return res.json({ message: "Gerente de Sistemas atualizado com sucesso." })
+  } catch (error) {
+    return handleError(res, error, "Erro ao atualizar Gerente de Sistemas.")
+  }
+})
+
+router.patch("/superadmin/gerentes-sistemas/:id/status", async (req, res) => {
+  if (!guard(req, res)) return
+
+  const { id } = req.params
+  const ativo = String(req.body?.ativo ?? "").toUpperCase()
+  if (!["S", "N"].includes(ativo)) return res.status(400).json({ error: "ativo deve ser S ou N." })
+
+  try {
+    const [result] = await centralPool.query(
+      "UPDATE usuarios_auth SET ativo = ?, token_version = token_version + 1 WHERE id_usuario = ? AND role = 'GERENTE_SISTEMAS'",
+      [ativo, id]
+    )
+    if (!Number(result?.affectedRows ?? 0)) {
+      return res.status(404).json({ error: "Gerente de Sistemas nao encontrado." })
+    }
+
+    auditAction(req, ativo === "S" ? "ACTIVATE_GERENTE_SISTEMAS" : "DEACTIVATE_GERENTE_SISTEMAS", `id:${id}`)
+    return res.json({ message: `Gerente de Sistemas ${ativo === "S" ? "ativado" : "desativado"} com sucesso.` })
+  } catch (error) {
+    return handleError(res, error, "Erro ao alterar status do Gerente de Sistemas.")
+  }
+})
+
 async function testOracleConnection(oracleUser, oraclePassword, oracleConnectString) {
   let conn = null
   const runtime = getOracleRuntimeInfo()
@@ -234,7 +466,7 @@ async function tryDropOracleViewsForDelete(org) {
   try {
     return await dropOracleProvisionedViews({
       user: org.oracle_user,
-      password: await decryptOraclePasswordForOrg(org),
+      password: await getOraclePasswordForOrg(org),
       connectString: org.oracle_connect_string,
     })
   } catch (error) {
@@ -258,7 +490,7 @@ async function syncVendedoresOrg(org) {
     return { skipped: true, reason: "Organizacao sem credenciais Oracle ou database tenant" }
   }
 
-  const plainPwd = await decryptOraclePasswordForOrg(org)
+  const plainPwd = await getOraclePasswordForOrg(org)
   let oracleConn = null
   let oracleRows = []
 
@@ -510,7 +742,7 @@ router.patch("/superadmin/organizacoes/:id", async (req, res) => {
     const current = existing[0]
 
     // Valida conexao com a senha (nova ou existente decriptada)
-    const passwordToTest = oraclePassword ? oraclePassword : await decryptOraclePasswordForOrg(current)
+    const passwordToTest = oraclePassword ? oraclePassword : await getOraclePasswordForOrg(current)
     const testeConn = await testOracleConnection(oracleUser, passwordToTest, connectString)
     if (!testeConn.ok) {
       return res.status(422).json({ error: `Falha na conexao Oracle: ${testeConn.error}` })
@@ -681,9 +913,12 @@ router.post("/superadmin/funcionario-lookup", async (req, res) => {
   if (cpfNorm.length !== 11) {
     return res.status(400).json({ error: "CPF deve ter 11 digitos" })
   }
+  if (!empresaId) {
+    return res.status(400).json({ error: "Selecione a organizacao para validar o CPF." })
+  }
 
   try {
-    const { org, funcionario } = await resolveFuncionarioByCpf(cpfNorm, empresaId || null)
+    const { org, funcionario } = await resolveFuncionarioByCpf(cpfNorm, empresaId)
     return res.json(formatFuncionarioPreview(funcionario, org, cpfNorm))
   } catch (error) {
     return handleError(res, error, "Erro ao buscar funcionario no Oracle.")
@@ -738,7 +973,15 @@ router.post("/superadmin/gerentes", async (req, res) => {
     const nomeGerente = nomeManual || (funcionario ? formatFuncionarioPreview(funcionario, org, cpfNorm).nome : null) || await findEmployeeNameByCpf(empresaId, cpfNorm) || null
 
     if (dup.length) {
-      // Converte para GERENTE se tiver outra role
+      const existingRole = String(dup[0].role ?? "").toUpperCase()
+
+      if (existingRole === "VENDEDOR") {
+        return res.status(409).json({
+          error: "Este CPF ja esta cadastrado como vendedor nesta organizacao. Nao e possivel transforma-lo em gerente pelo cadastro administrativo.",
+        })
+      }
+
+      // Reativa/atualiza gerente ja existente sem alterar vendedores.
       await queryTenantByEmpresaId(
         empresaId,
         "UPDATE usuarios_auth SET role = 'GERENTE', senha_hash = ?, nome = COALESCE(?, nome), nome_completo = COALESCE(?, nome_completo), ativo = 'S', senha_temporaria = 'N' WHERE id_usuario = ?",
@@ -898,7 +1141,7 @@ router.post("/superadmin/organizacoes/:id/provisionar-schema", async (req, res) 
     if (!orgRows.length) return res.status(404).json({ error: "Organizacao nao encontrada" })
     const org = orgRows[0]
 
-    const password = await decryptOraclePasswordForOrg(org)
+    const password = await getOraclePasswordForOrg(org)
     const connectString = normalizeConnectString(org.oracle_connect_string)
 
     const oracleSchema = await provisionOracleSchemaObjects({

@@ -20,13 +20,11 @@ import desafiosRoutes from './src/routes/desafios.js';
 import objetivoVendedorRoutes from './src/routes/objetivoVendedor.js';
 import perfilVendedorRoutes from './src/routes/perfilVendedor.js';
 import industriaRoutes from './src/routes/industria.js';
-import dotenv from 'dotenv';
 import whatsappAdminRoutes from './src/routes/whatsappAdmin.js';
 import feedbackRoutes from './src/routes/feedback.js';
+import gerenteSistemasRoutes from './src/routes/gerenteSistemas.js';
 
 
-
-dotenv.config();
 
 import organizacoesRoutes from './src/routes/organizacoes.js';
 import { ensureCentralSchema } from './src/db/mysql-tenants.js';
@@ -68,6 +66,7 @@ app.use('/api', perfilVendedorRoutes);
 app.use('/api', industriaRoutes);
 app.use('/api', whatsappAdminRoutes);
 app.use('/api', feedbackRoutes);
+app.use('/api', gerenteSistemasRoutes);
 app.use('/api', organizacoesRoutes);
 
 const PORT = Number(process.env.PORT || 3001);

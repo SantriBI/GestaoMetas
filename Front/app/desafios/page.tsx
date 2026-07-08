@@ -62,10 +62,20 @@ export default function DesafiosPage() {
 
   useEffect(() => {
     const user = getStoredUser()
-    if (!user || user.role !== "GERENTE") {
+    if (!user) {
       router.push("/login")
       return
     }
+
+    const isManager = user.role === "GERENTE"
+    const isSystemManagerViewingManager =
+      user.role === "GERENTE_SISTEMAS" && user.gerente_sistemas_view === "GERENTE" && !!user.empresa_id
+
+    if (!isManager && !isSystemManagerViewingManager) {
+      router.push(user.role === "GERENTE_SISTEMAS" ? "/gerente-sistemas" : "/login")
+      return
+    }
+
     setStoredUser(user)
     setAuthUser(user)
   }, [router])

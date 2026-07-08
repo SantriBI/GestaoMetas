@@ -19,7 +19,8 @@ import {
   updateChallenge,
 } from "../services/desafios/desafiosService.js"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
-import { canUseGlobalEmpresaScope, getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId } from "../services/requestScope.js"
+import { findAuthUserBySkVendedor } from "../services/authUsersService.js"
 
 function getErrorStatus(message) {
   if (message.includes("nao encontrado")) return 404
@@ -40,16 +41,14 @@ function handleError(res, error, fallbackMessage) {
 
 function getChallengeContext(req, res) {
   const empresaId = getScopedEmpresaId(req)
-  if (!empresaId && !canUseGlobalEmpresaScope(req)) {
+  if (!empresaId) {
     res.status(403).json({ error: "Empresa do usuario nao encontrada." })
     return null
   }
 
   return {
     empresaId,
-    query: empresaId
-      ? (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options)
-      : undefined,
+    query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
   }
 }
 
@@ -57,7 +56,7 @@ function getAuthRole(req) {
   return String(req.auth?.role ?? "").toUpperCase()
 }
 
-function getSellerFromRequest(req, res, sourceSkVendedor = null) {
+async function getSellerFromRequest(req, res, sourceSkVendedor = null, empresaId = null) {
   const role = getAuthRole(req)
   const authSkVendedor = req.auth?.sk_vendedor ?? null
   const requestedSkVendedor = sourceSkVendedor ?? req.body?.sk_vendedor ?? req.body?.skVendedor ?? null
@@ -79,6 +78,14 @@ function getSellerFromRequest(req, res, sourceSkVendedor = null) {
   if (!requestedSkVendedor) {
     res.status(400).json({ error: "sk_vendedor obrigatorio." })
     return null
+  }
+
+  if (empresaId) {
+    const sellerUser = await findAuthUserBySkVendedor(requestedSkVendedor, empresaId)
+    if (!sellerUser) {
+      res.status(403).json({ error: "Vendedor fora da organizacao autenticada." })
+      return null
+    }
   }
 
   return requestedSkVendedor
@@ -209,7 +216,7 @@ export async function postAceitarDesafio(req, res) {
   try {
     const context = getChallengeContext(req, res)
     if (!context) return
-    const skVendedor = getSellerFromRequest(req, res)
+    const skVendedor = await getSellerFromRequest(req, res, null, context.empresaId)
     if (!skVendedor) return
     const data = await acceptChallenge(req.params.id, skVendedor, context)
     return res.json(data)
@@ -222,7 +229,7 @@ export async function postRecusarDesafio(req, res) {
   try {
     const context = getChallengeContext(req, res)
     if (!context) return
-    const skVendedor = getSellerFromRequest(req, res)
+    const skVendedor = await getSellerFromRequest(req, res, null, context.empresaId)
     if (!skVendedor) return
     const data = await declineChallenge(req.params.id, skVendedor, context)
     return res.json(data)
@@ -237,7 +244,7 @@ export async function getDesafioProgresso(req, res) {
     if (!context) return
     const role = getAuthRole(req)
     const sellerFilter = role === "VENDEDOR"
-      ? getSellerFromRequest(req, res, req.query.sk_vendedor ?? req.auth?.sk_vendedor)
+      ? await getSellerFromRequest(req, res, req.query.sk_vendedor ?? req.auth?.sk_vendedor, context.empresaId)
       : req.query.sk_vendedor ?? null
     if (role === "VENDEDOR" && !sellerFilter) return
     const data = await refreshChallengeProgress(req.params.id, sellerFilter, context)
@@ -251,7 +258,7 @@ export async function getVendedorDesafios(req, res) {
   try {
     const context = getChallengeContext(req, res)
     if (!context) return
-    const skVendedor = getSellerFromRequest(req, res, req.params.sk_vendedor)
+    const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
     const data = await listSellerChallenges(skVendedor, "all", context)
     return res.json(data)
@@ -264,7 +271,7 @@ export async function getVendedorDesafiosAtivos(req, res) {
   try {
     const context = getChallengeContext(req, res)
     if (!context) return
-    const skVendedor = getSellerFromRequest(req, res, req.params.sk_vendedor)
+    const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
     const data = await listSellerChallenges(skVendedor, "ativos", context)
     return res.json(data)
@@ -277,7 +284,7 @@ export async function getVendedorDesafiosDisponiveis(req, res) {
   try {
     const context = getChallengeContext(req, res)
     if (!context) return
-    const skVendedor = getSellerFromRequest(req, res, req.params.sk_vendedor)
+    const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
     const data = await listSellerChallenges(skVendedor, "disponiveis", context)
     return res.json(data)
@@ -290,7 +297,7 @@ export async function getVendedorDesafiosNovos(req, res) {
   try {
     const context = getChallengeContext(req, res)
     if (!context) return
-    const skVendedor = getSellerFromRequest(req, res, req.params.sk_vendedor)
+    const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
     const data = await getSellerChallengeAlert(skVendedor, context)
     return res.json(data)
@@ -303,7 +310,7 @@ export async function getVendedorDesafioDetalhe(req, res) {
   try {
     const context = getChallengeContext(req, res)
     if (!context) return
-    const skVendedor = getSellerFromRequest(req, res, req.params.sk_vendedor)
+    const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
     const data = await getSellerChallengeById(req.params.id, skVendedor, context)
     return res.json(data)
@@ -316,7 +323,7 @@ export async function postVisualizarDesafio(req, res) {
   try {
     const context = getChallengeContext(req, res)
     if (!context) return
-    const skVendedor = getSellerFromRequest(req, res)
+    const skVendedor = await getSellerFromRequest(req, res, null, context.empresaId)
     if (!skVendedor) return
     const data = await markChallengeSeen(req.params.id, skVendedor, context)
     return res.json(data)

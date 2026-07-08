@@ -53,7 +53,7 @@ export function Podium({ vendedores, viewMode = "mensal" }: PodiumProps) {
         </div>
         <div className="flex items-center justify-center gap-2">
           <Trophy className="h-5 w-5 text-primary" />
-          <h3 className="text-center font-semibold text-muted-foreground">
+          <h3 className="text-center font-semibold text-slate-300">
             Podio dos Campeoes - {viewMode === "diario" ? "Diario" : "Mensal"}
           </h3>
         </div>
@@ -70,7 +70,7 @@ export function Podium({ vendedores, viewMode = "mensal" }: PodiumProps) {
               style={{ animationDelay: `${i * 0.2}s` }}
             >
               <div
-                className={`relative mb-3 w-full max-w-[18rem] overflow-hidden rounded-[24px] border-2 bg-card bg-gradient-to-b p-4 shadow-xl transition-transform hover:-translate-y-1 hover:scale-[1.02] sm:w-52 ${medal.bgGradient} ${medal.border} ${medal.shadow}`}
+                className={`relative mb-3 w-full max-w-[18rem] overflow-hidden rounded-[24px] border-2 bg-[#07111c] bg-gradient-to-b p-4 shadow-xl transition-transform hover:-translate-y-1 hover:scale-[1.02] sm:w-52 ${medal.bgGradient} ${medal.border} ${medal.shadow}`}
               >
                 {medal.isGold ? (
                   <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -87,9 +87,9 @@ export function Podium({ vendedores, viewMode = "mensal" }: PodiumProps) {
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <h4 className="truncate text-sm font-bold text-foreground">{vendedor.nome}</h4>
+                    <h4 className="truncate text-sm font-bold text-white">{vendedor.nome}</h4>
                     <div className="font-bold text-primary">{formatCurrency(vendedor.receita)}</div>
-                    <div className="text-xs text-muted-foreground">{vendedor.percentual}% da meta</div>
+                    <div className="text-xs text-slate-400">{vendedor.percentual}% da meta</div>
                   </div>
                 </div>
               </div>

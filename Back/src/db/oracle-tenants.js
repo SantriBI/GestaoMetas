@@ -4,7 +4,7 @@ import oracledb, {
   sanitizeConnectString,
 } from "./oracleClient.js"
 import centralPool from "./mysql.js"
-import { decryptSecret } from "../security/secrets.js"
+import { decryptSecret, SecretDecryptError } from "../security/secrets.js"
 
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
 oracledb.fetchAsString = [oracledb.CLOB]
@@ -18,6 +18,7 @@ function getOracleErrorCode(err) {
 const TRANSIENT_ORACLE_ERROR_CODES = new Set([8103])
 const MAX_SELECT_RETRIES = 2
 const RETRY_DELAY_MS = 150
+const LEGACY_ENCRYPTED_PASSWORD_RE = /^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/i
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -49,8 +50,41 @@ async function getOracleConfigByEmpresaId(empresaId) {
   }
 }
 
+const ORACLE_CREDENTIALS_UNAVAILABLE_MESSAGE =
+  "Nao foi possivel conectar aos dados desta organizacao no momento. Tente novamente em instantes ou contate o suporte."
+
+function throwOracleCredentialsUnavailable(org, technicalDetail) {
+  console.error(
+    `Credenciais Oracle indisponiveis para organizacao ${org.id_organizacao}: ${technicalDetail}`
+  )
+  const error = new Error(ORACLE_CREDENTIALS_UNAVAILABLE_MESSAGE)
+  error.status = 503
+  error.code = "ORACLE_CREDENTIALS_UNAVAILABLE"
+  throw error
+}
+
 async function decryptOraclePassword(org) {
-  return decryptSecret(org.oracle_password)
+  const raw = String(org.oracle_password ?? "")
+
+  if (!LEGACY_ENCRYPTED_PASSWORD_RE.test(raw)) {
+    throwOracleCredentialsUnavailable(
+      org,
+      "senha nao esta criptografada; rode Back/scripts/migrate-oracle-passwords.js"
+    )
+  }
+
+  try {
+    return decryptSecret(raw)
+  } catch (error) {
+    if (error instanceof SecretDecryptError) {
+      throwOracleCredentialsUnavailable(
+        org,
+        "falha ao decriptar; APP_ENCRYPTION_KEY pode estar incorreta ou ter sido rotacionada, " +
+        "corrija a chave ou reinforme a senha Oracle da organizacao no admin"
+      )
+    }
+    throw error
+  }
 }
 
 export async function queryOracleByEmpresaId(empresaId, sql, binds = {}, options = {}) {
@@ -61,7 +95,8 @@ export async function queryOracleByEmpresaId(empresaId, sql, binds = {}, options
   const { organizationId, ...config } = await getOracleConfigByEmpresaId(empresaId)
   const runtime = getOracleRuntimeInfo()
   const isDml = /^\s*(INSERT|UPDATE|DELETE|MERGE)\b/i.test(sql)
-  const execOptions = { autoCommit: isDml, ...options }
+  const { suppressErrorLog = false, ...oracleOptions } = options
+  const execOptions = { autoCommit: isDml, ...oracleOptions }
   const maxAttempts = isDml ? 1 : MAX_SELECT_RETRIES + 1
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -74,12 +109,14 @@ export async function queryOracleByEmpresaId(empresaId, sql, binds = {}, options
     } catch (err) {
       const canRetry = isRetryableSelectError(err, isDml) && attempt < maxAttempts
       if (!canRetry) {
-        console.error(
-          `[oracle-tenants] falha na conexao Oracle da organizacao ${organizationId} ` +
-          `(mode=${runtime.mode}; client=${runtime.oracleClientVersion}; ` +
-          `connectString=${sanitizeConnectString(config.connectString)}):`,
-          explainOracleConnectionError(err)
-        )
+        if (!suppressErrorLog) {
+          console.error(
+            `[oracle-tenants] falha na consulta Oracle da organizacao ${organizationId} ` +
+            `(mode=${runtime.mode}; client=${runtime.oracleClientVersion}; ` +
+            `connectString=${sanitizeConnectString(config.connectString)}):`,
+            explainOracleConnectionError(err)
+          )
+        }
         throw err
       }
       await sleep(RETRY_DELAY_MS * attempt)

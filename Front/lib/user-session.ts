@@ -1,6 +1,6 @@
 "use client"
 
-export type UserRole = "VENDEDOR" | "GERENTE" | "INDUSTRIA" | "ADMIN" | "SUPERADMIN"
+export type UserRole = "VENDEDOR" | "GERENTE" | "INDUSTRIA" | "ADMIN" | "SUPERADMIN" | "GERENTE_SISTEMAS"
 
 export interface AuthUser {
   id_usuario: number | string
@@ -14,6 +14,10 @@ export interface AuthUser {
   marca?: string | null
   foto_url?: string | null
   senha_temporaria?: string | null
+  organizacao_nome?: string | null
+  vendedor_nome_visualizado?: string | null
+  gerente_sistemas_view?: "GERENTE" | "VENDEDOR" | null
+  gerente_sistemas_original_role?: "GERENTE_SISTEMAS" | null
 }
 
 const USER_STORAGE_KEY = "user"
@@ -63,6 +67,7 @@ export function onStoredUserChange(callback: () => void) {
 export function getDashboardRoute(role?: string | null) {
   if (role === "SUPERADMIN") return "/admin"
   if (role === "ADMIN") return "/admin/organizacoes"
+  if (role === "GERENTE_SISTEMAS") return "/gerente-sistemas"
   if (role === "VENDEDOR") return "/vendedor"
   if (role === "INDUSTRIA") return "/industria"
   return "/dashboard"

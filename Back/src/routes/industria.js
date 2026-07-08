@@ -60,7 +60,7 @@ function getBearerToken(req) {
   return req.headers?.authorization?.replace(/^Bearer\s+/i, "") ?? null
 }
 
-function getIndustryClaims(req) {
+async function getIndustryClaims(req) {
   const token = req.cookies?.[AUTH_COOKIE_NAME] ?? getBearerToken(req)
   const claims = verifyAuthToken(token)
 
@@ -68,7 +68,25 @@ function getIndustryClaims(req) {
     return null
   }
 
-  return claims
+  const rows = await query(
+    `
+    SELECT *
+    FROM (
+      SELECT id, marca, ativo
+      FROM GM_TB_FORNECEDORES_LOGIN
+      WHERE id = :id
+    )
+    WHERE ROWNUM = 1
+    `,
+    { id: claims.id_usuario }
+  )
+
+  const fornecedor = normalizeRow(rows[0] ?? {})
+  if (!rows.length || String(fornecedor.ativo ?? "N").toUpperCase() !== "S") {
+    return null
+  }
+
+  return { ...claims, marca: fornecedor.marca ?? claims.marca }
 }
 
 function createDateAtStart(year, month, day) {
@@ -773,7 +791,14 @@ router.post("/login-industria", async (req, res) => {
 })
 
 router.get("/industria/dashboard", async (req, res) => {
-  const claims = getIndustryClaims(req)
+  let claims
+  try {
+    claims = await getIndustryClaims(req)
+  } catch (err) {
+    console.error("Erro ao validar sessao da industria:", err)
+    return res.status(500).json({ error: "Erro ao validar sessao." })
+  }
+
   if (!claims) {
     return res.status(401).json({ error: "Nao autenticado." })
   }

@@ -61,10 +61,23 @@ function VendedorDesafiosContent() {
 
   useEffect(() => {
     const user = getStoredUser()
-    if (!user || user.role !== "VENDEDOR") {
+    if (!user) {
       router.push("/login")
       return
     }
+
+    const isSeller = user.role === "VENDEDOR"
+    const isSystemManagerViewingSeller =
+      user.role === "GERENTE_SISTEMAS" &&
+      user.gerente_sistemas_view === "VENDEDOR" &&
+      !!user.empresa_id &&
+      !!user.sk_vendedor
+
+    if (!isSeller && !isSystemManagerViewingSeller) {
+      router.push(user.role === "GERENTE_SISTEMAS" ? "/gerente-sistemas" : "/login")
+      return
+    }
+
     setStoredUser(user)
     setAuthUser(user)
   }, [router])

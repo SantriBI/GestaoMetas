@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   Building2, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, LogOut,
-  Plus, RefreshCw, Search, Trash2, UserCog, Users, Wifi, Wrench, X,
+  MessageSquareText, Plus, RefreshCw, Search, Trash2, UserCog, Users, Wifi, Wrench, X,
 } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -58,6 +58,24 @@ interface Gerente {
   source?: "tenant" | "central"
 }
 
+interface GerenteSistemaOrganizacao {
+  id_organizacao: number
+  nome: string
+  codigo?: string | null
+}
+
+interface GerenteSistema {
+  id_usuario: number
+  nome: string | null
+  nome_completo: string | null
+  login: string
+  cpf: string | null
+  ativo: "S" | "N"
+  ultimo_login: string | null
+  role: "GERENTE_SISTEMAS"
+  organizacoes: GerenteSistemaOrganizacao[]
+}
+
 interface FuncionarioPreview {
   cpf: string
   nome: string
@@ -69,7 +87,20 @@ interface FuncionarioPreview {
   organizacao_nome: string
 }
 
-type Tab = "organizacoes" | "gerentes" | "usuarios"
+interface FeedbackUsuario {
+  id_feedback: number
+  id_usuario: number | null
+  empresa_id: number | null
+  organizacao_nome: string | null
+  sk_vendedor: number | null
+  nome_usuario: string | null
+  login_usuario: string | null
+  tipo_usuario: string | null
+  feedback: string
+  criado_em: string
+}
+
+type Tab = "organizacoes" | "gerentes" | "gerentes_sistemas" | "usuarios" | "feedbacks"
 
 // ─── API helper ───────────────────────────────────────────────────────────────
 
@@ -264,6 +295,8 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("organizacoes")
   const [orgs, setOrgs] = useState<Org[]>([])
   const [gerentes, setGerentes] = useState<Gerente[]>([])
+  const [gerentesSistemas, setGerentesSistemas] = useState<GerenteSistema[]>([])
+  const [feedbacks, setFeedbacks] = useState<FeedbackUsuario[]>([])
   const [loading, setLoading] = useState(true)
   const [globalError, setGlobalError] = useState<string | null>(null)
 
@@ -287,16 +320,36 @@ export default function AdminPage() {
   const [editGerenteSenha, setEditGerenteSenha] = useState("")
   const [expandedGerenteOrgs, setExpandedGerenteOrgs] = useState<Record<string, boolean>>({})
 
+  // Gerente de Sistemas form state
+  const [showGerenteSistemaForm, setShowGerenteSistemaForm] = useState(false)
+  const [gerenteSistemaLogin, setGerenteSistemaLogin] = useState("")
+  const [gerenteSistemaNome, setGerenteSistemaNome] = useState("")
+  const [gerenteSistemaCpf, setGerenteSistemaCpf] = useState("")
+  const [gerenteSistemaSenha, setGerenteSistemaSenha] = useState("")
+  const [gerenteSistemaOrgIds, setGerenteSistemaOrgIds] = useState<number[]>([])
+  const [savingGerenteSistema, setSavingGerenteSistema] = useState(false)
+  const [editGerenteSistema, setEditGerenteSistema] = useState<GerenteSistema | null>(null)
+  const [editGerenteSistemaSenha, setEditGerenteSistemaSenha] = useState("")
+  const [editGerenteSistemaOrgIds, setEditGerenteSistemaOrgIds] = useState<number[]>([])
+
+  // Feedback filters
+  const [feedbackEmpresaId, setFeedbackEmpresaId] = useState("")
+  const [feedbackTipoUsuario, setFeedbackTipoUsuario] = useState("")
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     setGlobalError(null)
     try {
-      const [orgsData, gerentesData] = await Promise.all([
+      const [orgsData, gerentesData, gerentesSistemasData, feedbacksData] = await Promise.all([
         apiFetch<Org[]>("/api/superadmin/organizacoes"),
         apiFetch<Gerente[]>("/api/superadmin/gerentes"),
+        apiFetch<{ data: GerenteSistema[] }>("/api/superadmin/gerentes-sistemas"),
+        apiFetch<{ data: FeedbackUsuario[] }>("/api/superadmin/feedbacks?limit=500"),
       ])
       setOrgs(orgsData)
       setGerentes(gerentesData)
+      setGerentesSistemas(gerentesSistemasData.data ?? [])
+      setFeedbacks(feedbacksData.data ?? [])
     } catch (err) {
       setGlobalError((err as Error).message)
     } finally {
@@ -475,6 +528,97 @@ export default function AdminPage() {
   }
 
   // ── Agrupamento de gerentes por org ──────────────────────────────────────────
+  function toggleGerenteSistemaOrg(empresaId: number, editing = false) {
+    const setter = editing ? setEditGerenteSistemaOrgIds : setGerenteSistemaOrgIds
+    setter((current) =>
+      current.includes(empresaId)
+        ? current.filter((id) => id !== empresaId)
+        : [...current, empresaId]
+    )
+  }
+
+  function clearGerenteSistemaForm() {
+    setGerenteSistemaLogin("")
+    setGerenteSistemaNome("")
+    setGerenteSistemaCpf("")
+    setGerenteSistemaSenha("")
+    setGerenteSistemaOrgIds([])
+  }
+
+  async function onCreateGerenteSistema(e: React.FormEvent) {
+    e.preventDefault()
+    if (!gerenteSistemaLogin.trim()) { toast.error("Informe o login."); return }
+    if (!gerenteSistemaNome.trim()) { toast.error("Informe o nome."); return }
+    if (gerenteSistemaSenha.length < 6) { toast.error("Senha deve ter pelo menos 6 caracteres."); return }
+    if (!gerenteSistemaOrgIds.length) { toast.error("Selecione pelo menos uma organizacao."); return }
+
+    setSavingGerenteSistema(true)
+    try {
+      await apiFetch("/api/superadmin/gerentes-sistemas", {
+        method: "POST",
+        body: JSON.stringify({
+          login: gerenteSistemaLogin.trim(),
+          senha: gerenteSistemaSenha,
+          nome: gerenteSistemaNome.trim(),
+          cpf: gerenteSistemaCpf.trim() || undefined,
+          organizacoes: gerenteSistemaOrgIds,
+        }),
+      })
+      toast.success("Gerente de Sistemas cadastrado com sucesso!")
+      clearGerenteSistemaForm()
+      setShowGerenteSistemaForm(false)
+      void fetchData()
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setSavingGerenteSistema(false)
+    }
+  }
+
+  function startEditGerenteSistema(item: GerenteSistema) {
+    setEditGerenteSistema(item)
+    setEditGerenteSistemaSenha("")
+    setEditGerenteSistemaOrgIds(item.organizacoes.map((org) => Number(org.id_organizacao)).filter(Boolean))
+    setShowGerenteSistemaForm(false)
+  }
+
+  async function onSaveGerenteSistema() {
+    if (!editGerenteSistema) return
+    if (!editGerenteSistemaOrgIds.length) { toast.error("Selecione pelo menos uma organizacao."); return }
+    if (editGerenteSistemaSenha && editGerenteSistemaSenha.length < 6) { toast.error("Senha deve ter pelo menos 6 caracteres."); return }
+
+    setSavingGerenteSistema(true)
+    try {
+      await apiFetch(`/api/superadmin/gerentes-sistemas/${editGerenteSistema.id_usuario}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          nome: editGerenteSistema.nome_completo ?? editGerenteSistema.nome ?? editGerenteSistema.login,
+          novaSenha: editGerenteSistemaSenha || undefined,
+          organizacoes: editGerenteSistemaOrgIds,
+        }),
+      })
+      toast.success("Gerente de Sistemas atualizado!")
+      setEditGerenteSistema(null)
+      setEditGerenteSistemaSenha("")
+      setEditGerenteSistemaOrgIds([])
+      void fetchData()
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setSavingGerenteSistema(false)
+    }
+  }
+
+  async function onToggleGerenteSistema(item: GerenteSistema) {
+    const novoAtivo = item.ativo === "S" ? "N" : "S"
+    await apiFetch(`/api/superadmin/gerentes-sistemas/${item.id_usuario}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ ativo: novoAtivo }),
+    })
+    toast.success(`Gerente de Sistemas ${novoAtivo === "S" ? "ativado" : "desativado"}.`)
+    void fetchData()
+  }
+
   function gerenteQuery(g: Gerente) {
     const params = new URLSearchParams()
     if (g.empresa_id) params.set("empresa_id", String(g.empresa_id))
@@ -496,6 +640,36 @@ export default function AdminPage() {
   }, gerentesPorOrg)
 
   const activeOrgs = orgs.filter((o) => o.ativo === "S")
+  const filteredFeedbacks = feedbacks.filter((item) => {
+    const matchesEmpresa = feedbackEmpresaId
+      ? String(item.empresa_id ?? "") === feedbackEmpresaId
+      : true
+    const matchesTipo = feedbackTipoUsuario
+      ? String(item.tipo_usuario ?? "").toUpperCase() === feedbackTipoUsuario
+      : true
+
+    return matchesEmpresa && matchesTipo
+  })
+
+  const feedbacksHoje = feedbacks.filter((item) => {
+    const date = new Date(item.criado_em)
+    return !Number.isNaN(date.getTime()) && date.toDateString() === new Date().toDateString()
+  }).length
+  const feedbacksComOrganizacao = feedbacks.filter((item) => item.empresa_id != null).length
+  const feedbackTipos = Array.from(new Set(feedbacks.map((item) => String(item.tipo_usuario ?? "").toUpperCase()).filter(Boolean))).sort()
+
+  function formatDateTime(raw: string) {
+    const date = new Date(raw)
+    if (Number.isNaN(date.getTime())) return "-"
+
+    return new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(date)
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -525,8 +699,8 @@ export default function AdminPage() {
         )}
 
         {/* Tabs */}
-        <div className="mb-6 flex gap-2">
-          {(["organizacoes", "gerentes", "usuarios"] as Tab[]).map((t) => (
+        <div className="mb-6 flex flex-wrap gap-2">
+          {(["organizacoes", "gerentes", "gerentes_sistemas", "usuarios"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -535,10 +709,20 @@ export default function AdminPage() {
                 tab === t ? "bg-blue-600 text-white" : "text-muted-foreground hover:bg-secondary"
               )}
             >
-              {t === "organizacoes" ? <Building2 className="h-4 w-4" /> : <Users className="h-4 w-4" />}
-              {t === "organizacoes" ? "Organizações" : t === "gerentes" ? "Gerentes e Senhas" : "Usuarios"}
+              {t === "organizacoes" ? <Building2 className="h-4 w-4" /> : t === "gerentes_sistemas" ? <UserCog className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+              {t === "organizacoes" ? "Organizações" : t === "gerentes" ? "Gerentes e Senhas" : t === "gerentes_sistemas" ? "Gerente de Sistemas" : "Usuarios"}
             </button>
           ))}
+          <button
+            onClick={() => setTab("feedbacks")}
+            className={cn(
+              "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+              tab === "feedbacks" ? "bg-blue-600 text-white" : "text-muted-foreground hover:bg-secondary"
+            )}
+          >
+            <MessageSquareText className="h-4 w-4" />
+            Feedbacks
+          </button>
         </div>
 
         {/* ── Tab Organizações ── */}
@@ -774,6 +958,179 @@ export default function AdminPage() {
           </div>
         )}
 
+        {tab === "gerentes_sistemas" && (
+          <div>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Gerente de Sistemas</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Cadastre usuarios com acesso de visualizacao a multiplas organizacoes.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowGerenteSistemaForm((value) => !value)
+                  setEditGerenteSistema(null)
+                }}
+                className={btnPrimary}
+              >
+                <Plus className="h-4 w-4" />
+                {showGerenteSistemaForm ? "Fechar" : "Cadastrar gerente de sistemas"}
+              </button>
+            </div>
+
+            {showGerenteSistemaForm && (
+              <div className="mb-6 rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.98),rgba(10,14,22,0.99))] p-6">
+                <h3 className="mb-4 text-sm font-semibold">Novo Gerente de Sistemas</h3>
+                <form onSubmit={onCreateGerenteSistema} className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <Field label="Login" required>
+                      <input className={inputCls} value={gerenteSistemaLogin} onChange={(e) => setGerenteSistemaLogin(e.target.value)} placeholder="Ex: chefe" required />
+                    </Field>
+                    <Field label="Nome" required>
+                      <input className={inputCls} value={gerenteSistemaNome} onChange={(e) => setGerenteSistemaNome(e.target.value)} placeholder="Nome completo" required />
+                    </Field>
+                    <Field label="CPF">
+                      <input className={inputCls} value={gerenteSistemaCpf} onChange={(e) => setGerenteSistemaCpf(e.target.value)} placeholder="Opcional" />
+                    </Field>
+                    <Field label="Senha inicial" required>
+                      <PasswordInput value={gerenteSistemaSenha} onChange={setGerenteSistemaSenha} placeholder="Minimo 6 caracteres" />
+                    </Field>
+                  </div>
+
+                  <Field label="Organizacoes liberadas" required>
+                    <div className="grid max-h-64 gap-2 overflow-y-auto rounded-xl border border-[#1c2940] bg-background/40 p-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {activeOrgs.map((org) => (
+                        <label key={org.id_organizacao} className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm transition-colors hover:bg-muted">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 h-4 w-4 accent-emerald-500"
+                            checked={gerenteSistemaOrgIds.includes(org.id_organizacao)}
+                            onChange={() => toggleGerenteSistemaOrg(org.id_organizacao)}
+                          />
+                          <span>
+                            <span className="block font-medium text-foreground">{org.nome}</span>
+                            <span className="block text-xs text-muted-foreground">ID {org.id_organizacao}</span>
+                          </span>
+                        </label>
+                      ))}
+                      {activeOrgs.length === 0 && (
+                        <p className="text-sm text-muted-foreground">Nenhuma organizacao ativa encontrada.</p>
+                      )}
+                    </div>
+                  </Field>
+
+                  <div className="flex flex-wrap gap-3">
+                    <button type="submit" disabled={savingGerenteSistema} className={btnPrimary}>
+                      {savingGerenteSistema ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      Cadastrar gerente de sistemas
+                    </button>
+                    <button type="button" onClick={() => { setShowGerenteSistemaForm(false); clearGerenteSistemaForm() }} className={btnSecondary}>
+                      <X className="h-4 w-4" />Cancelar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {editGerenteSistema && (
+              <div className="mb-6 rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.98),rgba(10,14,22,0.99))] p-6">
+                <h3 className="mb-4 text-sm font-semibold">Editar: {editGerenteSistema.nome_completo ?? editGerenteSistema.nome ?? editGerenteSistema.login}</h3>
+                <div className="space-y-4">
+                  <Field label="Nova senha (vazio = manter)">
+                    <PasswordInput value={editGerenteSistemaSenha} onChange={setEditGerenteSistemaSenha} />
+                  </Field>
+                  <Field label="Organizacoes liberadas" required>
+                    <div className="grid max-h-64 gap-2 overflow-y-auto rounded-xl border border-[#1c2940] bg-background/40 p-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {activeOrgs.map((org) => (
+                        <label key={org.id_organizacao} className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm transition-colors hover:bg-muted">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 h-4 w-4 accent-emerald-500"
+                            checked={editGerenteSistemaOrgIds.includes(org.id_organizacao)}
+                            onChange={() => toggleGerenteSistemaOrg(org.id_organizacao, true)}
+                          />
+                          <span>
+                            <span className="block font-medium text-foreground">{org.nome}</span>
+                            <span className="block text-xs text-muted-foreground">ID {org.id_organizacao}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </Field>
+                  <div className="flex flex-wrap gap-3">
+                    <button onClick={onSaveGerenteSistema} disabled={savingGerenteSistema} className={btnPrimary}>
+                      {savingGerenteSistema ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      Salvar
+                    </button>
+                    <button onClick={() => { setEditGerenteSistema(null); setEditGerenteSistemaSenha(""); setEditGerenteSistemaOrgIds([]) }} className={btnSecondary}>
+                      <X className="h-4 w-4" />Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {loading ? (
+              <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+            ) : gerentesSistemas.length === 0 ? (
+              <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] py-16 text-center text-muted-foreground">
+                Nenhum Gerente de Sistemas cadastrado.
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))]">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-sm">
+                    <thead>
+                      <tr className="border-b border-[#1c2940]">
+                        {["Usuario", "Status", "Organizacoes liberadas", "Ultimo login", "Acoes"].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#1c2940]/60">
+                      {gerentesSistemas.map((item) => (
+                        <tr key={item.id_usuario} className="align-top hover:bg-white/[0.02]">
+                          <td className="px-4 py-3">
+                            <p className="font-medium">{item.nome_completo ?? item.nome ?? item.login}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">Login: {item.login}{item.cpf ? ` - CPF: ${item.cpf}` : ""}</p>
+                          </td>
+                          <td className="px-4 py-3"><Badge ativo={item.ativo} /></td>
+                          <td className="px-4 py-3">
+                            <div className="flex max-w-xl flex-wrap gap-1.5">
+                              {item.organizacoes.length ? item.organizacoes.map((org) => (
+                                <span key={org.id_organizacao} className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-200">
+                                  {org.nome}
+                                </span>
+                              )) : (
+                                <span className="text-xs text-muted-foreground">Sem organizacoes vinculadas</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground">{item.ultimo_login ? formatDateTime(item.ultimo_login) : "-"}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-2">
+                              <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => startEditGerenteSistema(item)}>
+                                <UserCog className="h-3.5 w-3.5" />Editar
+                              </button>
+                              <button className={btnWarn} onClick={() => onToggleGerenteSistema(item).catch((e) => toast.error((e as Error).message))}>
+                                {item.ativo === "S" ? "Desativar" : "Ativar"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border-t border-[#1c2940] px-4 py-3 text-xs text-muted-foreground">
+                  {gerentesSistemas.length} Gerente(s) de Sistemas
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {tab === "usuarios" && (
           <UserManagementPanel
             organizations={orgs}
@@ -781,6 +1138,116 @@ export default function AdminPage() {
             title="Controle de usuarios por organizacao"
             description="Selecione uma organizacao para editar senha, aplicar logoff, ativar ou inativar usuarios."
           />
+        )}
+
+        {tab === "feedbacks" && (
+          <div className="space-y-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">Feedbacks</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Mensagens recebidas por organizacao, usuario e horario.</p>
+              </div>
+              <button onClick={fetchData} disabled={loading} className={btnSecondary}>
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Atualizar
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total recebido</p>
+                <p className="mt-2 text-2xl font-bold">{feedbacks.length}</p>
+              </div>
+              <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hoje</p>
+                <p className="mt-2 text-2xl font-bold">{feedbacksHoje}</p>
+              </div>
+              <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Com organizacao</p>
+                <p className="mt-2 text-2xl font-bold">{feedbacksComOrganizacao}</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] p-4">
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-end">
+                <Field label="Organizacao">
+                  <select className={inputCls} value={feedbackEmpresaId} onChange={(e) => setFeedbackEmpresaId(e.target.value)}>
+                    <option value="">Todas as organizacoes</option>
+                    {orgs.map((org) => (
+                      <option key={org.id_organizacao} value={org.id_organizacao}>{org.nome}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Perfil">
+                  <select className={inputCls} value={feedbackTipoUsuario} onChange={(e) => setFeedbackTipoUsuario(e.target.value)}>
+                    <option value="">Todos os perfis</option>
+                    {feedbackTipos.map((tipo) => (
+                      <option key={tipo} value={tipo}>{tipo}</option>
+                    ))}
+                  </select>
+                </Field>
+                <button
+                  type="button"
+                  onClick={() => { setFeedbackEmpresaId(""); setFeedbackTipoUsuario("") }}
+                  className={btnSecondary}
+                >
+                  <X className="h-4 w-4" />
+                  Limpar
+                </button>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+            ) : filteredFeedbacks.length === 0 ? (
+              <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] py-16 text-center text-muted-foreground">
+                Nenhum feedback encontrado.
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))]">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-sm">
+                    <thead>
+                      <tr className="border-b border-[#1c2940]">
+                        {["Data e hora", "Organizacao", "Quem enviou", "Perfil", "Mensagem"].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#1c2940]/60">
+                      {filteredFeedbacks.map((item) => (
+                        <tr key={item.id_feedback} className="align-top hover:bg-white/[0.02]">
+                          <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDateTime(item.criado_em)}</td>
+                          <td className="px-4 py-3">
+                            <p className="font-medium">{item.organizacao_nome ?? "Sem organizacao"}</p>
+                            {item.empresa_id != null && <p className="mt-0.5 font-mono text-xs text-muted-foreground">ID {item.empresa_id}</p>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="font-medium">{item.nome_usuario ?? item.login_usuario ?? "Usuario nao identificado"}</p>
+                            <p className="mt-0.5 text-xs text-muted-foreground">
+                              {item.login_usuario ? `Login: ${item.login_usuario}` : "Sem login"}
+                              {item.sk_vendedor != null ? ` - SK: ${item.sk_vendedor}` : ""}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-xs font-semibold text-blue-200">
+                              {item.tipo_usuario ?? "USUARIO"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-foreground/90">
+                            <p className="max-w-[520px] whitespace-pre-wrap leading-relaxed">{item.feedback}</p>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="border-t border-[#1c2940] px-4 py-3 text-xs text-muted-foreground">
+                  {filteredFeedbacks.length} feedback(s) exibido(s)
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </main>
     </div>

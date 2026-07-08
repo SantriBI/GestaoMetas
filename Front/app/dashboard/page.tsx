@@ -174,8 +174,13 @@ export default function DashboardPage() {
 
     const user = JSON.parse(userStr) as AuthUser
 
-    if (user.role !== "GERENTE") {
+    if (user.role !== "GERENTE" && user.role !== "GERENTE_SISTEMAS") {
       router.push("/login")
+      return
+    }
+
+    if (user.role === "GERENTE_SISTEMAS" && !user.empresa_id) {
+      router.push("/gerente-sistemas")
       return
     }
 
@@ -516,21 +521,21 @@ export default function DashboardPage() {
                 }`}
                 aria-hidden={activeView !== "grandprix"}
               >
-                <section className="mt-1 overflow-visible rounded-[28px] border border-violet-200/80 bg-[linear-gradient(180deg,rgba(245,243,255,0.98),rgba(255,255,255,0.96))] px-4 pt-4 pb-10 shadow-[0_18px_54px_rgba(109,40,217,0.1)] dark:border-violet-400/16 dark:bg-[linear-gradient(180deg,rgba(92,39,160,0.09),rgba(13,10,20,0.96))] dark:shadow-[0_28px_90px_rgba(89,28,135,0.2)] sm:rounded-[30px] sm:px-6 sm:pt-6 sm:pb-12">
+                <section className="mt-1 overflow-visible rounded-[28px] border border-violet-400/16 bg-[linear-gradient(180deg,rgba(92,39,160,0.09),rgba(13,10,20,0.96))] px-4 pt-4 pb-10 shadow-[0_28px_90px_rgba(89,28,135,0.2)] sm:rounded-[30px] sm:px-6 sm:pt-6 sm:pb-12">
                   <div className="mb-6 flex flex-col items-start gap-3 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-violet-500 dark:text-violet-200/70">Modo corrida</p>
-                      <h2 className="mt-2 flex items-center gap-3 text-xl font-bold text-slate-950 dark:text-white sm:text-2xl">
-                        <Trophy className="h-6 w-6 text-violet-500 dark:text-violet-300" />
+                      <p className="text-xs uppercase tracking-[0.18em] text-violet-200/70">Modo corrida</p>
+                      <h2 className="mt-2 flex items-center gap-3 text-xl font-bold text-white sm:text-2xl">
+                        <Trophy className="h-6 w-6 text-violet-300" />
                         Grand Prix de Vendas
                       </h2>
                     </div>
-                    <span className="animate-pulse rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700 shadow-[0_0_24px_rgba(168,85,247,0.1)] dark:border-violet-300/18 dark:bg-violet-500/10 dark:text-violet-100 dark:shadow-[0_0_24px_rgba(168,85,247,0.18)]">
+                    <span className="animate-pulse rounded-full border border-violet-300/18 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-100 shadow-[0_0_24px_rgba(168,85,247,0.18)]">
                       Top 3 em destaque
                     </span>
                   </div>
 
-                  <div className="space-y-6 overflow-visible rounded-[24px] border border-violet-100 bg-white/76 p-4 shadow-sm dark:border-white/8 dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5">
+                  <div className="space-y-6 overflow-visible rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5">
                     <Podium vendedores={vendedores} viewMode={viewMode} />
                     <ProgressTrail vendedores={vendedores} viewMode={viewMode} />
                   </div>

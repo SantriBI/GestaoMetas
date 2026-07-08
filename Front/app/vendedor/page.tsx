@@ -308,8 +308,13 @@ export default function VendedorDashboard() {
 
     const user = JSON.parse(userStr) as AuthUser
 
-    if (user.role !== "VENDEDOR") {
+    if (user.role !== "VENDEDOR" && user.role !== "GERENTE_SISTEMAS") {
       router.push("/login")
+      return
+    }
+
+    if (user.role === "GERENTE_SISTEMAS" && (!user.empresa_id || !user.sk_vendedor)) {
+      router.push("/gerente-sistemas")
       return
     }
 
@@ -757,7 +762,7 @@ export default function VendedorDashboard() {
   }
 
 
-  const isDark = mounted ? resolvedTheme === "dark" : false
+  const isDark = mounted ? resolvedTheme === "dark" : true
 
   if (!vendedor) {
     return (

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
+
+_HEX64_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 
 
 BACK_DIR = Path(__file__).resolve().parents[1]
@@ -42,4 +45,11 @@ def mysql_config() -> dict[str, object]:
 
 def app_encryption_key_hex() -> str:
     load_env_file()
-    return os.getenv("APP_ENCRYPTION_KEY") or ("0" * 64)
+    value = os.getenv("APP_ENCRYPTION_KEY")
+    if not value or not _HEX64_RE.match(value) or set(value) == {"0"}:
+        raise RuntimeError(
+            "APP_ENCRYPTION_KEY ausente ou insegura. Defina uma chave hex de 64 caracteres "
+            "(32 bytes), identica a usada pelo processo Node (gere com: openssl rand -hex 32)."
+        )
+    return value
+

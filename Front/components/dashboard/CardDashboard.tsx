@@ -203,7 +203,7 @@ export function CardDashboard({
     setMounted(true)
   }, [])
 
-  const isDark = mounted ? resolvedTheme === "dark" : false
+  const isDark = mounted ? resolvedTheme === "dark" : true
   const g = isDark ? gradient : (gradientLight ?? gradient)
 
   return (

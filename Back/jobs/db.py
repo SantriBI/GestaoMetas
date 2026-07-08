@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -9,6 +10,8 @@ import oracledb
 
 from .config import mysql_config
 from .crypto_utils import decrypt_secret
+
+_LEGACY_ENCRYPTED_PASSWORD_RE = re.compile(r"^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$", re.IGNORECASE)
 
 
 @contextmanager
@@ -81,12 +84,30 @@ def save_diagnostic(id_organizacao: int, status: str, message: str, payload: dic
         conn.commit()
 
 
+def _decrypt_oracle_password(org: dict[str, Any]) -> str:
+    raw = str(org.get("oracle_password") or "")
+    org_id = org.get("id_organizacao")
+
+    if not _LEGACY_ENCRYPTED_PASSWORD_RE.match(raw):
+        raise RuntimeError(
+            f"Senha Oracle da organizacao {org_id} nao esta criptografada. "
+            "Rode Back/scripts/migrate-oracle-passwords.js antes de usar esta organizacao."
+        )
+
+    try:
+        return decrypt_secret(raw)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Nao foi possivel decriptar a senha Oracle da organizacao {org_id}. "
+            "APP_ENCRYPTION_KEY pode estar incorreta ou ter sido rotacionada."
+        ) from exc
+
+
 @contextmanager
 def oracle_connection(org: dict[str, Any]) -> Iterator[oracledb.Connection]:
-    password = decrypt_secret(org.get("oracle_password"))
     conn = oracledb.connect(
         user=org.get("oracle_user"),
-        password=password,
+        password=_decrypt_oracle_password(org),
         dsn=org.get("oracle_connect_string"),
     )
     try:

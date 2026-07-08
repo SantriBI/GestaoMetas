@@ -15,6 +15,7 @@ import {
   updateAuthUserPhoto,
 } from "../services/authUsersService.js"
 import { requireAuth } from "../middleware/auth.js"
+import { getRequestedEmpresaId } from "../services/requestScope.js"
 import centralPool from "../db/mysql.js"
 
 const router = express.Router()
@@ -55,14 +56,18 @@ function isGlobalAdmin(req) {
   return actorRole(req) === "SUPERADMIN" || actorRole(req) === "ADMIN"
 }
 
-function getRequestedEmpresaId(req) {
-  return req.query?.empresa_id ?? req.query?.empresaId ?? req.body?.empresa_id ?? req.body?.empresaId ?? null
+function getSelfLookupEmpresaId(req) {
+  if (actorRole(req) === "GERENTE_SISTEMAS") {
+    return req.auth?.empresa_id_original ?? null
+  }
+
+  return req.auth?.empresa_id ?? null
 }
 
 function getManagementScope(req, res, { requireEmpresa = true } = {}) {
   const role = actorRole(req)
 
-  if (role === "GERENTE") {
+  if (role === "GERENTE" || role === "GERENTE_SISTEMAS") {
     const empresaId = req.auth?.empresa_id ?? null
     if (!empresaId) {
       res.status(403).json({ error: "Empresa do gerente nao encontrada." })
@@ -133,7 +138,7 @@ async function loadTargetUser(req, res) {
 async function alterarSenha(req, res) {
   // id_usuario e empresa_id vêm do token autenticado, nunca do body
   const id_usuario = req.auth.id_usuario
-  const empresa_id = req.auth.empresa_id
+  const empresa_id = getSelfLookupEmpresaId(req)
 
   const {
     senha_atual,
@@ -181,21 +186,42 @@ async function alterarSenha(req, res) {
   }
 }
 
+router.get("/usuarios/perfil/me", requireAuth, async (req, res) => {
+  try {
+    const usuario = await findAuthUserById(req.auth?.id_usuario, getSelfLookupEmpresaId(req))
+
+    if (!usuario || usuario.ativo !== "S") {
+      return res.status(404).json({ error: "Usuario nao encontrado" })
+    }
+
+    return res.json(normalizePublicUser(await resolveAuthUserDisplayName(usuario)))
+  } catch (error) {
+    console.error("Erro ao buscar perfil autenticado:", error)
+    return res.status(500).json({ error: "Erro ao buscar perfil do usuario" })
+  }
+})
+
 router.get("/usuarios/perfil/:id_usuario", requireAuth, async (req, res) => {
   const callerRole = actorRole(req)
   const callerId = String(req.auth?.id_usuario ?? "")
   const targetId = String(req.params.id_usuario)
   const isAdmin = ["ADMIN", "SUPERADMIN"].includes(callerRole)
-  const isGerente = callerRole === "GERENTE"
+  const isSystemManager = callerRole === "GERENTE_SISTEMAS"
+  const isSelfLookup = callerId === targetId
+  // Um GERENTE_SISTEMAS na visao emprestada de gerente pode ver o time da organizacao liberada;
+  // a propria consulta a si mesmo continua indo por getSelfLookupEmpresaId (sem empresa fixa).
+  const isGerente = callerRole === "GERENTE" || (isSystemManager && !isSelfLookup)
 
-  if (!isAdmin && !isGerente && callerId !== targetId) {
+  if (!isAdmin && !isGerente && !isSelfLookup) {
     return res.status(403).json({ error: "Acesso negado." })
   }
 
   try {
     const empresaId = isAdmin
       ? (req.query.empresa_id ?? req.query.empresaId ?? req.auth?.empresa_id ?? null)
-      : (req.auth?.empresa_id ?? null)
+      : isSystemManager && isSelfLookup
+        ? getSelfLookupEmpresaId(req)
+        : (req.auth?.empresa_id ?? null)
 
     if (isGerente) {
       if (!empresaId) return res.status(403).json({ error: "Empresa do gerente nao encontrada." })
@@ -311,7 +337,7 @@ router.post("/usuarios/gerenciamento/:id_usuario/logoff", requireAuth, async (re
 })
 
 router.post("/usuarios/gerenciamento/logoff-geral", requireAuth, async (req, res) => {
-  if (actorRole(req) === "GERENTE") {
+  if (["GERENTE", "GERENTE_SISTEMAS"].includes(actorRole(req))) {
     return res.status(403).json({ error: "Logoff geral nao permitido para gerente." })
   }
 
@@ -352,7 +378,7 @@ router.post("/usuarios/upload-foto", requireAuth, async (req, res) => {
   const callerId = String(req.auth?.id_usuario ?? "")
   const isAdmin = ["ADMIN", "SUPERADMIN"].includes(callerRole)
   const targetUserId = isAdmin ? id_usuario : req.auth?.id_usuario
-  const targetEmpresaId = isAdmin ? (empresa_id ?? req.auth?.empresa_id ?? null) : (req.auth?.empresa_id ?? null)
+  const targetEmpresaId = isAdmin ? (empresa_id ?? req.auth?.empresa_id ?? null) : getSelfLookupEmpresaId(req)
 
   if (!targetUserId || !conteudoBase64 || !tipoMime) {
     return res.status(400).json({ error: "Usuario, arquivo e tipo da imagem sao obrigatorios" })
@@ -396,7 +422,7 @@ router.post("/usuarios/upload-foto", requireAuth, async (req, res) => {
   }
 })
 
-router.put("/usuarios/atualizar-cpf", async (req, res) => {
+router.put("/usuarios/atualizar-cpf", requireAuth, async (req, res) => {
   return res.status(403).json({
     error: "A alteracao de CPF nao esta disponivel para o usuario. Atualize esse dado pelo cadastro administrativo.",
   })

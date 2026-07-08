@@ -27,7 +27,8 @@ const router = express.Router()
 
 router.use(requireAuth)
 
-const requireChallengeManager = requireRole("GERENTE", "ADMIN", "SUPERADMIN")
+const requireChallengeManager = requireRole("GERENTE", "ADMIN", "SUPERADMIN", "GERENTE_SISTEMAS")
+const requireChallengeSeller = requireRole("VENDEDOR", "GERENTE_SISTEMAS")
 
 router.get("/desafios/metadata", requireChallengeManager, getDesafioMetadata)
 router.get("/desafios/catalogo/produtos", requireChallengeManager, getDesafioProdutosCatalogo)
@@ -40,9 +41,9 @@ router.get("/desafios/:id", requireChallengeManager, getDesafioById)
 router.put("/desafios/:id", requireChallengeManager, putDesafio)
 router.delete("/desafios/:id", requireChallengeManager, deleteDesafio)
 router.get("/desafios/:id/participantes", requireChallengeManager, getDesafioParticipantes)
-router.post("/desafios/:id/aceitar", requireRole("VENDEDOR"), postAceitarDesafio)
-router.post("/desafios/:id/recusar", requireRole("VENDEDOR"), postRecusarDesafio)
-router.post("/desafios/:id/visualizar", requireRole("VENDEDOR"), postVisualizarDesafio)
+router.post("/desafios/:id/aceitar", requireChallengeSeller, postAceitarDesafio)
+router.post("/desafios/:id/recusar", requireChallengeSeller, postRecusarDesafio)
+router.post("/desafios/:id/visualizar", requireChallengeSeller, postVisualizarDesafio)
 router.get("/desafios/:id/progresso", requireChallengeManager, getDesafioProgresso)
 
 router.get("/vendedor/:sk_vendedor/desafios", getVendedorDesafios)

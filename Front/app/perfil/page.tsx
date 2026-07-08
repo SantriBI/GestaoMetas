@@ -32,6 +32,16 @@ function getDisplayName(user?: Pick<AuthUser, "nome" | "login"> | null) {
   return name
 }
 
+function getRoleLabel(role?: string | null) {
+  const normalized = String(role ?? "").toUpperCase()
+  if (normalized === "VENDEDOR") return "Vendedor"
+  if (normalized === "GERENTE_SISTEMAS") return "Gerente de Sistemas"
+  if (normalized === "ADMIN") return "Administrador"
+  if (normalized === "SUPERADMIN") return "Superadmin"
+  if (normalized === "INDUSTRIA") return "Industria"
+  return "Gerente"
+}
+
 export default function PerfilPage() {
   const router = useRouter()
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -63,11 +73,9 @@ export default function PerfilPage() {
         setLoadingPerfil(true)
         setErro(null)
 
-        const params = new URLSearchParams()
-        if (authenticatedUser.empresa_id) params.set("empresa_id", String(authenticatedUser.empresa_id))
-
-        const response = await fetch(`/api/usuarios/perfil/${authenticatedUser.id_usuario}?${params.toString()}`, {
+        const response = await fetch("/api/usuarios/perfil/me", {
           cache: "no-store",
+          credentials: "include",
         })
         const json = await response.json().catch(() => ({}))
 
@@ -76,15 +84,26 @@ export default function PerfilPage() {
         }
 
         setPerfil(json)
-        setUser((state) => (state ? { ...state, ...json } : state))
-        updateStoredUser({
-          nome: json.nome,
-          login: json.login,
-          foto_url: json.foto_url ?? null,
-          role: json.role,
-          empresa_id: json.empresa_id ?? null,
-          sk_vendedor: json.sk_vendedor ?? null,
-        })
+        if (authenticatedUser.role === "GERENTE_SISTEMAS") {
+          const profilePatch = {
+            nome: json.nome,
+            login: json.login,
+            foto_url: json.foto_url ?? null,
+            senha_temporaria: json.senha_temporaria ?? authenticatedUser.senha_temporaria ?? null,
+          }
+          setUser((state) => (state ? { ...state, ...profilePatch } : state))
+          updateStoredUser(profilePatch)
+        } else {
+          setUser((state) => (state ? { ...state, ...json } : state))
+          updateStoredUser({
+            nome: json.nome,
+            login: json.login,
+            foto_url: json.foto_url ?? null,
+            role: json.role,
+            empresa_id: json.empresa_id ?? null,
+            sk_vendedor: json.sk_vendedor ?? null,
+          })
+        }
       } catch (error) {
         setErro(error instanceof Error ? error.message : "Nao foi possivel carregar seu perfil")
       } finally {
@@ -132,9 +151,8 @@ export default function PerfilPage() {
       const response = await fetch("/api/usuarios/upload-foto", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
-          id_usuario: user.id_usuario,
-          empresa_id: user.empresa_id,
           arquivo_base64: previewFoto,
           mime_type: fotoArquivo.type,
         }),
@@ -168,9 +186,8 @@ export default function PerfilPage() {
       const response = await fetch("/api/usuarios/alterar-senha", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({
-          id_usuario: user.id_usuario,
-          empresa_id: user.empresa_id,
           senha_atual: senhaAtual,
           nova_senha: novaSenha,
           confirmar_senha: confirmarSenha,
@@ -226,7 +243,7 @@ export default function PerfilPage() {
               <h2 className="mt-4 text-lg font-semibold uppercase tracking-[0.08em]">
                 {displayName ?? (loadingPerfil ? "Carregando..." : "Usuario")}
               </h2>
-              <p className="mt-1 text-sm text-slate-400">{perfil?.role === "VENDEDOR" ? "Vendedor" : "Gerente"}</p>
+              <p className="mt-1 text-sm text-slate-400">{getRoleLabel(perfil?.role ?? user?.role)}</p>
             </div>
 
             <div className="mt-6 space-y-4">
@@ -276,7 +293,9 @@ export default function PerfilPage() {
                 </div>
                 <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-4">
                   <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Perfil</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-100">{loadingPerfil ? "Carregando..." : perfil?.role ?? "-"}</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-100">
+                    {loadingPerfil ? "Carregando..." : getRoleLabel(perfil?.role ?? user?.role)}
+                  </p>
                 </div>
               </div>
             </section>

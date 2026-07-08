@@ -84,7 +84,7 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-white/45">Ritmo de corrida</p>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-1 text-sm text-slate-400">
               Do 4° lugar em diante, cada vendedor segue vivo na disputa.
             </p>
           </div>
@@ -113,16 +113,16 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
               className={`flex flex-col items-stretch gap-3 sm:items-center sm:gap-4 ${side === "right" ? "sm:flex-row-reverse" : "sm:flex-row"}`}
             >
               <div
-                className={`w-full flex-1 rounded-[24px] border border-border bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-4 transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_16px_36px_rgba(0,0,0,0.14)] sm:max-w-md ${
+                className={`w-full flex-1 rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(8,15,26,0.96),rgba(4,10,18,0.98))] p-4 transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_16px_36px_rgba(0,0,0,0.22)] sm:max-w-md ${
                   side === "right" ? "sm:ml-auto" : "sm:mr-auto"
                 }`}
               >
                 <div className="mb-3 flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-sm font-bold text-primary">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/8 text-sm font-bold text-primary">
                     {position}o
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h4 className="truncate font-semibold text-foreground">{vendedor.nome}</h4>
+                    <h4 className="truncate font-semibold text-white">{vendedor.nome}</h4>
                     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${getStatusClass(vendedor.status)}`}>
                       <StatusIcon className="h-3 w-3" />
                       {getStatusLabel(vendedor.status)}
@@ -132,11 +132,11 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
 
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <span className="text-muted-foreground">Faturamento</span>
+                    <span className="text-slate-400">Faturamento</span>
                     <span className="font-semibold text-success">{formatCurrency(vendedor.receita)}</span>
                   </div>
 
-                  <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${getProgressBarClass(vendedor.status)}`}
                       style={{ width: `${Math.min(vendedor.percentual, 100)}%` }}
@@ -144,7 +144,7 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <span className="text-muted-foreground">Meta: {formatCurrency(vendedor.meta)}</span>
+                    <span className="text-slate-400">Meta: {formatCurrency(vendedor.meta)}</span>
                     <span
                       className={`font-semibold ${
                         vendedor.status === "achieved"
@@ -161,7 +161,7 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
               </div>
 
               <div className="flex flex-row items-center justify-center gap-2 sm:flex-col sm:gap-0">
-                <div className="h-8 w-0.5 bg-border" />
+                <div className="h-8 w-0.5 bg-white/12" />
                 <MapPin className={`h-6 w-6 ${pinColor}`} />
               </div>
 
@@ -172,9 +172,9 @@ export function ProgressTrail({ vendedores, viewMode = "mensal" }: ProgressTrail
       </div>
 
       <div className="mt-8 flex justify-center">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-4 py-3 text-center sm:px-6">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-4 py-3 text-center sm:px-6">
           <Flag className="h-5 w-5 text-primary" />
-          <span className="font-semibold text-muted-foreground">
+          <span className="font-semibold text-slate-300">
             {viewMode === "diario" ? "LARGADA DO DIA" : "LARGADA DO MES"}
           </span>
         </div>

@@ -11,9 +11,7 @@ import {
   MessageSquareMore,
   PiggyBank,
   UserCog,
-  UserRound,
-  Moon,
-  Sun
+  UserRound
 } from "lucide-react"
 import Image from "next/image"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -27,7 +25,6 @@ import {
   getUserAvatarSrc,
   getUserInitials,
 } from "@/lib/user-session"
-import { useTheme } from "next-themes"
 
 interface AppShellNavProps {
   user: AuthUser | null
@@ -39,16 +36,8 @@ export function AppShellNav({ user }: AppShellNavProps) {
   const router = useRouter()
   const dashboardHref = getDashboardRoute(user?.role)
   const [feedActivityCount, setFeedActivityCount] = useState(0)
-  const [mounted, setMounted] = useState(false)
-  const { resolvedTheme, setTheme } = useTheme()
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  const isDark = mounted ? resolvedTheme === "dark" : false
-
-  const darkPalette = {
+  const palette = {
     nav: "border-[#183424] bg-[#08130f]/84 backdrop-blur-xl text-white",
     logo: "",
     link: "text-white/68 hover:bg-[#11251b] hover:text-white",
@@ -57,32 +46,31 @@ export function AppShellNav({ user }: AppShellNavProps) {
     role: "text-[#9cb8a5]",
     logout: "border-[#21402c] bg-[#0c1711] text-white/75 hover:bg-[#11251b] hover:text-white",
     avatarRing: "border-[#21402c]",
-    toggle: "border-[#21402c] bg-[#0c1711] text-white/75 hover:bg-[#11251b] hover:text-white",
   }
-
-  const lightPalette = {
-    nav: "border-emerald-200/70 bg-white/92 backdrop-blur-xl text-slate-900 shadow-[0_8px_28px_rgba(15,23,42,0.05)]",
-    logo: "invert",
-    link: "text-slate-600 hover:bg-green-50 hover:text-slate-900",
-    active: "bg-[linear-gradient(135deg,rgba(5,150,105,0.96),rgba(34,197,94,0.94))] text-white shadow-[0_10px_24px_rgba(34,197,94,0.16)]",
-    profile: "border-green-200/60 bg-green-50/80 text-slate-900",
-    role: "text-green-600",
-    logout: "border-green-200/60 bg-green-50/80 text-slate-600 hover:bg-green-100 hover:text-slate-900",
-    avatarRing: "border-green-300/60",
-    toggle: "border-green-200/60 bg-green-50/80 text-slate-600 hover:bg-green-100 hover:text-slate-900",
-  }
-
-  const palette = isDark ? darkPalette : lightPalette
 
   const lifeGoalHref = "/vendedor/minha-meta-de-vida"
 
   const isAdmin = user?.role === "ADMIN"
+  const isSystemManager = user?.role === "GERENTE_SISTEMAS"
+  const systemManagerDashboardHref =
+    user?.gerente_sistemas_view === "VENDEDOR"
+      ? "/vendedor"
+      : user?.gerente_sistemas_view === "GERENTE"
+        ? "/dashboard"
+        : "/gerente-sistemas"
 
   const navItems = isAdmin
     ? [
         { href: "/admin/organizacoes", label: "Organizações", icon: Building2 },
         { href: "/perfil", label: "Perfil", icon: UserRound },
       ]
+    : isSystemManager
+      ? [
+          { href: "/gerente-sistemas", label: "Selecionar", icon: Building2 },
+          { href: systemManagerDashboardHref, label: "Dashboard", icon: LayoutDashboard },
+          ...(user?.gerente_sistemas_view === "GERENTE" ? [{ href: "/usuarios", label: "Usuarios", icon: UserCog }] : []),
+          { href: "/perfil", label: "Perfil", icon: UserRound },
+        ]
     : [
         { href: dashboardHref, label: "Home", icon: Home },
         { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
@@ -95,14 +83,10 @@ export function AppShellNav({ user }: AppShellNavProps) {
   useEffect(() => {
     if (!user) return
 
-    const actor = {
-      usuario_id: Number(user.id_usuario),
-      nome_usuario: String(user.nome ?? user.NOME ?? "").trim(),
-      tipo_usuario: user.role,
-      empresa_id: Number(user.empresa_id ?? user.sk_empresa ?? 0),
-    }
+    const canUseFeed = user.role === "VENDEDOR" || user.role === "GERENTE"
+    const empresaId = Number(user.empresa_id ?? user.sk_empresa ?? 0)
 
-    if (!Number.isFinite(actor.empresa_id) || actor.empresa_id <= 0) {
+    if (!canUseFeed || !Number.isFinite(empresaId) || empresaId <= 0) {
       setFeedActivityCount(0)
       return
     }
@@ -119,13 +103,7 @@ export function AppShellNav({ user }: AppShellNavProps) {
       if (!since) return
 
       try {
-        const params = new URLSearchParams({
-          usuario_id: String(actor.usuario_id),
-          nome_usuario: actor.nome_usuario,
-          tipo_usuario: actor.tipo_usuario,
-          empresa_id: String(actor.empresa_id),
-          since,
-        })
+        const params = new URLSearchParams({ since })
 
         const response = await fetch(`/api/feed/activity-count?${params.toString()}`, {
           cache: "no-store",
@@ -185,6 +163,8 @@ export function AppShellNav({ user }: AppShellNavProps) {
                     ? pathname.startsWith("/usuarios")
                   : item.label === "Organizações"
                     ? pathname.startsWith("/admin/organizacoes")
+                  : item.label === "Selecionar"
+                    ? pathname.startsWith("/gerente-sistemas")
                   : item.label === "Meta de Vida"
                     ? pathname.startsWith("/vendedor/minha-meta-de-vida")
                   : item.label === "Feed"
@@ -221,20 +201,6 @@ export function AppShellNav({ user }: AppShellNavProps) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:justify-end">
           {user?.role === "VENDEDOR" ? <NotificationBell /> : null}
 
-          {mounted && (
-            <button
-              type="button"
-              aria-label="Alternar tema"
-              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-              className={cn(
-                "inline-flex items-center justify-center rounded-lg border p-2 transition-colors",
-                palette.toggle
-              )}
-            >
-              {resolvedTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-          )}
-
           <button
             type="button"
             onClick={() => router.push("/perfil")}
@@ -252,7 +218,13 @@ export function AppShellNav({ user }: AppShellNavProps) {
                 {user?.nome ?? "Usuario"}
               </span>
               <span className={cn("block text-xs", palette.role)}>
-                {user?.role === "VENDEDOR" ? "Vendedor" : user?.role === "ADMIN" ? "Administrador" : "Gerente"}
+                {user?.role === "VENDEDOR"
+                  ? "Vendedor"
+                  : user?.role === "ADMIN"
+                    ? "Administrador"
+                    : user?.role === "GERENTE_SISTEMAS"
+                      ? "Gerente de Sistemas"
+                      : "Gerente"}
               </span>
             </span>
           </button>

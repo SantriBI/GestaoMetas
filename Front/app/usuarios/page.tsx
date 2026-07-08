@@ -17,8 +17,12 @@ export default function UsuariosPage() {
       return
     }
 
-    if (currentUser.role !== "GERENTE") {
-      router.push("/login")
+    const isManager = currentUser.role === "GERENTE"
+    const isSystemManagerViewingManager =
+      currentUser.role === "GERENTE_SISTEMAS" && currentUser.gerente_sistemas_view === "GERENTE" && !!currentUser.empresa_id
+
+    if (!isManager && !isSystemManagerViewingManager) {
+      router.push(currentUser.role === "GERENTE_SISTEMAS" ? "/gerente-sistemas" : "/login")
       return
     }
 

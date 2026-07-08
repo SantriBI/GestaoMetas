@@ -59,6 +59,11 @@ export default function LoginPage() {
         return
       }
 
+      if (data.role === "GERENTE_SISTEMAS") {
+        router.push("/gerente-sistemas")
+        return
+      }
+
       if (data.role === "VENDEDOR") {
         router.push("/vendedor")
         return

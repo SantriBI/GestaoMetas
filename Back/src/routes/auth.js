@@ -1,12 +1,22 @@
 import crypto from "node:crypto"
 import express from "express"
 import bcrypt from "bcrypt"
+import rateLimit from "express-rate-limit"
 import { issueAuthToken, setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME, verifyAuthToken } from "../auth/token.js"
 import { requireAuth, requireRole } from "../middleware/auth.js"
 import centralPool, { describeMysqlTarget, formatDbError } from "../db/mysql.js"
 import { queryTenantByEmpresaId } from "../db/mysql-tenants.js"
 
 const router = express.Router()
+
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas tentativas de login. Tente novamente em alguns minutos." },
+  skipSuccessfulRequests: true,
+})
 
 function normalizarCPF(valor) {
   return String(valor).trim().replace(/\D/g, "")
@@ -44,7 +54,7 @@ async function findUserInTenants(login) {
 }
 
 // POST /api/login
-router.post("/login", async (req, res) => {
+router.post("/login", loginRateLimiter, async (req, res) => {
   const { login, senha } = req.body
 
   if (!login || !senha) {

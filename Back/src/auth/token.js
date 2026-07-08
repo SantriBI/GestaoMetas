@@ -1,6 +1,6 @@
 import crypto from "node:crypto"
 
-const VALID_ROLES = new Set(["SUPERADMIN", "ADMIN", "GERENTE", "VENDEDOR", "PAINEL", "INDUSTRIA"])
+const VALID_ROLES = new Set(["SUPERADMIN", "ADMIN", "GERENTE", "VENDEDOR", "PAINEL", "INDUSTRIA", "GERENTE_SISTEMAS"])
 const SECRET = process.env.AUTH_TOKEN_SECRET
 
 if (!SECRET || SECRET.length < 32) {

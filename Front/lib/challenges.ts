@@ -1,3 +1,5 @@
+import { getStoredUser } from "@/lib/user-session"
+
 export type ChallengeStatus =
   | "RASCUNHO"
   | "AGENDADO"
@@ -722,7 +724,8 @@ export function aggregateChallengesSummary(items: Challenge[]): ChallengesRespon
 }
 
 async function request<T>(url: string, init?: RequestInit) {
-  const response = await fetch(url, {
+  const scopedUrl = appendSystemManagerEmpresaId(url)
+  const response = await fetch(scopedUrl, {
     cache: "no-store",
     credentials: "include",
     headers: {
@@ -741,6 +744,21 @@ async function request<T>(url: string, init?: RequestInit) {
     })
   }
   return payload as T
+}
+
+function appendSystemManagerEmpresaId(url: string) {
+  const user = getStoredUser()
+  if (user?.role !== "GERENTE_SISTEMAS" || !user.empresa_id) return url
+
+  const [pathWithQuery, hash = ""] = url.split("#", 2)
+  const [path, query = ""] = pathWithQuery.split("?", 2)
+  const params = new URLSearchParams(query)
+  if (!params.has("empresa_id") && !params.has("empresaId")) {
+    params.set("empresa_id", String(user.empresa_id))
+  }
+
+  const nextQuery = params.toString()
+  return `${path}${nextQuery ? `?${nextQuery}` : ""}${hash ? `#${hash}` : ""}`
 }
 
 export async function fetchChallenges() {
