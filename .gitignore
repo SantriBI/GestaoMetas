@@ -3,4 +3,5 @@ Front/node_modules/
 Front/.next/
 .env
 Back/.env
+Back/.env.docker
 *.log
