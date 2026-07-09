@@ -242,7 +242,7 @@ function getSegmentConfig(segmento) {
 function buildAccessScope({ role, sk_vendedor, empresa_id }) {
   const perfil = String(role ?? "").toUpperCase()
 
-  if (perfil !== "VENDEDOR" && perfil !== "GERENTE") {
+  if (perfil !== "VENDEDOR" && perfil !== "GERENTE" && perfil !== "GERENTE_SISTEMAS") {
     throw new Error("Perfil inválido para ativação de clientes.")
   }
 
@@ -254,7 +254,7 @@ function buildAccessScope({ role, sk_vendedor, empresa_id }) {
     role: perfil,
     skVendedor: sk_vendedor ?? null,
     empresaId: empresa_id ?? null,
-    isGerente: perfil === "GERENTE",
+    isGerente: perfil === "GERENTE" || perfil === "GERENTE_SISTEMAS",
     query: getScopedQuery(empresa_id),
   }
 }

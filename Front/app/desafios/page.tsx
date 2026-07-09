@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react"
 import { useEffect, useMemo, useState } from "react"
-import { Gift, Swords } from "lucide-react"
+import { ArrowLeft, Gift, Swords } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ChallengeExistingList } from "@/components/challenges/ChallengeExistingList"
 import { ChallengeInlineWizard } from "@/components/challenges/ChallengeInlineWizard"
@@ -164,6 +164,15 @@ export default function DesafiosPage() {
       <AppShellNav user={authUser} />
 
       <main className="mx-auto max-w-[1400px] space-y-6 px-4 py-8 lg:px-6">
+        <button
+          type="button"
+          onClick={() => router.push("/dashboard")}
+          className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm text-white/68 transition-colors hover:bg-white/[0.06] hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Voltar ao painel
+        </button>
+
         <section className="overflow-hidden rounded-[32px] border border-white/[0.06] bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.015))] p-6 shadow-[0_24px_70px_rgba(0,0,0,0.2)] backdrop-blur-sm sm:p-7">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-3xl">

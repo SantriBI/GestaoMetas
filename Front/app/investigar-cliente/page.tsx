@@ -17,6 +17,7 @@ import {
   UserSearch,
 } from "lucide-react"
 import { formatCurrency } from "@/lib/types"
+import { AuthUser, clearStoredUser, getStoredUser } from "@/lib/user-session"
 
 interface ClienteData {
   sk_cliente: number | string | null
@@ -68,10 +69,6 @@ interface InvestigacaoClienteData {
   top_produtos: ProdutoItem[]
   top_categorias: CategoriaItem[]
   ultimas_compras: UltimaCompraItem[]
-}
-
-interface SessionUser {
-  role?: string | null
 }
 
 function formatarData(value?: string | Date | number | null) {
@@ -167,7 +164,12 @@ function obterIconeRfv(classificacao?: string | null) {
   return <Sparkles className="h-6 w-6" />
 }
 
-function getHomeRoute(user: SessionUser | null) {
+function getHomeRoute(user: AuthUser | null) {
+  if (user?.role === "GERENTE_SISTEMAS") {
+    if (user.gerente_sistemas_view === "VENDEDOR") return "/vendedor"
+    if (user.gerente_sistemas_view === "GERENTE") return "/dashboard"
+    return "/gerente-sistemas"
+  }
   if (user?.role === "GERENTE") return "/dashboard"
   if (user?.role === "VENDEDOR") return "/vendedor"
   return "/login"
@@ -181,8 +183,7 @@ export default function InvestigarClientePage() {
   const [dados, setDados] = useState<InvestigacaoClienteData | null>(null)
   const tonalidadeRfv = obterTonalidadeRfv(dados?.rfv.classificacao)
   const iconeRfv = obterIconeRfv(dados?.rfv.classificacao)
-  const userStr = typeof window !== "undefined" ? sessionStorage.getItem("user") : null
-  const user = userStr ? (JSON.parse(userStr) as SessionUser) : null
+  const user = getStoredUser()
 
   function normalizarDocumento(valor: string) {
     return valor.replace(/\D/g, "").slice(0, 14)
@@ -233,9 +234,15 @@ export default function InvestigarClientePage() {
       setCarregando(true)
       setErro(null)
 
+      const params = new URLSearchParams({ q: termo })
+      const empresaId = user?.empresa_id ?? user?.sk_empresa
+      if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
+        params.set("empresa_id", String(empresaId))
+      }
+
       const response = await fetch(
-        `/api/investigar-cliente?q=${encodeURIComponent(termo)}`,
-        { cache: "no-store" }
+        `/api/investigar-cliente?${params.toString()}`,
+        { cache: "no-store", credentials: "include" }
       )
 
       const json = await response.json().catch(() => ({}))
@@ -290,7 +297,7 @@ export default function InvestigarClientePage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
-                sessionStorage.removeItem("user")
+                clearStoredUser()
                 router.push("/login")
               }}
               className="theme-shell-panel inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm theme-shell-muted transition-colors hover:bg-[var(--shell-panel-strong)] hover:text-[var(--shell-text)]"
