@@ -23,6 +23,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "mysql2": "^3.16.2",
-    "oracledb": "^6.10.0"
+    "oracledb": "^6.10.0",
+    "p-limit": "^7.3.0"
   }
 }

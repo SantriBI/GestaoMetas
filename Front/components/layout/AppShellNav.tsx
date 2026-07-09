@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation"
 import {
   Building2,
   Home,
+  Kanban,
   LayoutDashboard,
   LogOut,
   MessageSquareMore,
@@ -74,6 +75,7 @@ export function AppShellNav({ user }: AppShellNavProps) {
     : [
         { href: dashboardHref, label: "Home", icon: Home },
         { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
+        ...(user?.role === "VENDEDOR" ? [{ href: "/vendedor/kanban", label: "Kanban", icon: Kanban }] : []),
         ...(user?.role === "VENDEDOR" ? [{ href: lifeGoalHref, label: "Meta de Vida", icon: PiggyBank }] : []),
         { href: "/feed", label: "Feed", icon: MessageSquareMore },
         ...(user?.role === "GERENTE" ? [{ href: "/usuarios", label: "Usuarios", icon: UserCog }] : []),
@@ -165,12 +167,15 @@ export function AppShellNav({ user }: AppShellNavProps) {
                     ? pathname.startsWith("/admin/organizacoes")
                   : item.label === "Selecionar"
                     ? pathname.startsWith("/gerente-sistemas")
+                  : item.label === "Kanban"
+                    ? pathname.startsWith("/vendedor/kanban")
                   : item.label === "Meta de Vida"
                     ? pathname.startsWith("/vendedor/minha-meta-de-vida")
                   : item.label === "Feed"
                     ? pathname.startsWith("/feed")
                   : item.label === "Dashboard"
                     ? !pathname.startsWith("/perfil")
+                      && !pathname.startsWith("/vendedor/kanban")
                       && !pathname.startsWith("/vendedor/minha-meta-de-vida")
                       && !pathname.startsWith("/feed")
                       && !pathname.startsWith("/usuarios")
