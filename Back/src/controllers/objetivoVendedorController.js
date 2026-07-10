@@ -5,7 +5,7 @@ import {
   updateSellerLifeGoal,
 } from "../services/objetivoVendedorService.js"
 import { findAuthUserBySkVendedor } from "../services/authUsersService.js"
-import { canUseGlobalEmpresaScope } from "../services/requestScope.js"
+import { canUseGlobalEmpresaScope, getScopedLojaScope } from "../services/requestScope.js"
 
 function getErrorStatus(message) {
   if (message.includes("nao encontrado")) return 404
@@ -40,6 +40,14 @@ async function getSellerScope(req, res, sellerCodeInput = null, { requireSeller 
   const requestedEmpresaId = getRequestedEmpresaId(req)
   const sellerCode = sellerCodeInput ?? getSellerCodeFromBody(req.body)
 
+  // Objetivo do Vendedor agrega todas as lojas do vendedor - so o Painel/Jornada e o Ranking
+  // exigem selecao de loja.
+  const lojaScope = await getScopedLojaScope(req, { required: false })
+  if (lojaScope.error) {
+    res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    return null
+  }
+
   if (role === "VENDEDOR") {
     if (!authSkVendedor || !authEmpresaId) {
       res.status(403).json({ error: "Vendedor autenticado sem empresa vinculada." })
@@ -51,7 +59,7 @@ async function getSellerScope(req, res, sellerCodeInput = null, { requireSeller 
       return null
     }
 
-    return { sellerCode: authSkVendedor, empresaId: authEmpresaId }
+    return { sellerCode: authSkVendedor, empresaId: authEmpresaId, lojaScope }
   }
 
   if (role === "GERENTE") {
@@ -73,7 +81,7 @@ async function getSellerScope(req, res, sellerCodeInput = null, { requireSeller 
       }
     }
 
-    return { sellerCode, empresaId: authEmpresaId }
+    return { sellerCode, empresaId: authEmpresaId, lojaScope }
   }
 
   if (canUseGlobalEmpresaScope(req)) {
@@ -86,7 +94,7 @@ async function getSellerScope(req, res, sellerCodeInput = null, { requireSeller 
       }
     }
 
-    return { sellerCode, empresaId }
+    return { sellerCode, empresaId, lojaScope }
   }
 
   res.status(403).json({ error: "Acesso negado." })
@@ -98,6 +106,7 @@ function applyScopeToPayload(payload, scope) {
     ...(payload ?? {}),
     ...(scope?.sellerCode ? { sk_vendedor: scope.sellerCode, vendedor_id: scope.sellerCode } : {}),
     empresa_id: scope?.empresaId ?? null,
+    loja_scope: scope?.lojaScope ?? null,
   }
 }
 
@@ -105,7 +114,7 @@ export async function getObjetivoVendedor(req, res) {
   try {
     const scope = await getSellerScope(req, res, req.params.vendedor_id)
     if (!scope) return
-    const data = await getSellerLifeGoal(scope.sellerCode, { empresa_id: scope.empresaId })
+    const data = await getSellerLifeGoal(scope.sellerCode, { empresa_id: scope.empresaId, loja_scope: scope.lojaScope })
     return res.json(data)
   } catch (error) {
     return handleError(res, error, "Erro ao buscar objetivo do vendedor.")
@@ -116,7 +125,7 @@ export async function getObjetivosVendedor(req, res) {
   try {
     const scope = await getSellerScope(req, res, req.params.vendedor_id)
     if (!scope) return
-    const data = await getSellerLifeGoals(scope.sellerCode, { empresa_id: scope.empresaId })
+    const data = await getSellerLifeGoals(scope.sellerCode, { empresa_id: scope.empresaId, loja_scope: scope.lojaScope })
     return res.json(data)
   } catch (error) {
     return handleError(res, error, "Erro ao buscar objetivos do vendedor.")

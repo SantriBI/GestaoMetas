@@ -1,11 +1,12 @@
 import express from "express"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { requireAuth } from "../middleware/auth.js"
-import { getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId, getScopedLojaScope } from "../services/requestScope.js"
 import {
   getAllowedSellerCodesByEmpresaId,
   isSellerAllowed,
 } from "../services/tenantSellerScope.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "../services/lojaScopeService.js"
 
 const router = express.Router()
 
@@ -49,10 +50,12 @@ function mapearCliente(row) {
 
 async function getQueryContext(empresaId) {
   return {
+    empresaId,
     query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
     rankingView: "VW_RANKING_VENDEDORES",
     rankingDayView: "VW_RANKING_VENDEDORES_DIA",
     orcamentosView: "VW_ORCAMENTOS_GESTAO_METAS",
+    vendasLucratividadeTable: "FATO_VENDAS_LUCRATIVIDADE",
   }
 }
 
@@ -131,7 +134,9 @@ function montarAlertasERecomendacoes({
   }
 }
 
-function consultaClientes(whereClause, orderByClause, orcamentosView) {
+// rfv (DM_VENDAS.FATO_RFV_VENDEDOR) nao tem coluna de loja - nao aplicar filtro de loja nela.
+// orcamentos_cliente (VW_ORCAMENTOS_GESTAO_METAS) tem, entao o filtro de loja entra so ali.
+function consultaClientes(whereClause, orderByClause, orcamentosView, lojaCondition) {
   const clienteNorm = normalizarTextoSql("cliente")
   const nomeClienteNorm = normalizarTextoSql("rfv.nome_cliente")
 
@@ -142,6 +147,7 @@ function consultaClientes(whereClause, orderByClause, orcamentosView) {
         COUNT(*) AS orcamentos_abertos
       FROM ${orcamentosView}
       WHERE vendedor_id = :vendedor_comercial
+        AND ${lojaCondition.clause}
       GROUP BY ${clienteNorm}
     )
     SELECT
@@ -164,7 +170,7 @@ function consultaClientes(whereClause, orderByClause, orcamentosView) {
   `
 }
 
-function consultaResumoCategoria(whereClause, orcamentosView) {
+function consultaResumoCategoria(whereClause, orcamentosView, lojaCondition) {
   const clienteNorm = normalizarTextoSql("cliente")
   const nomeClienteNorm = normalizarTextoSql("rfv.nome_cliente")
 
@@ -175,6 +181,7 @@ function consultaResumoCategoria(whereClause, orcamentosView) {
         COUNT(*) AS orcamentos_abertos
       FROM ${orcamentosView}
       WHERE vendedor_id = :vendedor_comercial
+        AND ${lojaCondition.clause}
       GROUP BY ${clienteNorm}
     )
     SELECT
@@ -224,9 +231,22 @@ router.get("/area-ataque/:vendedor_id", requireAuth, async (req, res) => {
       return res.status(403).json({ error: "Vendedor fora da organizacao autenticada." })
     }
     console.log(`[AreaAtaque] Vendedor resolvido: skVendedor=${vendedor.skVendedor}, vendedorId=${vendedor.vendedorId}`)
+
+    // Area de Ataque agrega todas as lojas do vendedor - so o Painel/Jornada e o Ranking exigem
+    // selecao de loja.
+    const lojaScope = await getScopedLojaScope(req, { required: false })
+    if (lojaScope.error) {
+      return res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    }
+    const orcamentosLojaColumn = await resolveLojaColumnName(empresa_id, context.orcamentosView)
+    const orcamentosLojaCondition = buildLojaInCondition(orcamentosLojaColumn, lojaScope, "ataque_orc_loja")
+    const vendasLojaColumn = await resolveLojaColumnName(empresa_id, context.vendasLucratividadeTable)
+    const vendasLojaCondition = buildLojaInCondition(vendasLojaColumn ? `f.${vendasLojaColumn}` : null, lojaScope, "ataque_venda_loja")
+
     const binds = {
       vendedor_id: vendedor.skVendedor,
       vendedor_comercial: vendedor.vendedorId,
+      ...orcamentosLojaCondition.binds,
     }
 
     const filtroCampeoes = "UPPER(TRIM(rfv.classificacao)) LIKE 'CAMPE%'"
@@ -244,12 +264,12 @@ router.get("/area-ataque/:vendedor_id", requireAuth, async (req, res) => {
       carteiraResumoRows,
       produtosRows,
     ] = await Promise.all([
-      safeQuery(context, "clientes campeoes", consultaClientes(filtroCampeoes, "rfv.valor DESC", context.orcamentosView), binds),
-      safeQuery(context, "resumo campeoes", consultaResumoCategoria(filtroCampeoes, context.orcamentosView), binds),
-      safeQuery(context, "clientes fieis", consultaClientes(filtroFieis, "rfv.valor DESC", context.orcamentosView), binds),
-      safeQuery(context, "resumo fieis", consultaResumoCategoria(filtroFieis, context.orcamentosView), binds),
-      safeQuery(context, "clientes em risco", consultaClientes(filtroRisco, "rfv.recencia DESC, rfv.valor DESC", context.orcamentosView), binds),
-      safeQuery(context, "resumo risco", consultaResumoCategoria(filtroRisco, context.orcamentosView), binds),
+      safeQuery(context, "clientes campeoes", consultaClientes(filtroCampeoes, "rfv.valor DESC", context.orcamentosView, orcamentosLojaCondition), binds),
+      safeQuery(context, "resumo campeoes", consultaResumoCategoria(filtroCampeoes, context.orcamentosView, orcamentosLojaCondition), binds),
+      safeQuery(context, "clientes fieis", consultaClientes(filtroFieis, "rfv.valor DESC", context.orcamentosView, orcamentosLojaCondition), binds),
+      safeQuery(context, "resumo fieis", consultaResumoCategoria(filtroFieis, context.orcamentosView, orcamentosLojaCondition), binds),
+      safeQuery(context, "clientes em risco", consultaClientes(filtroRisco, "rfv.recencia DESC, rfv.valor DESC", context.orcamentosView, orcamentosLojaCondition), binds),
+      safeQuery(context, "resumo risco", consultaResumoCategoria(filtroRisco, context.orcamentosView, orcamentosLojaCondition), binds),
       safeQuery(
         context,
         "resumo carteira",
@@ -280,11 +300,12 @@ router.get("/area-ataque/:vendedor_id", requireAuth, async (req, res) => {
         JOIN DM_VENDAS.DIM_PRODUTOS p
           ON f.sk_produto = p.sk_produto
         WHERE f.sk_vendedor = :vendedor_id
+          AND ${vendasLojaCondition.clause}
         GROUP BY NVL(p.nome_pai_nivel1, 'Sem grupo')
         ORDER BY total_vendido DESC
         FETCH FIRST 5 ROWS ONLY
         `,
-        { vendedor_id: vendedor.skVendedor }
+        { vendedor_id: vendedor.skVendedor, ...vendasLojaCondition.binds }
       ),
     ])
 

@@ -1,11 +1,12 @@
 import express from "express"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { requireAuth } from "../middleware/auth.js"
-import { getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId, getScopedLojaScope } from "../services/requestScope.js"
 import {
   buildSellerInCondition,
   getAllowedSellerCodesByEmpresaId,
 } from "../services/tenantSellerScope.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "../services/lojaScopeService.js"
 
 const router = express.Router()
 
@@ -36,6 +37,7 @@ function selecionarTopCategorias(categorias, criterio, limite = 2) {
 
 async function getQueryContext(empresaId) {
   return {
+    empresaId,
     query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
     rankingView: "VW_RANKING_VENDEDORES",
     rfvVendedorTable: "FATO_RFV_VENDEDOR",
@@ -46,6 +48,8 @@ async function getQueryContext(empresaId) {
 
 async function carregarRankingMensal(context) {
   const sellerScope = buildSellerInCondition("sk_vendedor", context.allowedSellerCodes, "ranking_seller")
+  const lojaColumn = await resolveLojaColumnName(context.empresaId, context.rankingView)
+  const lojaCondition = buildLojaInCondition(lojaColumn, context.lojaScope, "ranking_loja")
   return context.query(`
     SELECT
       nome_vendedor,
@@ -55,10 +59,13 @@ async function carregarRankingMensal(context) {
       ranking_atingimento
     FROM ${context.rankingView}
     WHERE ${sellerScope.clause}
+      AND ${lojaCondition.clause}
     ORDER BY ranking_atingimento
-  `, sellerScope.binds)
+  `, { ...sellerScope.binds, ...lojaCondition.binds })
 }
 
+// FATO_RFV_VENDEDOR nao tem coluna de loja (metrica de relacionamento vendedor-cliente,
+// independente de loja por natureza) - nao aplicar filtro de loja aqui.
 async function carregarResumoRfv(context) {
   const sellerScope = buildSellerInCondition("sk_vendedor", context.allowedSellerCodes, "rfv_seller")
   const rows = await context.query(`
@@ -86,6 +93,8 @@ async function carregarResumoRfv(context) {
 
 async function carregarTendenciasCategorias(context) {
   const sellerScope = buildSellerInCondition("f.sk_vendedor", context.allowedSellerCodes, "cat_seller")
+  const lojaColumn = await resolveLojaColumnName(context.empresaId, context.vendasLucratividadeTable)
+  const lojaCondition = buildLojaInCondition(lojaColumn ? `f.${lojaColumn}` : null, context.lojaScope, "cat_loja")
   return context.query(`
     WITH vendas_categoria AS (
       SELECT
@@ -101,6 +110,7 @@ async function carregarTendenciasCategorias(context) {
         ON p.sk_produto = f.sk_produto
       WHERE f.sk_dt_recebimento IS NOT NULL
         AND ${sellerScope.clause}
+        AND ${lojaCondition.clause}
     ),
     consolidado AS (
       SELECT
@@ -135,7 +145,7 @@ async function carregarTendenciasCategorias(context) {
     FROM consolidado
     -- Evita alertas irrelevantes exigindo base minima no periodo anterior.
     WHERE receita_ant_30 > 5000
-  `, sellerScope.binds, { suppressErrorLog: true })
+  `, { ...sellerScope.binds, ...lojaCondition.binds }, { suppressErrorLog: true })
 }
 
 function gerarAlertasVendedores(rankingRows) {
@@ -246,8 +256,16 @@ router.get("/radar-vendas", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "empresa_id e obrigatorio para gerar radar de vendas." })
     }
 
+    // Radar de Vendas agrega todas as lojas do vendedor - so o Painel/Jornada e o Ranking
+    // exigem selecao de loja.
+    const lojaScope = await getScopedLojaScope(req, { required: false })
+    if (lojaScope.error) {
+      return res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    }
+
     const context = await getQueryContext(empresaId)
     context.allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(empresaId)
+    context.lojaScope = lojaScope
     const rankingRows = await carregarRankingMensal(context)
     const [rfvResumoResult, categoriasResult] = await Promise.allSettled([
       carregarResumoRfv(context),

@@ -185,8 +185,9 @@ async function request<T>(url: string, init?: RequestInit) {
   return payload as T
 }
 
-export async function fetchSellerLifeGoal(vendedorId: number | string) {
-  return request<LifeGoalResponse>(`/api/objetivo-vendedor/${vendedorId}`)
+export async function fetchSellerLifeGoal(vendedorId: number | string, empresaAcesso?: string | null) {
+  const query = empresaAcesso ? `?empresa_acesso=${encodeURIComponent(empresaAcesso)}` : ""
+  return request<LifeGoalResponse>(`/api/objetivo-vendedor/${vendedorId}${query}`)
 }
 
 export async function fetchSellerLifeGoals(vendedorId: number | string) {

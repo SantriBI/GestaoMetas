@@ -2,12 +2,13 @@ import express from "express"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { findAuthUserBySkVendedor } from "../services/authUsersService.js"
 import { requireAuth } from "../middleware/auth.js"
-import { getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId, getScopedLojaScope } from "../services/requestScope.js"
 import {
   buildSellerInCondition,
   getAllowedSellerCodesByEmpresaId,
   isSellerAllowed,
 } from "../services/tenantSellerScope.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "../services/lojaScopeService.js"
 
 const router = express.Router()
 
@@ -30,14 +31,20 @@ function normalizarClassificacao(value) {
     .replace(/[\u0300-\u036f]/g, "")
 }
 
-function getEmpresaScope(req, res) {
+async function getEmpresaScope(req, res) {
   const empresaId = getScopedEmpresaId(req)
   if (!empresaId) {
     res.status(400).json({ error: "empresa_id e obrigatorio para buscar dados do vendedor." })
-    return { allowed: false, empresaId: null }
+    return { allowed: false, empresaId: null, lojaScope: null }
   }
 
-  return { allowed: true, empresaId }
+  const lojaScope = await getScopedLojaScope(req)
+  if (lojaScope.error) {
+    res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    return { allowed: false, empresaId: null, lojaScope: null }
+  }
+
+  return { allowed: true, empresaId, lojaScope }
 }
 
 function canAccessVendedor(req, skVendedor) {
@@ -91,7 +98,7 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
     if (!canAccessVendedor(req, sk_vendedor)) {
       return res.status(403).json({ error: "Acesso permitido apenas aos dados do vendedor autenticado." })
     }
-    const scope = getEmpresaScope(req, res)
+    const scope = await getEmpresaScope(req, res)
     if (!scope.allowed) return
 
     const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(scope.empresaId)
@@ -101,6 +108,10 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
 
     const context = await getQueryContext(scope.empresaId)
     const sellerScope = buildSellerInCondition("sk_vendedor", allowedSellerCodes)
+    const rankingLojaColumn = await resolveLojaColumnName(scope.empresaId, context.rankingView)
+    const rankingLojaCondition = buildLojaInCondition(rankingLojaColumn, scope.lojaScope, "vendedor_ranking_loja")
+    const rankingDayLojaColumn = await resolveLojaColumnName(scope.empresaId, context.rankingDayView)
+    const rankingDayLojaCondition = buildLojaInCondition(rankingDayLojaColumn, scope.lojaScope, "vendedor_ranking_dia_loja")
 
     const [mensalRows, diarioRows, totalVendedoresRows, usuarioFallback] = await Promise.all([
       context.query(
@@ -118,10 +129,11 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
           FROM ${context.rankingView}
           WHERE sk_vendedor = :sk_vendedor
             AND ${sellerScope.clause}
+            AND ${rankingLojaCondition.clause}
         )
         WHERE ROWNUM = 1
         `,
-        { sk_vendedor, ...sellerScope.binds }
+        { sk_vendedor, ...sellerScope.binds, ...rankingLojaCondition.binds }
       ),
       context.query(
         `
@@ -139,18 +151,20 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
           FROM ${context.rankingDayView}
           WHERE sk_vendedor = :sk_vendedor
             AND ${sellerScope.clause}
+            AND ${rankingDayLojaCondition.clause}
         )
         WHERE ROWNUM = 1
         `,
-        { sk_vendedor, ...sellerScope.binds }
+        { sk_vendedor, ...sellerScope.binds, ...rankingDayLojaCondition.binds }
       ),
       context.query(
         `
         SELECT COUNT(*) AS total_vendedores
         FROM ${context.rankingView}
         WHERE ${sellerScope.clause}
+          AND ${rankingLojaCondition.clause}
         `,
-        sellerScope.binds
+        { ...sellerScope.binds, ...rankingLojaCondition.binds }
       ),
       carregarUsuarioFallback(sk_vendedor, scope.empresaId),
     ])
@@ -197,7 +211,7 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
     if (!canAccessVendedor(req, sk_vendedor)) {
       return res.status(403).json({ error: "Acesso permitido apenas aos dados do vendedor autenticado." })
     }
-    const scope = getEmpresaScope(req, res)
+    const scope = await getEmpresaScope(req, res)
     if (!scope.allowed) return
 
     const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(scope.empresaId)
@@ -207,6 +221,12 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
 
     const context = await getQueryContext(scope.empresaId)
     const sellerScope = buildSellerInCondition("sk_vendedor", allowedSellerCodes)
+    const rankingLojaColumn = await resolveLojaColumnName(scope.empresaId, context.rankingView)
+    const rankingLojaCondition = buildLojaInCondition(rankingLojaColumn, scope.lojaScope, "panorama_ranking_loja")
+    const cockpitLojaColumn = await resolveLojaColumnName(scope.empresaId, "FATO_COCKPIT")
+    const cockpitLojaCondition = buildLojaInCondition(cockpitLojaColumn ? `cockpit.${cockpitLojaColumn}` : null, scope.lojaScope, "panorama_cockpit_loja")
+    const vendasLojaColumn = await resolveLojaColumnName(scope.empresaId, "FATO_VENDAS_LUCRATIVIDADE")
+    const vendasLojaCondition = buildLojaInCondition(vendasLojaColumn ? `f.${vendasLojaColumn}` : null, scope.lojaScope, "panorama_venda_loja")
 
     // Parte das consultas depende apenas de sk_vendedor.
     // Elas rodam em paralelo enquanto resolvemos o vendedor_id usado nos orcamentos.
@@ -231,9 +251,10 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
         FROM ${context.rankingView}
         WHERE sk_vendedor = :sk_vendedor
           AND ${sellerScope.clause}
+          AND ${rankingLojaCondition.clause}
         FETCH FIRST 1 ROWS ONLY
         `,
-        { sk_vendedor, ...sellerScope.binds }
+        { sk_vendedor, ...sellerScope.binds, ...rankingLojaCondition.binds }
       ),
       context.query(
         `
@@ -251,6 +272,7 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
           LEFT JOIN DM_VENDAS.DIM_TIPO_ORCAMENTO tipo_orcamento
             ON tipo_orcamento.sk_tipo_orcamento = cockpit.sk_tipo_orcamento
           WHERE cockpit.sk_vendedor = :sk_vendedor
+            AND ${cockpitLojaCondition.clause}
         )
         SELECT
           COUNT(DISTINCT orcamento_id) AS quantidade_vendas,
@@ -265,7 +287,7 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
           MAX(sk_dt_recebimento) AS ultima_venda
         FROM base
         `,
-        { sk_vendedor }
+        { sk_vendedor, ...cockpitLojaCondition.binds }
       ),
       context.query(
         `
@@ -280,6 +302,7 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
           JOIN DM_VENDAS.DIM_PRODUTOS p
             ON p.sk_produto = f.sk_produto
           WHERE f.sk_vendedor = :sk_vendedor
+            AND ${vendasLojaCondition.clause}
         ),
         total AS (
           SELECT NVL(SUM(receita), 0) AS receita_total
@@ -300,7 +323,7 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
         ORDER BY receita DESC
         FETCH FIRST 5 ROWS ONLY
         `,
-        { sk_vendedor }
+        { sk_vendedor, ...vendasLojaCondition.binds }
       ),
       context.query(
         `
@@ -331,13 +354,15 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
            AND rfv.sk_cliente = f.sk_cliente
           WHERE f.sk_vendedor = :sk_vendedor
             AND f.sk_dt_recebimento >= TO_NUMBER(TO_CHAR(SYSDATE - 90, 'YYYYMMDD'))
+            AND ${vendasLojaCondition.clause}
           GROUP BY c.nome_cliente
           ORDER BY receita DESC
         )
         WHERE ROWNUM <= 5
         `,
-        { sk_vendedor }
+        { sk_vendedor, ...vendasLojaCondition.binds }
       ),
+      // FATO_RFV_VENDEDOR nao tem coluna de loja - sem filtro de loja aqui.
       context.query(
         `
         SELECT classificacao, COUNT(*) AS total
@@ -375,15 +400,18 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
           LEFT JOIN DM_VENDAS.DIM_TIPO_ORCAMENTO tipo_orcamento
             ON tipo_orcamento.sk_tipo_orcamento = cockpit.sk_tipo_orcamento
           WHERE cockpit.sk_vendedor = :sk_vendedor
+            AND ${cockpitLojaCondition.clause}
           GROUP BY cockpit.orcamento_id, c.nome_cliente, cockpit.sk_data
           ORDER BY cockpit.sk_data DESC, cockpit.orcamento_id DESC
         )
         WHERE ROWNUM <= 5
         `,
-        { sk_vendedor }
+        { sk_vendedor, ...cockpitLojaCondition.binds }
       ),
     ])
 
+    const orcamentosLojaColumn = await resolveLojaColumnName(scope.empresaId, context.orcamentosView)
+    const orcamentosLojaCondition = buildLojaInCondition(orcamentosLojaColumn, scope.lojaScope, "panorama_orcamentos_loja")
     const orcamentosRows = await context.query(
       `
       SELECT
@@ -396,8 +424,9 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
       FROM ${context.orcamentosView}
       WHERE vendedor_id = :vendedor_id
         AND agrupamento = 'Possiveis Vendas'
+        AND ${orcamentosLojaCondition.clause}
       `,
-      { vendedor_id }
+      { vendedor_id, ...orcamentosLojaCondition.binds }
     )
 
     if (!mensalRows.length) {
@@ -485,7 +514,7 @@ router.get("/vendedor/:sk_vendedor/oportunidades", requireAuth, async (req, res)
     if (!canAccessVendedor(req, sk_vendedor)) {
       return res.status(403).json({ error: "Acesso permitido apenas aos dados do vendedor autenticado." })
     }
-    const scope = getEmpresaScope(req, res)
+    const scope = await getEmpresaScope(req, res)
     if (!scope.allowed) return
 
     const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(scope.empresaId)
@@ -495,6 +524,8 @@ router.get("/vendedor/:sk_vendedor/oportunidades", requireAuth, async (req, res)
 
     const context = await getQueryContext(scope.empresaId)
     const vendedor_id = await resolverVendedorId(sk_vendedor, context)
+    const orcamentosLojaColumn = await resolveLojaColumnName(scope.empresaId, context.orcamentosView)
+    const orcamentosLojaCondition = buildLojaInCondition(orcamentosLojaColumn, scope.lojaScope, "oportunidades_loja")
 
     const [resumoRows, orcamentosRows] = await Promise.all([
       context.query(
@@ -514,6 +545,7 @@ router.get("/vendedor/:sk_vendedor/oportunidades", requireAuth, async (req, res)
             ) AS status_norm
           FROM ${context.orcamentosView}
           WHERE vendedor_id = :vendedor_id
+            AND ${orcamentosLojaCondition.clause}
         )
         SELECT
           COUNT(id) AS total_orcamentos,
@@ -523,7 +555,7 @@ router.get("/vendedor/:sk_vendedor/oportunidades", requireAuth, async (req, res)
           NVL(SUM(CASE WHEN status_norm LIKE 'SEM ACOMPANHAMENTO%' THEN valor ELSE 0 END), 0) AS sem_acompanhamento
         FROM base
         `,
-        { vendedor_id }
+        { vendedor_id, ...orcamentosLojaCondition.binds }
       ),
       context.query(
         `
@@ -535,9 +567,10 @@ router.get("/vendedor/:sk_vendedor/oportunidades", requireAuth, async (req, res)
           telefone
         FROM ${context.orcamentosView}
         WHERE vendedor_id = :vendedor_id
+          AND ${orcamentosLojaCondition.clause}
         ORDER BY data DESC
         `,
-        { vendedor_id }
+        { vendedor_id, ...orcamentosLojaCondition.binds }
       )
     ])
 

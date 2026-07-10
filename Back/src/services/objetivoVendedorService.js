@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { findAuthUserBySkVendedor } from "./authUsersService.js"
 import { resolverEscopoVendedor } from "./vendedorScopeService.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "./lojaScopeService.js"
 
 const OBJECTIVE_TABLE = "OBJETIVOS_VENDEDOR"
 const OBJECTIVE_SEQUENCE = "OBJETIVOS_VENDEDOR_SEQ"
@@ -367,6 +368,9 @@ async function resolveSellerContext(vendorCode, fallback = {}) {
       fallback.empresaId ??
       user?.empresa_id ??
       null,
+    // Escopo de loja do vendedor logado (VENDEDOR/GERENTE); null quando o papel/tenant
+    // esta fora do escopo desta feature - nesse caso as queries abaixo ficam sem filtro de loja.
+    lojaScope: fallback.loja_scope ?? fallback.lojaScope ?? null,
   }
 }
 
@@ -444,20 +448,23 @@ async function loadProfileById(idPerfil) {
   return rows[0] ? normalizeProfile(rows[0]) : null
 }
 
-async function calculateSalesRevenue(skVendedor, trackingStartDate) {
+async function calculateSalesRevenue(skVendedor, trackingStartDate, empresaId, lojaScope) {
   if (!skVendedor) {
     return 0
   }
 
   const rankingView = await getRankingVendorsViewName()
+  const rankingLojaColumn = await resolveLojaColumnName(empresaId, rankingView)
+  const rankingLojaCondition = buildLojaInCondition(rankingLojaColumn, lojaScope, "meta_vida_ranking_loja")
   const monthlyRows = await query(
     `
     SELECT receita_mes
     FROM ${rankingView}
     WHERE sk_vendedor = :sk_vendedor
+      AND ${rankingLojaCondition.clause}
     FETCH FIRST 1 ROWS ONLY
     `,
-    { sk_vendedor: skVendedor }
+    { sk_vendedor: skVendedor, ...rankingLojaCondition.binds }
   )
 
   if (monthlyRows.length) {
@@ -468,6 +475,8 @@ async function calculateSalesRevenue(skVendedor, trackingStartDate) {
     return 0
   }
 
+  const vendasLojaColumn = await resolveLojaColumnName(empresaId, "FATO_VENDAS_LUCRATIVIDADE")
+  const vendasLojaCondition = buildLojaInCondition(vendasLojaColumn, lojaScope, "meta_vida_venda_loja")
   const rows = await query(
     `
     WITH base AS (
@@ -479,6 +488,7 @@ async function calculateSalesRevenue(skVendedor, trackingStartDate) {
       FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE
       WHERE sk_vendedor = :sk_vendedor
         AND sk_dt_fechamento >= TO_NUMBER(TO_CHAR(TRUNC(:data_inicio), 'YYYYMMDD'))
+        AND ${vendasLojaCondition.clause}
     )
     SELECT ROUND(NVL(SUM(valor_receita), 0), 2) AS faturamento_total
     FROM base
@@ -486,6 +496,7 @@ async function calculateSalesRevenue(skVendedor, trackingStartDate) {
     {
       sk_vendedor: skVendedor,
       data_inicio: trackingStartDate,
+      ...vendasLojaCondition.binds,
     }
   )
 
@@ -551,12 +562,15 @@ async function loadCommissionSnapshotFromOracle({ skVendedor, vendedorId }) {
 }
 
 async function resolveCommissionSnapshot(seller, trackingStartDate) {
+  // NOTA: ft_comissao_parametrizada/dim_vendedor/dim_empresas (Meta de Vida propriamente dita)
+  // ainda nao tem o schema de loja confirmado - TODO: aplicar filtro de loja aqui quando
+  // o schema dessas tabelas for verificado. Por ora fica sem filtro.
   const oracleSnapshot = await loadCommissionSnapshotFromOracle(seller)
   if (oracleSnapshot) {
     return oracleSnapshot
   }
 
-  const salesRevenue = await calculateSalesRevenue(seller.skVendedor, trackingStartDate)
+  const salesRevenue = await calculateSalesRevenue(seller.skVendedor, trackingStartDate, seller.empresaId, seller.lojaScope)
   return {
     salesRevenue,
     commissionAmount: 0,
@@ -926,6 +940,12 @@ async function loadPreferredCategoryOpenQuotes(seller, profile) {
   if (!preference || !seller?.vendedorId) return null
 
   try {
+    const orcamentosLojaColumn = await resolveLojaColumnName(seller.empresaId, "VW_ORCAMENTOS_GESTAO_METAS")
+    const orcamentosLojaCondition = buildLojaInCondition(
+      orcamentosLojaColumn ? `o.${orcamentosLojaColumn}` : null,
+      seller.lojaScope,
+      "meta_vida_preferencia_loja"
+    )
     const rows = await query(
       `
       WITH base AS (
@@ -937,6 +957,7 @@ async function loadPreferredCategoryOpenQuotes(seller, profile) {
         LEFT JOIN DM_VENDAS.DIM_PRODUTOS p
           ON p.sk_produto = o.sk_produto
         WHERE o.vendedor_id = :vendedor_id
+          AND ${orcamentosLojaCondition.clause}
         GROUP BY NVL(p.nome_pai_nivel1, 'Sem grupo')
       )
       SELECT grupo, total_orcamentos, valor_total
@@ -951,6 +972,7 @@ async function loadPreferredCategoryOpenQuotes(seller, profile) {
       {
         vendedor_id: seller.vendedorId,
         preferencia: `%${normalizeComparisonText(preference)}%`,
+        ...orcamentosLojaCondition.binds,
       }
     )
 
@@ -975,14 +997,20 @@ async function loadPreferredCategoryOpenQuotes(seller, profile) {
   }
 }
 
+// FATO_RFV_VENDEDOR nao tem coluna de loja - nao aplicar filtro nela. VW_ORCAMENTOS_GESTAO_METAS
+// tem, entao o filtro de loja entra so na CTE orcamentos_cliente.
 async function loadChampionOpportunity(seller) {
   if (!seller?.skVendedor || !seller?.vendedorId) {
     return null
   }
 
+  const orcamentosLojaColumn = await resolveLojaColumnName(seller.empresaId, "VW_ORCAMENTOS_GESTAO_METAS")
+  const orcamentosLojaCondition = buildLojaInCondition(orcamentosLojaColumn, seller.lojaScope, "meta_vida_campeoes_loja")
+
   const binds = {
     vendedor_id: seller.skVendedor,
     vendedor_comercial: seller.vendedorId,
+    ...orcamentosLojaCondition.binds,
   }
 
   const [summaryRows, topRows] = await Promise.all([
@@ -995,6 +1023,7 @@ async function loadChampionOpportunity(seller) {
           NVL(SUM(NVL(valor, 0)), 0) AS valor_total
         FROM DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS
         WHERE vendedor_id = :vendedor_comercial
+          AND ${orcamentosLojaCondition.clause}
         GROUP BY UPPER(TRIM(NVL(cliente, '')))
       )
       SELECT
@@ -1018,6 +1047,7 @@ async function loadChampionOpportunity(seller) {
           NVL(SUM(NVL(valor, 0)), 0) AS valor_total
         FROM DM_VENDAS.VW_ORCAMENTOS_GESTAO_METAS
         WHERE vendedor_id = :vendedor_comercial
+          AND ${orcamentosLojaCondition.clause}
         GROUP BY UPPER(TRIM(NVL(cliente, '')))
       )
       SELECT *

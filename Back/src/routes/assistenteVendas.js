@@ -5,6 +5,8 @@ import {
   getAllowedSellerCodesByEmpresaId,
   isSellerAllowed,
 } from "../services/tenantSellerScope.js"
+import { getScopedLojaScope } from "../services/requestScope.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "../services/lojaScopeService.js"
 
 const router = express.Router()
 const ORACLE_TABLE_NOT_FOUND = 942
@@ -79,6 +81,7 @@ function extrairJson(texto) {
 
 async function getQueryContext(empresaId) {
   return {
+    empresaId,
     query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
     rankingView: "VW_RANKING_VENDEDORES",
     rankingDayView: "VW_RANKING_VENDEDORES_DIA",
@@ -123,6 +126,15 @@ async function resolverEscopoVendedor(codigoRecebido, context) {
 }
 
 async function carregarDadosAssistente(vendedor, context) {
+  const rankingLojaColumn = await resolveLojaColumnName(context.empresaId, context.rankingView)
+  const rankingLojaCondition = buildLojaInCondition(rankingLojaColumn, context.lojaScope, "assistente_ranking_loja")
+  const rankingDayLojaColumn = await resolveLojaColumnName(context.empresaId, context.rankingDayView)
+  const rankingDayLojaCondition = buildLojaInCondition(rankingDayLojaColumn, context.lojaScope, "assistente_ranking_dia_loja")
+  const orcamentosLojaColumn = await resolveLojaColumnName(context.empresaId, context.orcamentosView)
+  const orcamentosLojaCondition = buildLojaInCondition(orcamentosLojaColumn, context.lojaScope, "assistente_orcamentos_loja")
+  const vendasLojaColumn = await resolveLojaColumnName(context.empresaId, "FATO_VENDAS_LUCRATIVIDADE")
+  const vendasLojaCondition = buildLojaInCondition(vendasLojaColumn ? `f.${vendasLojaColumn}` : null, context.lojaScope, "assistente_venda_loja")
+
   const [
     mensalRows,
     diarioRows,
@@ -143,9 +155,10 @@ async function carregarDadosAssistente(vendedor, context) {
         perc_atingimento
       FROM ${context.rankingView}
       WHERE sk_vendedor = :sk_vendedor
+        AND ${rankingLojaCondition.clause}
       FETCH FIRST 1 ROWS ONLY
       `,
-      { sk_vendedor: vendedor.skVendedor }
+      { sk_vendedor: vendedor.skVendedor, ...rankingLojaCondition.binds }
     ),
     safeQuery(
       context,
@@ -154,10 +167,12 @@ async function carregarDadosAssistente(vendedor, context) {
       SELECT dias_restantes
       FROM ${context.rankingDayView}
       WHERE sk_vendedor = :sk_vendedor
+        AND ${rankingDayLojaCondition.clause}
       FETCH FIRST 1 ROWS ONLY
       `,
-      { sk_vendedor: vendedor.skVendedor }
+      { sk_vendedor: vendedor.skVendedor, ...rankingDayLojaCondition.binds }
     ),
+    // FATO_RFV_VENDEDOR nao tem coluna de loja - sem filtro de loja aqui.
     safeQuery(
       context,
       "clientes prioritarios",
@@ -191,11 +206,12 @@ async function carregarDadosAssistente(vendedor, context) {
           valor
         FROM ${context.orcamentosView}
         WHERE vendedor_id = :vendedor_id
+          AND ${orcamentosLojaCondition.clause}
         ORDER BY valor DESC NULLS LAST
       )
       WHERE ROWNUM <= 2
       `,
-      { vendedor_id: vendedor.vendedorId }
+      { vendedor_id: vendedor.vendedorId, ...orcamentosLojaCondition.binds }
     ),
     safeQuery(
       context,
@@ -216,12 +232,13 @@ async function carregarDadosAssistente(vendedor, context) {
           ON p.sk_produto = f.sk_produto
         WHERE f.sk_vendedor = :sk_vendedor
           AND f.sk_dt_recebimento >= TO_NUMBER(TO_CHAR(SYSDATE - 90, 'YYYYMMDD'))
+          AND ${vendasLojaCondition.clause}
         GROUP BY NVL(p.nome_pai_nivel1, 'Sem grupo')
         ORDER BY receita DESC
       )
       WHERE ROWNUM = 1
       `,
-      { sk_vendedor: vendedor.skVendedor }
+      { sk_vendedor: vendedor.skVendedor, ...vendasLojaCondition.binds }
     ),
     safeQuery(
       context,
@@ -240,6 +257,7 @@ async function carregarDadosAssistente(vendedor, context) {
           ON p.sk_produto = f.sk_produto
         WHERE f.sk_vendedor = :sk_vendedor
           AND f.sk_dt_recebimento IS NOT NULL
+          AND ${vendasLojaCondition.clause}
       ),
       consolidado AS (
         SELECT
@@ -277,7 +295,7 @@ async function carregarDadosAssistente(vendedor, context) {
       )
       WHERE ROWNUM = 1
       `,
-      { sk_vendedor: vendedor.skVendedor }
+      { sk_vendedor: vendedor.skVendedor, ...vendasLojaCondition.binds }
     ),
     safeQuery(
       context,
@@ -296,6 +314,7 @@ async function carregarDadosAssistente(vendedor, context) {
           ON p.sk_produto = f.sk_produto
         WHERE f.sk_vendedor = :sk_vendedor
           AND f.sk_dt_recebimento IS NOT NULL
+          AND ${vendasLojaCondition.clause}
       ),
       consolidado AS (
         SELECT
@@ -334,7 +353,7 @@ async function carregarDadosAssistente(vendedor, context) {
       )
       WHERE ROWNUM = 1
       `,
-      { sk_vendedor: vendedor.skVendedor }
+      { sk_vendedor: vendedor.skVendedor, ...vendasLojaCondition.binds }
     ),
   ])
 
@@ -613,7 +632,15 @@ router.post("/assistente-vendas", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "empresa_id e obrigatorio para gerar insights do vendedor." })
     }
 
+    // Assistente de Vendas agrega todas as lojas do vendedor - so o Painel/Jornada e o Ranking
+    // exigem selecao de loja.
+    const lojaScope = await getScopedLojaScope(req, { required: false })
+    if (lojaScope.error) {
+      return res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    }
+
     const context = await getQueryContext(empresaId)
+    context.lojaScope = lojaScope
 
     const isAdminOrGerente = ["SUPERADMIN", "ADMIN", "GERENTE"].includes(callerRole)
     if (!isAdminOrGerente) {

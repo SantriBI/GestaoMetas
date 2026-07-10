@@ -1,5 +1,6 @@
 import { maskDocumento } from "./kanbanCardService.js"
 import { isRfvVendedorDisponivel } from "./kanbanQueries.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "../lojaScopeService.js"
 
 function normalizeRow(row) {
   return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key.toLowerCase(), value]))
@@ -13,13 +14,22 @@ function texto(value) {
  * "Carteira" do vendedor = UNION de sk_cliente presentes em qualquer um dos fatos que carregam
  * sk_vendedor (DIM_CLIENTE nao tem FK direta de vendedor).
  */
-export async function buscarClientesCarteira({ dbQuery, empresaId, skVendedor, termo }) {
+export async function buscarClientesCarteira({ dbQuery, empresaId, skVendedor, termo, lojaScope = null }) {
   const termoLimpo = String(termo ?? "").trim()
   if (!termoLimpo) return []
 
   const qNumerico = termoLimpo.replace(/\D/g, "")
-  const binds = { sk_vendedor: skVendedor, q_texto: termoLimpo }
   const rfvDisponivel = await isRfvVendedorDisponivel(dbQuery, empresaId)
+  const vendasLojaColumn = await resolveLojaColumnName(empresaId, "FATO_VENDAS_LUCRATIVIDADE")
+  const vendasLojaCondition = buildLojaInCondition(vendasLojaColumn, lojaScope, "kanban_busca_venda_loja")
+  const cockpitLojaColumn = await resolveLojaColumnName(empresaId, "FATO_COCKPIT")
+  const cockpitLojaCondition = buildLojaInCondition(cockpitLojaColumn, lojaScope, "kanban_busca_cockpit_loja")
+  const binds = {
+    sk_vendedor: skVendedor,
+    q_texto: termoLimpo,
+    ...vendasLojaCondition.binds,
+    ...cockpitLojaCondition.binds,
+  }
 
   const condicaoNumerica = qNumerico
     ? `REGEXP_REPLACE(NVL(cli.cpf, ''), '[^0-9]', '') = :q_numerico
@@ -41,9 +51,9 @@ export async function buscarClientesCarteira({ dbQuery, empresaId, skVendedor, t
     `
     WITH carteira AS (
       ${rfvDisponivel ? "SELECT sk_cliente FROM DM_VENDAS.FATO_RFV_VENDEDOR WHERE sk_vendedor = :sk_vendedor UNION" : ""}
-      SELECT sk_cliente FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE WHERE sk_vendedor = :sk_vendedor
+      SELECT sk_cliente FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE WHERE sk_vendedor = :sk_vendedor AND ${vendasLojaCondition.clause}
       UNION
-      SELECT sk_cliente FROM DM_VENDAS.FATO_COCKPIT WHERE sk_vendedor = :sk_vendedor
+      SELECT sk_cliente FROM DM_VENDAS.FATO_COCKPIT WHERE sk_vendedor = :sk_vendedor AND ${cockpitLojaCondition.clause}
     )
     SELECT *
     FROM (

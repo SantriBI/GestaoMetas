@@ -2,6 +2,7 @@ import ExcelJS from "exceljs"
 import { getInstanceNameByVendedor } from "./evolutionApiService.js"
 import { dispatchCampanha } from "./whatsappDispatchService.js"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "./lojaScopeService.js"
 
 
 const DEFAULT_TEMPLATES = [
@@ -239,7 +240,7 @@ function getSegmentConfig(segmento) {
   return item
 }
 
-function buildAccessScope({ role, sk_vendedor, empresa_id }) {
+async function buildAccessScope({ role, sk_vendedor, empresa_id, lojaScope = null }) {
   const perfil = String(role ?? "").toUpperCase()
 
   if (perfil !== "VENDEDOR" && perfil !== "GERENTE" && perfil !== "GERENTE_SISTEMAS") {
@@ -250,11 +251,21 @@ function buildAccessScope({ role, sk_vendedor, empresa_id }) {
     throw new Error("SK_VENDEDOR é obrigatório para o perfil vendedor.")
   }
 
+  // vw_orcamentos_gestao_metas tem coluna de loja; lojaScope so vem preenchido (applies=true) para
+  // VENDEDOR/GERENTE (getScopedLojaScope), entao GERENTE_SISTEMAS mantem o "1 = 1" tenant-wide de hoje.
+  const orcamentosLojaColumn = await resolveLojaColumnName(empresa_id, "VW_ORCAMENTOS_GESTAO_METAS")
+  const orcamentosLojaCondition = buildLojaInCondition(
+    orcamentosLojaColumn ? `orc.${orcamentosLojaColumn}` : null,
+    lojaScope,
+    "ativacao_orc_loja"
+  )
+
   return {
     role: perfil,
     skVendedor: sk_vendedor ?? null,
     empresaId: empresa_id ?? null,
     isGerente: perfil === "GERENTE" || perfil === "GERENTE_SISTEMAS",
+    orcamentosLojaCondition,
     query: getScopedQuery(empresa_id),
   }
 }
@@ -399,9 +410,11 @@ async function fetchClientesRfv(segmentConfig, scope) {
   })
 }
 
+// FATO_RFV_CLIENTE/FATO_RFV_VENDEDOR nao tem coluna de loja - sem filtro de loja no rfv_base.
+// vw_orcamentos_gestao_metas tem, entao o filtro de loja (scope.orcamentosLojaCondition) entra so ali.
 async function fetchClientesOrcamento(scope) {
-  const whereScope = scope.isGerente ? "1 = 1" : "orc.vendedor_id = :vendedor_id"
-  const binds = scope.isGerente ? {} : { vendedor_id: scope.skVendedor }
+  const sellerWhere = scope.isGerente ? "1 = 1" : "orc.vendedor_id = :vendedor_id"
+  const sellerBinds = scope.isGerente ? {} : { vendedor_id: scope.skVendedor }
   const rfvBaseSource = scope.isGerente
     ? "DM_VENDAS.FATO_RFV_CLIENTE"
     : "DM_VENDAS.FATO_RFV_VENDEDOR"
@@ -436,11 +449,12 @@ async function fetchClientesOrcamento(scope) {
     FROM vw_orcamentos_gestao_metas orc
     LEFT JOIN rfv_base rfv
       ON UPPER(TRIM(rfv.nome_cliente)) = UPPER(TRIM(orc.cliente))
-    WHERE ${whereScope}
+    WHERE ${sellerWhere}
+      AND ${scope.orcamentosLojaCondition.clause}
       AND TO_DATE(TRIM(orc.data), 'DD/MM/RR') >= TRUNC(SYSDATE) - 30
     ORDER BY TO_DATE(TRIM(orc.data), 'DD/MM/RR') DESC, orc.valor DESC
     `,
-    binds
+    { ...sellerBinds, ...scope.orcamentosLojaCondition.binds }
   )
 
   return rows.map((row) => {
@@ -565,12 +579,13 @@ async function getClientesBySegment({
   role,
   sk_vendedor,
   empresa_id,
+  lojaScope = null,
   messageBase,
   search,
   sortBy,
   sortDir,
 }) {
-  const scope = buildAccessScope({ role, sk_vendedor, empresa_id })
+  const scope = await buildAccessScope({ role, sk_vendedor, empresa_id, lojaScope })
   const segmentConfig = getSegmentConfig(segmento)
   const templateBase = messageBase || getDefaultTemplateForSegment(segmentConfig.id).mensagem
 
@@ -778,6 +793,7 @@ export async function criarCampanha(payload) {
           role: payload.role,
           sk_vendedor: payload.sk_vendedor,
           empresa_id: payload.empresa_id,
+          lojaScope: payload.lojaScope,
           messageBase: payload.mensagem_base,
         })
 

@@ -30,6 +30,8 @@ import RankingAlerts from "@/components/RankingAlerts"
 import { gerarResumoDiario } from "@/lib/diario"
 import { AppShellNav } from "@/components/layout/AppShellNav"
 import { AuthUser, setStoredUser } from "@/lib/user-session"
+import { fetchMinhasLojas, TODAS_LOJAS_VALUE, type LojaAcesso } from "@/lib/loja-acesso"
+import SeletorLoja from "@/components/SeletorLoja"
 
 type ActiveView = "jornada" | "grandprix" | null
 
@@ -39,6 +41,10 @@ export default function DashboardPage() {
   const [nomeUsuario, setNomeUsuario] = useState("")
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [empresaId, setEmpresaId] = useState<string | number | null>(null)
+  const [lojas, setLojas] = useState<LojaAcesso[]>([])
+  const [empresaAcesso, setEmpresaAcesso] = useState<string | null>(null)
+  const [permiteTodasLojas, setPermiteTodasLojas] = useState(false)
+  const [lojasResolvidas, setLojasResolvidas] = useState(false)
   const [dataReferencia, setDataReferencia] = useState<string | Date | number | null>(null)
   const [fallbackDataReferencia, setFallbackDataReferencia] = useState<string | Date | number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -149,6 +155,9 @@ export default function DashboardPage() {
     if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
       params.set("empresa_id", String(empresaId))
     }
+    if (empresaAcesso) {
+      params.set("empresa_acesso", empresaAcesso)
+    }
 
     return `/api/ranking-vendedores?${params.toString()}`
   }
@@ -190,11 +199,36 @@ export default function DashboardPage() {
     setNomeUsuario(nome)
     setStoredUser(normalizedUser)
     setEmpresaId(user.empresa_id ?? user.sk_empresa ?? null)
+
+    async function carregarLojas() {
+      try {
+        const { lojas: lojasDoUsuario, permiteTodasLojas: podeVerTodas } = await fetchMinhasLojas()
+        setLojas(lojasDoUsuario)
+        setPermiteTodasLojas(podeVerTodas)
+        // Sem mapeamento (0 lojas): sem seletor, comportamento identico ao atual.
+        // 1 loja: seletor aparece so pra indicar qual loja e (sem opcao de trocar).
+        // Multi-loja gerente: comeca consolidado (todas as lojas que gerencia), como hoje.
+        if (lojasDoUsuario.length === 0) {
+          setEmpresaAcesso(null)
+        } else if (lojasDoUsuario.length === 1) {
+          setEmpresaAcesso(lojasDoUsuario[0].empresaAcesso)
+        } else {
+          setEmpresaAcesso(podeVerTodas ? TODAS_LOJAS_VALUE : lojasDoUsuario[0].empresaAcesso)
+        }
+      } finally {
+        // So dispara a busca do ranking depois disso: para gerentes multi-loja o backend exige
+        // empresa_acesso, entao buscar antes de resolver a loja/consolidado sempre falhava com
+        // 400 nessa primeira tentativa (mesmo ajuste feito em app/vendedor/page.tsx).
+        setLojasResolvidas(true)
+      }
+    }
+
+    carregarLojas()
   }, [router])
 
   useEffect(() => {
     async function fetchData() {
-      if (!authUser) return
+      if (!lojasResolvidas || !authUser) return
 
       setIsLoading(true)
       try {
@@ -239,7 +273,7 @@ export default function DashboardPage() {
     }
 
     fetchData()
-  }, [viewMode, empresaId, authUser])
+  }, [lojasResolvidas, viewMode, empresaId, empresaAcesso, authUser])
 
   const nomeFinal = pareceCpf(nomeUsuario) ? "" : nomeUsuario
   const fraseSaudacao = nomeFinal
@@ -370,16 +404,26 @@ export default function DashboardPage() {
             <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 bg-[radial-gradient(circle_at_center,rgba(34,197,94,0.08),transparent_58%)] dark:bg-[radial-gradient(circle_at_center,rgba(134,239,172,0.09),transparent_58%)]" />
             <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(300px,360px)] xl:items-start">
               <div className="space-y-5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200/70 bg-emerald-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200 sm:text-[11px] sm:tracking-[0.18em]">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Visao gerencial
-                  </span>
-                  {dataReferenciaValida ? (
-                    <span className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-white/65 sm:text-[11px] sm:tracking-[0.18em]">
-                      {isToday(dataReferenciaNormalizada) ? "Atualizado hoje" : `Base ${formatDateBR(dataReferenciaNormalizada)}`}
+                <div className="flex flex-col gap-2.5 rounded-2xl border border-emerald-200/60 bg-white/70 px-3.5 py-2.5 dark:border-emerald-400/15 dark:bg-white/[0.03] sm:flex-row sm:items-center sm:gap-3 sm:py-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Visao gerencial
                     </span>
-                  ) : null}
+                    {dataReferenciaValida ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-white/55">
+                        <span className="h-3 w-px shrink-0 bg-slate-300 dark:bg-white/15" />
+                        {isToday(dataReferenciaNormalizada) ? "Atualizado hoje" : `Base ${formatDateBR(dataReferenciaNormalizada)}`}
+                      </span>
+                    ) : null}
+                  </div>
+                  <SeletorLoja
+                    lojas={lojas}
+                    value={empresaAcesso ?? ""}
+                    onValueChange={setEmpresaAcesso}
+                    permiteTodasLojas={permiteTodasLojas}
+                    className="h-8 w-full text-xs sm:ml-auto sm:w-56"
+                  />
                 </div>
 
                 <div>
@@ -392,38 +436,36 @@ export default function DashboardPage() {
               </div>
 
               <div className="grid gap-4">
-                <section className="justify-self-start w-full max-w-sm rounded-[24px] border border-border bg-card/90 p-2 shadow-sm backdrop-blur-sm">
-                  <div
-                    className="flex w-full items-center gap-1 rounded-[20px] border border-border bg-muted/60 p-1"
-                    role="group"
-                    aria-label="Modo de acompanhamento"
+                <div
+                  className="inline-flex w-full max-w-sm items-center gap-1 justify-self-start rounded-xl border border-border bg-muted/60 p-1 shadow-sm"
+                  role="group"
+                  aria-label="Modo de acompanhamento"
+                >
+                  <button
+                    onClick={() => setViewMode("diario")}
+                    aria-pressed={viewMode === "diario"}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                      viewMode === "diario"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`}
                   >
-                    <button
-                      onClick={() => setViewMode("diario")}
-                      aria-pressed={viewMode === "diario"}
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-sm font-medium transition-all ${
-                        viewMode === "diario"
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                      }`}
-                    >
-                      <Calendar className="h-4 w-4" />
-                      Diario
-                    </button>
-                    <button
-                      onClick={() => setViewMode("mensal")}
-                      aria-pressed={viewMode === "mensal"}
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-[16px] px-3 py-2.5 text-sm font-medium transition-all ${
-                        viewMode === "mensal"
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                      }`}
-                    >
-                      <CalendarDays className="h-4 w-4" />
-                      Mensal
-                    </button>
-                  </div>
-                </section>
+                    <Calendar className="h-4 w-4" />
+                    Diario
+                  </button>
+                  <button
+                    onClick={() => setViewMode("mensal")}
+                    aria-pressed={viewMode === "mensal"}
+                    className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
+                      viewMode === "mensal"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                    Mensal
+                  </button>
+                </div>
               </div>
 
               <div className="xl:col-span-2">
@@ -485,7 +527,7 @@ export default function DashboardPage() {
                         <Activity className="h-4 w-4 text-emerald-300" />
                         Radar e leitura tatica dos ultimos movimentos da equipe
                       </div>
-                      <RadarVendas empresaId={empresaId} />
+                      <RadarVendas empresaId={empresaId} empresaAcesso={empresaAcesso} />
                     </div>
                     <div className="space-y-3 xl:flex xl:flex-col">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">

@@ -1,6 +1,7 @@
 import pLimit from "p-limit"
 import { buildOrcamentosClienteCTE } from "./kanbanQueries.js"
 import { criarCardAutomatico, moverCard, addInteracao, toggleArquivar } from "./kanbanCardService.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "../lojaScopeService.js"
 
 export const ORCAMENTO_STATUS_COLUMN_MAP = {
   REC: "A_CONTATAR",
@@ -46,7 +47,9 @@ async function buscarCardsAtivos(dbQuery, skVendedor) {
   }))
 }
 
-async function buscarSinaisOrcamento(dbQuery, skVendedor) {
+async function buscarSinaisOrcamento(dbQuery, skVendedor, empresaId, lojaScope) {
+  const vendasLojaColumn = await resolveLojaColumnName(empresaId, "FATO_VENDAS_LUCRATIVIDADE")
+  const vendasLojaCondition = buildLojaInCondition(vendasLojaColumn ? `fv.${vendasLojaColumn}` : null, lojaScope, "kanban_sync_venda_loja")
   const rows = await dbQuery(
     `
     WITH ${buildOrcamentosClienteCTE()}
@@ -55,10 +58,11 @@ async function buscarSinaisOrcamento(dbQuery, skVendedor) {
       CASE WHEN orc.status = 'VEN' AND EXISTS (
         SELECT 1 FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE fv
         WHERE fv.orcamento_id = orc.orcamento_id AND fv.sk_vendedor = orc.sk_vendedor
+          AND ${vendasLojaCondition.clause}
       ) THEN 1 ELSE 0 END AS venda_comprovada
     FROM orcamentos_cliente orc
     `,
-    { sk_vendedor: skVendedor }
+    { sk_vendedor: skVendedor, ...vendasLojaCondition.binds }
   )
   return new Map(rows.map((row) => {
     const item = normalizeRow(row)
@@ -192,10 +196,10 @@ async function reprocessarAposCorrida({ dbQuery, empresaId, skVendedor, skClient
   await processarCandidato({ dbQuery, empresaId, skVendedor, skCliente, cardExistente, orcamento, temCampanha })
 }
 
-export async function sincronizarKanban({ dbQuery, empresaId, skVendedor }) {
+export async function sincronizarKanban({ dbQuery, empresaId, skVendedor, lojaScope = null }) {
   const [cardsAtivos, sinaisOrcamento, sinaisCampanha] = await Promise.all([
     buscarCardsAtivos(dbQuery, skVendedor),
-    buscarSinaisOrcamento(dbQuery, skVendedor),
+    buscarSinaisOrcamento(dbQuery, skVendedor, empresaId, lojaScope),
     buscarSinaisCampanha(dbQuery, skVendedor),
   ])
 

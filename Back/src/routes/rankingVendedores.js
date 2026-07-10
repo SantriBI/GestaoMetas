@@ -1,11 +1,12 @@
 import express from "express"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { requireAuth } from "../middleware/auth.js"
-import { getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId, getScopedLojaScope } from "../services/requestScope.js"
 import {
   buildSellerInCondition,
   getAllowedSellerCodesByEmpresaId,
 } from "../services/tenantSellerScope.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "../services/lojaScopeService.js"
 
 const router = express.Router()
 
@@ -45,25 +46,39 @@ router.get("/ranking-vendedores", requireAuth, async (req, res) => {
     const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(empresaId)
     const sellerScope = buildSellerInCondition("sk_vendedor", allowedSellerCodes)
 
+    const lojaScope = await getScopedLojaScope(req)
+    if (lojaScope.error) {
+      return res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    }
+
     let sql = ""
+    let binds = sellerScope.binds
 
     if (modo === "diario") {
+      const lojaColumn = await resolveLojaColumnName(empresaId, context.rankingDayView)
+      const lojaCondition = buildLojaInCondition(lojaColumn, lojaScope, "loja_scope_dia")
+      binds = { ...binds, ...lojaCondition.binds }
       sql = `
         SELECT *
         FROM ${context.rankingDayView}
         WHERE ${sellerScope.clause}
+          AND ${lojaCondition.clause}
         ORDER BY ranking_dia
       `
     } else {
+      const lojaColumn = await resolveLojaColumnName(empresaId, context.rankingView)
+      const lojaCondition = buildLojaInCondition(lojaColumn, lojaScope, "loja_scope_mensal")
+      binds = { ...binds, ...lojaCondition.binds }
       sql = `
         SELECT *
         FROM ${context.rankingView}
         WHERE ${sellerScope.clause}
+          AND ${lojaCondition.clause}
         ORDER BY ranking_atingimento
       `
     }
 
-    const rows = await context.query(sql, sellerScope.binds)
+    const rows = await context.query(sql, binds)
 
     res.json(rows.map(normalizeRow))
 
