@@ -18,6 +18,9 @@ if (!KEY_HEX || !/^[0-9a-f]{64}$/i.test(KEY_HEX) || /^0+$/.test(KEY_HEX)) {
   )
 }
 
+export const KEY_FINGERPRINT = crypto.createHash("sha256").update(KEY_HEX, "hex").digest("hex").slice(0, 8)
+console.log(`[secrets] APP_ENCRYPTION_KEY carregada (fingerprint: ${KEY_FINGERPRINT})`)
+
 function getKey() {
   return Buffer.from(KEY_HEX, "hex")
 }
