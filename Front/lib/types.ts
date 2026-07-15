@@ -38,6 +38,7 @@ export interface VendedorPanorama {
     receita: number
     participacao: number
   }>
+  top_produtos_desde: string | number | null
   top_clientes: Array<{
     nome_cliente: string | null
     classificacao: string | null
