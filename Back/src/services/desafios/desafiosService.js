@@ -237,7 +237,16 @@ async function sequenceExists(sequenceName) {
   return numberValue(rows[0]?.TOTAL ?? rows[0]?.total) > 0
 }
 
+let moduleReadinessCache = null
+let moduleReadinessCacheAt = 0
+const MODULE_READINESS_TTL_MS = 60_000
+
 async function inspectModuleReadiness() {
+  const now = Date.now()
+  if (moduleReadinessCache && now - moduleReadinessCacheAt < MODULE_READINESS_TTL_MS) {
+    return moduleReadinessCache
+  }
+
   const resolvedTables = await getChallengeTableNames()
   const [tableChecks, sequenceChecks] = await Promise.all([
     Promise.all(
@@ -249,11 +258,13 @@ async function inspectModuleReadiness() {
     Promise.all(SEQUENCES.map(async (sequenceName) => ({ name: sequenceName, exists: await sequenceExists(sequenceName) }))),
   ])
 
-  return {
+  moduleReadinessCache = {
     ready: [...tableChecks, ...sequenceChecks].every((item) => item.exists),
     missingTables: tableChecks.filter((item) => !item.exists).map((item) => item.name),
     missingSequences: sequenceChecks.filter((item) => !item.exists).map((item) => item.name),
   }
+  moduleReadinessCacheAt = now
+  return moduleReadinessCache
 }
 
 async function ensureModuleReadyForWrite() {
@@ -292,6 +303,61 @@ async function ensureTablesReady() {
 async function nextSequenceValue(sequenceName) {
   const rows = await query(`SELECT ${sequenceName}.NEXTVAL AS id FROM dual`)
   return numberValue(rows[0]?.ID ?? rows[0]?.id)
+}
+
+async function nextSequenceValues(sequenceName, count) {
+  if (count <= 0) return []
+  const rows = await query(
+    `
+    SELECT ${sequenceName}.NEXTVAL AS id
+    FROM dual
+    CONNECT BY LEVEL <= :n
+    `,
+    { n: count }
+  )
+  return rows.map((row) => numberValue(row.ID ?? row.id))
+}
+
+// Cada query() do modulo de desafios abre e fecha uma conexao Oracle nova
+// (ver queryOracleByEmpresaId em oracle-tenants.js: sem pool para conexoes
+// escopadas por tenant). Um INSERT por vendedor elegivel serializava N vezes
+// esse custo de conexao numa campanha para o time inteiro. Aqui buscamos os
+// IDs da sequence em uma unica query e inserimos todos os participantes em
+// lotes via INSERT ALL, reduzindo N*2 round-trips para ~2 por lote.
+const PARTICIPANT_INSERT_CHUNK_SIZE = 150
+
+async function insertChallengeParticipants(idDesafio, targetSellers, statusParticipacao) {
+  if (!targetSellers.length) return
+
+  const ids = await nextSequenceValues("DESAFIOS_COMERCIAIS_VENDEDORES_SEQ", targetSellers.length)
+
+  for (let offset = 0; offset < targetSellers.length; offset += PARTICIPANT_INSERT_CHUNK_SIZE) {
+    const chunkSellers = targetSellers.slice(offset, offset + PARTICIPANT_INSERT_CHUNK_SIZE)
+    const chunkIds = ids.slice(offset, offset + PARTICIPANT_INSERT_CHUNK_SIZE)
+    const binds = { id_desafio: idDesafio, status_participacao: statusParticipacao }
+
+    const intoClauses = chunkSellers.map((seller, index) => {
+      binds[`id_${index}`] = chunkIds[index]
+      binds[`sk_vendedor_${index}`] = seller.skVendedor
+      binds[`nome_vendedor_${index}`] = seller.nomeVendedor
+      return `
+        INTO DESAFIOS_COMERCIAIS_VENDEDORES (
+          id, id_desafio, sk_vendedor, nome_vendedor, status_participacao, ultima_atualizacao
+        ) VALUES (
+          :id_${index}, :id_desafio, :sk_vendedor_${index}, :nome_vendedor_${index}, :status_participacao, SYSDATE
+        )
+      `
+    })
+
+    await query(
+      `
+      INSERT ALL
+        ${intoClauses.join("\n")}
+      SELECT * FROM dual
+      `,
+      binds
+    )
+  }
 }
 
 function resolveChallengeStatus(dataInicio, dataFim) {
@@ -1268,38 +1334,17 @@ export async function createChallenge(payload, context = {}) {
     await insertChallengeMeta(idDesafio, meta, index)
   }
 
-  for (const seller of targetSellers) {
-    const id = await nextSequenceValue("DESAFIOS_COMERCIAIS_VENDEDORES_SEQ")
-    await query(
-      `
-      INSERT INTO DESAFIOS_COMERCIAIS_VENDEDORES (
-        id,
-        id_desafio,
-        sk_vendedor,
-        nome_vendedor,
-        status_participacao,
-        ultima_atualizacao
-      ) VALUES (
-        :id,
-        :id_desafio,
-        :sk_vendedor,
-        :nome_vendedor,
-        :status_participacao,
-        SYSDATE
-      )
-      `,
-      {
-        id,
-        id_desafio: idDesafio,
-        sk_vendedor: seller.skVendedor,
-        nome_vendedor: seller.nomeVendedor,
-        status_participacao: scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL",
-      }
-    )
-  }
+  await insertChallengeParticipants(
+    idDesafio,
+    targetSellers,
+    scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL"
+  )
 
   await insertLog(idDesafio, "CRIADO", `Desafio publicado com ${scopedPayload.metas.length} meta(s).`)
-  return getChallengeById(idDesafio)
+  // Participantes acabam de ser inseridos sem progresso: recalcular por vendedor aqui
+  // (Promise.all de queries pesadas em FATO_VENDAS_LUCRATIVIDADE) so atrasa a resposta
+  // sem mudar o resultado. A listagem e o detalhe ja recalculam sob demanda.
+  return getChallengeById(idDesafio, {}, { fullImpact: false })
   })
 }
 
@@ -1342,38 +1387,16 @@ export async function updateChallenge(idDesafio, payload, context = {}) {
     await insertChallengeMeta(idDesafio, meta, index)
   }
 
-  for (const seller of targetSellers) {
-    const id = await nextSequenceValue("DESAFIOS_COMERCIAIS_VENDEDORES_SEQ")
-    await query(
-      `
-      INSERT INTO DESAFIOS_COMERCIAIS_VENDEDORES (
-        id,
-        id_desafio,
-        sk_vendedor,
-        nome_vendedor,
-        status_participacao,
-        ultima_atualizacao
-      ) VALUES (
-        :id,
-        :id_desafio,
-        :sk_vendedor,
-        :nome_vendedor,
-        :status_participacao,
-        SYSDATE
-      )
-      `,
-      {
-        id,
-        id_desafio: idDesafio,
-        sk_vendedor: seller.skVendedor,
-        nome_vendedor: seller.nomeVendedor,
-        status_participacao: scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL",
-      }
-    )
-  }
+  await insertChallengeParticipants(
+    idDesafio,
+    targetSellers,
+    scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL"
+  )
 
   await insertLog(idDesafio, "ATUALIZADO", "Desafio reconfigurado pelo gerente.")
-  return getChallengeById(idDesafio)
+  // Mesma razao do createChallenge: progresso/participantes acabaram de ser recriados
+  // do zero, entao o recalculo completo aqui e so custo, sem ganho de precisao.
+  return getChallengeById(idDesafio, {}, { fullImpact: false })
   })
 }
 
@@ -1762,25 +1785,26 @@ export async function getSellerChallengeAlert(skVendedor, context = {}) {
     }
   }
 
-  const items = []
-  for (const item of rows) {
-    const row = normalizeRow(item)
-    const challengeId = numberValue(row.id_desafio)
-    const metas = challengeId ? await loadMetas(challengeId) : []
+  const items = await Promise.all(
+    rows.map(async (item) => {
+      const row = normalizeRow(item)
+      const challengeId = numberValue(row.id_desafio)
+      const metas = challengeId ? await loadMetas(challengeId) : []
 
-    items.push({
-      id: challengeId,
-      titulo: textValue(row.titulo),
-      descricao: textValue(row.descricao),
-      dataInicio: row.data_inicio ?? null,
-      dataFim: row.data_fim ?? null,
-      brandNames: extractChallengeBrandNames(metas),
-      metas,
-      exigeAceite: boolFromOracle(row.exige_aceite),
-      status: textValue(row.status),
-      participantStatus: textValue(row.status_participacao),
+      return {
+        id: challengeId,
+        titulo: textValue(row.titulo),
+        descricao: textValue(row.descricao),
+        dataInicio: row.data_inicio ?? null,
+        dataFim: row.data_fim ?? null,
+        brandNames: extractChallengeBrandNames(metas),
+        metas,
+        exigeAceite: boolFromOracle(row.exige_aceite),
+        status: textValue(row.status),
+        participantStatus: textValue(row.status_participacao),
+      }
     })
-  }
+  )
 
   return {
     hasNewChallenge: true,
