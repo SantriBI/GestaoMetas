@@ -723,17 +723,37 @@ export function aggregateChallengesSummary(items: Challenge[]): ChallengesRespon
   }
 }
 
-async function request<T>(url: string, init?: RequestInit) {
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000
+
+async function request<T>(url: string, init?: RequestInit, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
   const scopedUrl = appendSystemManagerEmpresaId(url)
-  const response = await fetch(scopedUrl, {
-    cache: "no-store",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  })
+  const timeoutController = new AbortController()
+  const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs)
+
+  let response: Response
+  try {
+    response = await fetch(scopedUrl, {
+      cache: "no-store",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+      signal: timeoutController.signal,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new ChallengeApiError(
+        "A operação está demorando mais que o esperado. Recarregue a lista para conferir se a alteração já foi aplicada antes de tentar de novo.",
+        { code: "REQUEST_TIMEOUT", status: 408 }
+      )
+    }
+    throw error
+  } finally {
+    clearTimeout(timeoutId)
+  }
+
   const payload = await response.json().catch(() => null)
   if (!response.ok) {
     throw new ChallengeApiError(payload?.error ?? "Erro ao carregar desafios.", {
