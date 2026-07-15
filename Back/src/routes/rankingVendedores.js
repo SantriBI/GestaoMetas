@@ -264,6 +264,159 @@ export function buildDiarioAnteriorSql(sellerScope) {
   `
 }
 
+// Retorna, por sk_vendedor, a variacao percentual de receita entre o periodo atual
+// (inicio do mes ate a data de referencia real) e o mesmo "corte" no mes anterior e
+// no mesmo mes do ano anterior. O corte NAO e por dia corrido: usa-se o numero de
+// dias uteis decorridos (FATO_META_DIA.DIAS_PASSADOS, a mesma fonte que ja alimenta
+// DIAS_RESTANTES em buildDiarioAnteriorSql) para achar a data equivalente nos
+// periodos anteriores, e so entao soma a receita acumulada ate essa data. Reaproveita
+// o mesmo GREATEST(MAX(data)) de buildDiarioAnteriorSql como "hoje" real, nunca
+// SYSDATE. So faz sentido no modo mensal.
+export function buildComparativoMensalSql(sellerScope) {
+  return `
+    SELECT * FROM (
+      WITH params AS (
+          SELECT GREATEST(
+              (SELECT MAX(dti.DATA) FROM FATO_COCKPIT fc  JOIN DIM_DATA dti ON dti.DATANUM = fc.SK_DATA),
+              (SELECT MAX(dti.DATA) FROM FATO_META_DIA fmd JOIN DIM_DATA dti ON dti.DATANUM = fmd.SK_DATA)
+          ) AS data_ref
+          FROM dual
+      ),
+      cal AS (
+          SELECT
+              p.data_ref,
+              TRUNC(p.data_ref, 'MM')                        AS ini_mes_ref,
+              TRUNC(ADD_MONTHS(p.data_ref, -1), 'MM')        AS ini_mes_anterior,
+              TO_CHAR(ADD_MONTHS(p.data_ref, -1), 'YYYYMM')  AS yyyymm_mes_anterior,
+              TRUNC(ADD_MONTHS(p.data_ref, -12), 'MM')       AS ini_ano_anterior,
+              TO_CHAR(ADD_MONTHS(p.data_ref, -12), 'YYYYMM') AS yyyymm_ano_anterior
+          FROM params p
+      ),
+      dias_passados_atual AS (
+          SELECT meta.SK_EMPRESA, meta.SK_VENDEDOR, MAX(meta.DIAS_PASSADOS) AS dias_passados
+          FROM FATO_META_DIA meta
+          JOIN DIM_DATA dti ON dti.DATANUM = meta.SK_DATA
+          CROSS JOIN cal c
+          WHERE meta.SK_VENDEDOR <> -1
+            AND dti.DATA = (
+                  SELECT MAX(d2.DATA)
+                  FROM FATO_META_DIA m2
+                  JOIN DIM_DATA d2 ON d2.DATANUM = m2.SK_DATA
+                  WHERE m2.SK_EMPRESA  = meta.SK_EMPRESA
+                    AND m2.SK_VENDEDOR = meta.SK_VENDEDOR
+                    AND d2.DATA <= c.data_ref)
+          GROUP BY meta.SK_EMPRESA, meta.SK_VENDEDOR
+      ),
+      corte_mes_anterior AS (
+          SELECT b.SK_EMPRESA, b.SK_VENDEDOR, MAX(dti.DATA) AS data_corte
+          FROM dias_passados_atual b
+          CROSS JOIN cal c
+          JOIN FATO_META_DIA meta ON meta.SK_EMPRESA = b.SK_EMPRESA AND meta.SK_VENDEDOR = b.SK_VENDEDOR
+          JOIN DIM_DATA dti ON dti.DATANUM = meta.SK_DATA
+          WHERE TO_CHAR(dti.DATA,'YYYYMM') = c.yyyymm_mes_anterior
+            AND meta.DIAS_PASSADOS <= b.dias_passados
+          GROUP BY b.SK_EMPRESA, b.SK_VENDEDOR
+      ),
+      corte_ano_anterior AS (
+          SELECT b.SK_EMPRESA, b.SK_VENDEDOR, MAX(dti.DATA) AS data_corte
+          FROM dias_passados_atual b
+          CROSS JOIN cal c
+          JOIN FATO_META_DIA meta ON meta.SK_EMPRESA = b.SK_EMPRESA AND meta.SK_VENDEDOR = b.SK_VENDEDOR
+          JOIN DIM_DATA dti ON dti.DATANUM = meta.SK_DATA
+          WHERE TO_CHAR(dti.DATA,'YYYYMM') = c.yyyymm_ano_anterior
+            AND meta.DIAS_PASSADOS <= b.dias_passados
+          GROUP BY b.SK_EMPRESA, b.SK_VENDEDOR
+      ),
+      receita_atual AS (
+          SELECT cockpit.SK_EMPRESA, cockpit.SK_VENDEDOR,
+                 SUM(CASE WHEN tipo_orcamento.TIPO_SINTETICO = 'DEV'
+                          THEN cockpit.VALOR_LIQUIDO_ITEM * -1
+                          ELSE cockpit.VALOR_LIQUIDO_ITEM END) AS receita
+          FROM FATO_COCKPIT cockpit
+          JOIN DIM_DATA dti ON dti.DATANUM = cockpit.SK_DATA
+          LEFT JOIN DIM_TIPO_ORCAMENTO tipo_orcamento
+              ON tipo_orcamento.SK_TIPO_ORCAMENTO = cockpit.SK_TIPO_ORCAMENTO
+          CROSS JOIN cal c
+          WHERE cockpit.SK_VENDEDOR <> -1
+            AND dti.DATA BETWEEN c.ini_mes_ref AND c.data_ref
+          GROUP BY cockpit.SK_EMPRESA, cockpit.SK_VENDEDOR
+      ),
+      receita_mes_anterior AS (
+          SELECT cockpit.SK_EMPRESA, cockpit.SK_VENDEDOR,
+                 SUM(CASE WHEN tipo_orcamento.TIPO_SINTETICO = 'DEV'
+                          THEN cockpit.VALOR_LIQUIDO_ITEM * -1
+                          ELSE cockpit.VALOR_LIQUIDO_ITEM END) AS receita
+          FROM FATO_COCKPIT cockpit
+          JOIN DIM_DATA dti ON dti.DATANUM = cockpit.SK_DATA
+          LEFT JOIN DIM_TIPO_ORCAMENTO tipo_orcamento
+              ON tipo_orcamento.SK_TIPO_ORCAMENTO = cockpit.SK_TIPO_ORCAMENTO
+          JOIN corte_mes_anterior cma
+              ON cma.SK_EMPRESA = cockpit.SK_EMPRESA AND cma.SK_VENDEDOR = cockpit.SK_VENDEDOR
+          CROSS JOIN cal c
+          WHERE cockpit.SK_VENDEDOR <> -1
+            AND dti.DATA BETWEEN c.ini_mes_anterior AND cma.data_corte
+          GROUP BY cockpit.SK_EMPRESA, cockpit.SK_VENDEDOR
+      ),
+      receita_ano_anterior AS (
+          SELECT cockpit.SK_EMPRESA, cockpit.SK_VENDEDOR,
+                 SUM(CASE WHEN tipo_orcamento.TIPO_SINTETICO = 'DEV'
+                          THEN cockpit.VALOR_LIQUIDO_ITEM * -1
+                          ELSE cockpit.VALOR_LIQUIDO_ITEM END) AS receita
+          FROM FATO_COCKPIT cockpit
+          JOIN DIM_DATA dti ON dti.DATANUM = cockpit.SK_DATA
+          LEFT JOIN DIM_TIPO_ORCAMENTO tipo_orcamento
+              ON tipo_orcamento.SK_TIPO_ORCAMENTO = cockpit.SK_TIPO_ORCAMENTO
+          JOIN corte_ano_anterior caa
+              ON caa.SK_EMPRESA = cockpit.SK_EMPRESA AND caa.SK_VENDEDOR = cockpit.SK_VENDEDOR
+          CROSS JOIN cal c
+          WHERE cockpit.SK_VENDEDOR <> -1
+            AND dti.DATA BETWEEN c.ini_ano_anterior AND caa.data_corte
+          GROUP BY cockpit.SK_EMPRESA, cockpit.SK_VENDEDOR
+      )
+      SELECT
+          b.SK_VENDEDOR AS SK_VENDEDOR,
+          TRUNC(NVL(ra.receita, 0), 2) AS RECEITA_ATUAL,
+          CASE WHEN rma.receita IS NOT NULL THEN TRUNC(rma.receita, 2) END AS RECEITA_MES_ANTERIOR,
+          CASE WHEN raa.receita IS NOT NULL THEN TRUNC(raa.receita, 2) END AS RECEITA_ANO_ANTERIOR,
+          CASE WHEN NVL(rma.receita, 0) > 0
+               THEN TRUNC(((NVL(ra.receita, 0) - rma.receita) / rma.receita) * 100, 2)
+               END AS VARIACAO_MES_ANTERIOR,
+          CASE WHEN NVL(raa.receita, 0) > 0
+               THEN TRUNC(((NVL(ra.receita, 0) - raa.receita) / raa.receita) * 100, 2)
+               END AS VARIACAO_ANO_ANTERIOR
+      FROM dias_passados_atual b
+      LEFT JOIN receita_atual        ra  ON ra.SK_EMPRESA  = b.SK_EMPRESA AND ra.SK_VENDEDOR  = b.SK_VENDEDOR
+      LEFT JOIN receita_mes_anterior rma ON rma.SK_EMPRESA = b.SK_EMPRESA AND rma.SK_VENDEDOR = b.SK_VENDEDOR
+      LEFT JOIN receita_ano_anterior raa ON raa.SK_EMPRESA = b.SK_EMPRESA AND raa.SK_VENDEDOR = b.SK_VENDEDOR
+    )
+    WHERE ${sellerScope.clause}
+  `
+}
+
+router.get("/ranking-vendedores/comparativo", requireAuth, async (req, res) => {
+  try {
+    const empresaId = getScopedEmpresaId(req)
+    if (!empresaId) {
+      return res.status(400).json({ error: "empresa_id e obrigatorio para buscar o comparativo." })
+    }
+
+    const context = await getQueryContext(empresaId)
+    const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(empresaId)
+    const sellerScope = buildSellerInCondition("sk_vendedor", allowedSellerCodes)
+
+    const rows = await context.query(buildComparativoMensalSql(sellerScope), sellerScope.binds)
+
+    res.json({
+      data: rows.map((row) =>
+        Object.fromEntries(Object.entries(row).map(([key, value]) => [key.toLowerCase(), value]))
+      ),
+    })
+  } catch (err) {
+    console.error("Erro comparativo ranking vendedores:", err)
+    res.status(500).json({ error: "Erro ao buscar comparativo do ranking" })
+  }
+})
+
 router.get("/ranking-vendedores", requireAuth, async (req, res) => {
   try {
     const modo = req.query.modo || "mensal"

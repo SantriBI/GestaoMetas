@@ -37,6 +37,11 @@ import { AuthUser, setStoredUser } from "@/lib/user-session"
 
 type ActiveView = "jornada" | "grandprix" | null
 
+interface ComparativoVendedor {
+  variacaoMesAnterior: number | null
+  variacaoAnoAnterior: number | null
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const [vendedores, setVendedores] = useState<VendedorProcessado[]>([])
@@ -56,6 +61,11 @@ export default function DashboardPage() {
   const [gpPeriodoCache, setGpPeriodoCache] = useState<Partial<Record<"mensal" | "diario", VendedorProcessado[]>>>({})
   const [gpPeriodoLoading, setGpPeriodoLoading] = useState(false)
   const [gpPeriodoError, setGpPeriodoError] = useState<string | null>(null)
+  const [rkPeriodo, setRkPeriodo] = useState<"atual" | "anterior">("atual")
+  const [rkPeriodoCache, setRkPeriodoCache] = useState<Partial<Record<"mensal" | "diario", VendedorProcessado[]>>>({})
+  const [rkPeriodoLoading, setRkPeriodoLoading] = useState(false)
+  const [rkPeriodoError, setRkPeriodoError] = useState<string | null>(null)
+  const [comparativo, setComparativo] = useState<Record<number, ComparativoVendedor>>({})
   const grandPrixCaptureRef = useRef<HTMLDivElement | null>(null)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
   const resumoDiario = viewMode === "diario" ? gerarResumoDiario(vendedores) : null
@@ -164,6 +174,15 @@ export default function DashboardPage() {
     }
 
     return `/api/ranking-vendedores?${params.toString()}`
+  }
+
+  function buildComparativoUrl() {
+    const params = new URLSearchParams()
+    if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
+      params.set("empresa_id", String(empresaId))
+    }
+    const qs = params.toString()
+    return `/api/ranking-vendedores/comparativo${qs ? `?${qs}` : ""}`
   }
 
   async function parseApiError(response: Response) {
@@ -307,6 +326,115 @@ export default function DashboardPage() {
   const gpPeriodoAnteriorLabel = viewMode === "diario" ? "Dia anterior" : "Mes anterior"
   const gpVoltarAtualLabel = viewMode === "diario" ? "Voltar para hoje" : "Voltar para o mes atual"
   const vendedoresGrandPrix = gpPeriodo === "anterior" ? gpPeriodoCache[viewMode] ?? [] : vendedores
+
+  // O periodo do Ranking da equipe (atual/anterior) e independente do Grand Prix,
+  // mas segue o mesmo padrao: sempre volta para "atual" quando o modo ou a empresa mudam.
+  useEffect(() => {
+    setRkPeriodo("atual")
+    setRkPeriodoError(null)
+  }, [viewMode])
+
+  useEffect(() => {
+    setRkPeriodoCache({})
+    setRkPeriodo("atual")
+    setRkPeriodoError(null)
+  }, [empresaId])
+
+  async function fetchRankingAnterior(modo: "mensal" | "diario") {
+    setRkPeriodoLoading(true)
+    setRkPeriodoError(null)
+    try {
+      const response = await fetch(buildRankingUrl(modo, "anterior"), {
+        credentials: "include",
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response))
+      }
+
+      const json = await response.json()
+      const data: Vendedor[] = json.data ?? json
+      const processed = data.map((v) => processVendedor(v, modo))
+
+      setRkPeriodoCache((prev) => ({ ...prev, [modo]: processed }))
+    } catch (err) {
+      setRkPeriodoError(err instanceof Error ? err.message : "Erro desconhecido")
+    } finally {
+      setRkPeriodoLoading(false)
+    }
+  }
+
+  function handleToggleRkPeriodo() {
+    if (rkPeriodo === "anterior") {
+      setRkPeriodo("atual")
+      return
+    }
+
+    setRkPeriodo("anterior")
+    if (!rkPeriodoCache[viewMode]) {
+      void fetchRankingAnterior(viewMode)
+    }
+  }
+
+  const vendedoresRanking = rkPeriodo === "anterior" ? rkPeriodoCache[viewMode] ?? [] : vendedores
+
+  // Comparativo (% mes anterior / % ano anterior) so faz sentido no modo mensal
+  // e na visao "atual"; busca em paralelo ao fetch principal do ranking.
+  useEffect(() => {
+    if (viewMode !== "mensal" || !authUser) {
+      setComparativo({})
+      return
+    }
+
+    let cancelled = false
+
+    async function fetchComparativo() {
+      try {
+        const response = await fetch(buildComparativoUrl(), {
+          credentials: "include",
+          cache: "no-store",
+        })
+        if (!response.ok) throw new Error(await parseApiError(response))
+
+        const json = await response.json()
+        const rows: Array<{
+          sk_vendedor: number | string
+          variacao_mes_anterior: number | string | null
+          variacao_ano_anterior: number | string | null
+        }> = json.data ?? []
+
+        if (cancelled) return
+
+        const map: Record<number, ComparativoVendedor> = {}
+        for (const row of rows) {
+          const id = Number(row.sk_vendedor)
+          if (!Number.isFinite(id)) continue
+          map[id] = {
+            variacaoMesAnterior:
+              row.variacao_mes_anterior === null || row.variacao_mes_anterior === undefined
+                ? null
+                : Number(row.variacao_mes_anterior),
+            variacaoAnoAnterior:
+              row.variacao_ano_anterior === null || row.variacao_ano_anterior === undefined
+                ? null
+                : Number(row.variacao_ano_anterior),
+          }
+        }
+        setComparativo(map)
+      } catch {
+        if (!cancelled) setComparativo({})
+      }
+    }
+
+    void fetchComparativo()
+
+    return () => {
+      cancelled = true
+    }
+  }, [viewMode, empresaId, authUser])
+
+  const mostrarComparativo = viewMode === "mensal" && rkPeriodo === "atual"
 
   const nomeFinal = pareceCpf(nomeUsuario) ? "" : nomeUsuario
   const fraseSaudacao = nomeFinal
@@ -575,7 +703,17 @@ export default function DashboardPage() {
                         Toque em um vendedor para abrir o panorama detalhado e entender ritmo, receita e potencial.
                       </p>
                     </div>
-                    <RankingTable vendedores={vendedores} viewMode={viewMode} empresaId={empresaId} />
+                    <RankingTable
+                      vendedores={vendedoresRanking}
+                      viewMode={viewMode}
+                      empresaId={empresaId}
+                      periodo={rkPeriodo}
+                      periodoLoading={rkPeriodoLoading}
+                      periodoError={rkPeriodoError}
+                      onTogglePeriodo={handleToggleRkPeriodo}
+                      onRetryPeriodo={() => void fetchRankingAnterior(viewMode)}
+                      comparativo={mostrarComparativo ? comparativo : undefined}
+                    />
                   </section>
                 </div>
               </section>
