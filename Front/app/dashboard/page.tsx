@@ -557,9 +557,9 @@ export default function DashboardPage() {
                     <div className="space-y-3 xl:flex xl:flex-col">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Sparkles className="h-4 w-4 text-emerald-300" />
-                        Distribuicao da equipe para priorizar acao com mais clareza
+                        Distribuicao da equipe
                       </div>
-                      <TeamStatus vendedores={vendedores} />
+                      <TeamStatus vendedores={vendedores} viewMode={viewMode} />
                     </div>
                   </section>
 
