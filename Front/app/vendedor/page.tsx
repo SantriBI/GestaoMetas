@@ -30,6 +30,7 @@ import RankingAlerts from "@/components/RankingAlerts"
 import { ChallengeNotificationBanner } from "@/components/challenges/ChallengeNotificationBanner"
 import { CardDashboard, dashboardCardThemes, dashboardCardThemesLight, type CardDashboardConfig } from "@/components/dashboard/CardDashboard"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { MotivationSpotlight } from "@/components/layout/MotivationSpotlight"
 import { useNotifications } from "@/components/notifications/NotificationContext"
 import { useSellerChallengeAlert, useSellerChallenges } from "@/hooks/useChallenges"
@@ -1013,7 +1014,7 @@ export default function VendedorDashboard() {
   }
 
   return (
-    <div className={`relative min-h-screen overflow-x-hidden ${isDark ? "bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_24%),radial-gradient(circle_at_78%_18%,rgba(245,158,11,0.08),transparent_22%),linear-gradient(135deg,rgba(8,16,29,1),rgba(9,14,24,1)_45%,rgba(13,22,36,1))]" : "bg-[linear-gradient(160deg,#f8fafc_0%,#f0fdf4_40%,#f8fafc_100%)]"}`}>
+    <div className={`relative min-h-screen overflow-x-hidden pb-mobile-tabbar ${isDark ? "bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.08),transparent_24%),radial-gradient(circle_at_78%_18%,rgba(245,158,11,0.08),transparent_22%),linear-gradient(135deg,rgba(8,16,29,1),rgba(9,14,24,1)_45%,rgba(13,22,36,1))]" : "bg-[linear-gradient(160deg,#f8fafc_0%,#f0fdf4_40%,#f8fafc_100%)]"}`}>
       {confettiActive ? (
         <canvas
           ref={confettiCanvasRef}
@@ -1027,6 +1028,7 @@ export default function VendedorDashboard() {
       </div>
       {/* HEADER */}
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
 
       <main className="relative z-10 mx-auto w-full max-w-[1380px] space-y-10 px-4 py-10 sm:px-6 xl:px-8">
         <div className="space-y-4">
@@ -1806,7 +1808,7 @@ export default function VendedorDashboard() {
         />
       )}
       {isFeedbackOpen && (
-        <div className={`fixed bottom-24 right-6 z-50 w-80 rounded-2xl border p-5 shadow-2xl backdrop-blur-md ${isDark ? "border-white/10 bg-zinc-900/95" : "border-slate-200/60 bg-white/98"}`}>
+        <div className={`fixed bottom-44 right-6 z-50 w-80 rounded-2xl border p-5 shadow-2xl backdrop-blur-md lg:bottom-24 ${isDark ? "border-white/10 bg-zinc-900/95" : "border-slate-200/60 bg-white/98"}`}>
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className={`text-sm font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>Sugestão de melhoria</h3>
@@ -1855,7 +1857,7 @@ export default function VendedorDashboard() {
       <button
         type="button"
         onClick={() => setIsFeedbackOpen((prev) => !prev)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition-all hover:scale-105 hover:bg-emerald-500 active:scale-95"
+        className="fixed bottom-24 right-6 z-50 flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition-all hover:scale-105 hover:bg-emerald-500 active:scale-95 lg:bottom-6"
       >
         <MessageCircle className="h-4 w-4" />
         Feedback

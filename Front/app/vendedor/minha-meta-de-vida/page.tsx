@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { MotivationSpotlight } from "@/components/layout/MotivationSpotlight"
 import {
   LifeGoalWizard,
@@ -452,8 +453,9 @@ export default function MinhaMetaDeVidaPage() {
 
   if (loading && !lifeGoal) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_24%),radial-gradient(circle_at_82%_12%,rgba(245,158,11,0.16),transparent_22%),linear-gradient(145deg,#071019,#08131f_45%,#0a1522)]">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_24%),radial-gradient(circle_at_82%_12%,rgba(245,158,11,0.16),transparent_22%),linear-gradient(145deg,#071019,#08131f_45%,#0a1522)] pb-mobile-tabbar">
         <AppShellNav user={authUser} />
+        <MobileTabBar user={authUser} />
         <main className="mx-auto flex min-h-[70vh] max-w-[1200px] items-center justify-center px-4 py-10">
           <div className="flex flex-col items-center gap-4 rounded-[32px] border border-white/10 bg-white/[0.04] px-8 py-10 text-center text-white">
             <div className="h-14 w-14 animate-spin rounded-full border-4 border-white/12 border-t-emerald-300" />
@@ -502,8 +504,9 @@ export default function MinhaMetaDeVidaPage() {
     (profileForm.objetivosPessoais.trim() || "Seus sonhos ainda estao sendo montados.")
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_24%),radial-gradient(circle_at_82%_12%,rgba(245,158,11,0.16),transparent_22%),linear-gradient(145deg,#071019,#08131f_45%,#0a1522)]">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(16,185,129,0.12),transparent_24%),radial-gradient(circle_at_82%_12%,rgba(245,158,11,0.16),transparent_22%),linear-gradient(145deg,#071019,#08131f_45%,#0a1522)] pb-mobile-tabbar">
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
 
       <main className="mx-auto max-w-[1240px] space-y-8 px-4 py-6 sm:px-6 sm:py-8">
         {error ? (

@@ -139,7 +139,7 @@ function NotificationToastCard({ notification }: { notification: AppNotification
           event.stopPropagation()
           close()
         }}
-        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-white/38 opacity-0 transition hover:bg-white/8 hover:text-white group-hover:opacity-100"
+        className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-white/38 opacity-100 transition hover:bg-white/8 hover:text-white md:opacity-0 md:group-hover:opacity-100"
         aria-label="Fechar notificacao"
       >
         <X className="h-3.5 w-3.5" />

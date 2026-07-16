@@ -2,7 +2,7 @@
 
 import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
-import { Flame, Hand, RefreshCw } from "lucide-react"
+import { Flame, GripVertical, Hand, RefreshCw } from "lucide-react"
 import { KanbanCard, formatCurrencyBRL, getRfvVisual } from "@/lib/kanban"
 
 interface KanbanCardItemProps {
@@ -27,11 +27,19 @@ export function KanbanCardItem({ card, accentColor, onClick }: KanbanCardItemPro
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
       onClick={onClick}
-      className="cursor-grab rounded-lg border border-l-4 border-border bg-card p-3 text-sm shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-lg active:cursor-grabbing"
+      className="relative cursor-pointer rounded-lg border border-l-4 border-border bg-card p-3 pr-8 text-sm shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-lg"
     >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        onClick={(event) => event.stopPropagation()}
+        aria-label="Arrastar card para outra coluna"
+        className="absolute right-1 top-1 flex h-7 w-7 touch-none cursor-grab items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-foreground/5 hover:text-muted-foreground active:cursor-grabbing"
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
       <KanbanCardBody card={card} />
     </div>
   )

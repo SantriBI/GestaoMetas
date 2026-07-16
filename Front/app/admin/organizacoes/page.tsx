@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Building2, CheckCircle2, Edit2, Plus, RefreshCw, Trash2, XCircle, Eye, EyeOff, Wifi } from "lucide-react"
 import { toast } from "sonner"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { useOrganizacoes, type Organizacao, type OrganizacaoPayload, type TesteConexaoResult } from "@/hooks/useOrganizacoes"
 import { getStoredUser, type AuthUser } from "@/lib/user-session"
 import { cn } from "@/lib/utils"
@@ -534,8 +535,9 @@ export default function AdminOrganizacoesPage() {
   if (!authUser) return null
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground pb-mobile-tabbar">
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
 
       <main className="mx-auto max-w-[1800px] px-4 py-8 lg:px-6">
         {/* Header */}
@@ -600,7 +602,60 @@ export default function AdminOrganizacoesPage() {
                 </button>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+              <>
+              <div className="space-y-3 md:hidden">
+                {organizacoes.map((org) => (
+                  <div key={`${org.id}-card`} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground">{org.nome}</p>
+                        {org.descricao && (
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">{org.descricao}</p>
+                        )}
+                      </div>
+                      <StatusBadge status={org.status} />
+                    </div>
+
+                    <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                      <p className="truncate font-mono">Usuário Oracle: {org.db_user}</p>
+                      <p className="truncate font-mono">Connect String: {org.db_connect_string}</p>
+                      <p>Criado em: {formatDate(org.criado_em)}</p>
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        title="Testar Conexão"
+                        onClick={() => setModal({ type: "test", org })}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-emerald-500/30 hover:bg-emerald-500/10 hover:text-emerald-500 dark:hover:text-emerald-400"
+                      >
+                        <Wifi className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Editar"
+                        onClick={() => setModal({ type: "edit", org })}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-500 dark:hover:text-blue-400"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Excluir"
+                        onClick={() => setModal({ type: "delete", org })}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-muted-foreground transition-colors hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-500 dark:hover:text-red-400"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="px-1 py-2 text-xs text-muted-foreground">
+                  {organizacoes.length} {organizacoes.length === 1 ? "organização encontrada" : "organizações encontradas"}
+                </div>
+              </div>
+
+              <div className="hidden overflow-hidden rounded-2xl border border-border bg-card shadow-sm md:block">
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -671,6 +726,7 @@ export default function AdminOrganizacoesPage() {
                   {organizacoes.length} {organizacoes.length === 1 ? "organização encontrada" : "organizações encontradas"}
                 </div>
               </div>
+              </>
             )}
           </>
         )}

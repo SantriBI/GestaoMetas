@@ -33,6 +33,7 @@ import { DashboardSkeleton } from "@/components/dashboard/loading-skeleton"
 import RankingAlerts from "@/components/RankingAlerts"
 import { gerarResumoDiario } from "@/lib/diario"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { AuthUser, setStoredUser } from "@/lib/user-session"
 
 type ActiveView = "jornada" | "grandprix" | null
@@ -556,8 +557,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-mobile-tabbar">
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
 
       <div className="flex">
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-5 sm:px-6 sm:py-8 xl:pr-[340px]">
@@ -823,7 +825,7 @@ export default function DashboardPage() {
         />
       )}
       {isFeedbackOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-80 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl backdrop-blur-md dark:border-white/10 dark:bg-zinc-900/95">
+        <div className="fixed bottom-44 right-6 z-50 w-80 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl backdrop-blur-md dark:border-white/10 dark:bg-zinc-900/95 lg:bottom-24">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Sugestão de melhoria</h3>
@@ -872,7 +874,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsFeedbackOpen((prev) => !prev)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition-all hover:scale-105 hover:bg-emerald-500 active:scale-95"
+        className="fixed bottom-24 right-6 z-50 flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition-all hover:scale-105 hover:bg-emerald-500 active:scale-95 lg:bottom-6"
       >
         <MessageCircle className="h-4 w-4" />
         Feedback

@@ -176,7 +176,7 @@ export default function LandingPage() {
                 <span className="text-xs text-[#7c8aa5]">Dashboard SIP</span>
               </div>
 
-              <div className="mb-5 grid grid-cols-3 gap-4">
+              <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="rounded-2xl border border-[#1c2537] bg-[#10151f] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
                   <p className="mb-1 text-xs text-[#75839d]">Meta Mensal</p>
                   <p className="text-xl font-black text-white">R$ 150K</p>

@@ -393,7 +393,23 @@ export async function migrateGlobalVendedoresToTenant(empresaId) {
 
 export function describeTenantProvisioningError(error) {
   const msg = String(error?.message ?? "")
-  if (msg.includes("ER_ACCESS_DENIED")) return "Acesso negado ao MySQL admin. Verifique MYSQL_ADMIN_USER e MYSQL_ADMIN_PASSWORD."
+  const code = String(error?.code ?? "")
+  if (code === "ER_ACCESS_DENIED_ERROR" || msg.includes("ER_ACCESS_DENIED") || msg.includes("Access denied for user")) {
+    const adminUser = process.env.MYSQL_ADMIN_USER ?? "root"
+    const adminHost = process.env.MYSQL_ADMIN_HOST ?? process.env.MYSQL_HOST ?? "localhost"
+    const adminPort = process.env.MYSQL_ADMIN_PORT ?? process.env.MYSQL_PORT ?? "3306"
+    const deniedAccount = msg.match(/Access denied for user '([^']+)'@'([^']+)'/)?.slice(1).join("@")
+    const origin = deniedAccount ? ` Origem recusada pelo MySQL: ${deniedAccount}.` : ""
+    return (
+      `Acesso negado ao MySQL admin (${adminUser}@${adminHost}:${adminPort}).` +
+      `${origin} Ajuste MYSQL_ADMIN_USER/MYSQL_ADMIN_PASSWORD ou libere uma conta admin para o host do backend.`
+    )
+  }
+  if (code === "ECONNREFUSED" || msg.includes("ECONNREFUSED")) {
+    const adminHost = process.env.MYSQL_ADMIN_HOST ?? process.env.MYSQL_HOST ?? "localhost"
+    const adminPort = process.env.MYSQL_ADMIN_PORT ?? process.env.MYSQL_PORT ?? "3306"
+    return `MySQL admin indisponivel em ${adminHost}:${adminPort}. Inicie o MySQL local/Compose ou ajuste MYSQL_ADMIN_HOST e MYSQL_ADMIN_PORT.`
+  }
   if (msg.includes("ER_DBACCESS_DENIED")) return "Permissao negada para criar database. Verifique os privilegios do usuario admin."
   if (msg.includes("ER_NO_SUCH_TABLE")) return "Tabela nao encontrada no tenant. A criacao do schema pode ter falhado."
   if (msg.includes("host nao pode")) return msg

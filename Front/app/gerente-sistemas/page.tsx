@@ -13,6 +13,7 @@ import {
   Users,
 } from "lucide-react"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { AuthUser, getStoredUser, setStoredUser } from "@/lib/user-session"
 
 type Organizacao = {
@@ -207,8 +208,9 @@ export default function GerenteSistemasPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-mobile-tabbar">
       <AppShellNav user={user} />
+      <MobileTabBar user={user} />
 
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:py-8">
         <section className="rounded-2xl border border-emerald-200/70 bg-card p-5 shadow-sm dark:border-emerald-500/20 sm:p-6">

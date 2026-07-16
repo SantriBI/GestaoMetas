@@ -161,8 +161,8 @@ export function ChallengePayoutReport({
           </div>
         </div>
       ) : (
-        <div className={`overflow-x-auto rounded-[26px] border border-white/10 bg-black/20 ${compact ? "mt-4" : "mt-5"}`}>
-          <div className="grid min-w-[1080px] grid-cols-[minmax(0,1.2fr)_minmax(160px,0.7fr)_minmax(120px,0.5fr)_minmax(150px,0.6fr)_minmax(170px,0.7fr)_minmax(0,1.7fr)] gap-4 border-b border-white/8 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45">
+        <div className={`rounded-[26px] border border-white/10 bg-black/20 ${compact ? "mt-4" : "mt-5"}`}>
+          <div className="hidden gap-4 border-b border-white/8 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/45 md:grid md:grid-cols-[minmax(0,1.2fr)_minmax(160px,0.7fr)_minmax(120px,0.5fr)_minmax(150px,0.6fr)_minmax(170px,0.7fr)_minmax(0,1.7fr)]">
             <span>Vendedor</span>
             <span>Situação</span>
             <span>Metas</span>
@@ -175,7 +175,7 @@ export function ChallengePayoutReport({
             {rows.map((row) => (
               <div
                 key={`${challenge.id}-${row.participant.skVendedor}-${row.participant.id ?? "report"}`}
-                className="grid min-w-[1080px] grid-cols-[minmax(0,1.2fr)_minmax(160px,0.7fr)_minmax(120px,0.5fr)_minmax(150px,0.6fr)_minmax(170px,0.7fr)_minmax(0,1.7fr)] gap-4 px-4 py-4 text-sm text-white/80"
+                className="grid gap-3 px-4 py-4 text-sm text-white/80 md:grid-cols-[minmax(0,1.2fr)_minmax(160px,0.7fr)_minmax(120px,0.5fr)_minmax(150px,0.6fr)_minmax(170px,0.7fr)_minmax(0,1.7fr)] md:items-start md:gap-4"
               >
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-white">{row.participant.nomeVendedor ?? `Vendedor ${row.participant.skVendedor}`}</p>
@@ -193,11 +193,13 @@ export function ChallengePayoutReport({
                 </div>
 
                 <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/36 md:hidden">Metas</p>
                   <p className="font-semibold text-white">{row.metasConcluidas}/{row.totalMetas}</p>
                   <p className="mt-1 text-xs text-white/45">metas concluídas</p>
                 </div>
 
                 <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/36 md:hidden">Atingimento</p>
                   <p className="font-semibold text-white">{Math.round(row.progress)}%</p>
                   <div className="mt-2 h-2 rounded-full bg-white/10">
                     <div
@@ -208,6 +210,7 @@ export function ChallengePayoutReport({
                 </div>
 
                 <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/36 md:hidden">Valor a pagar</p>
                   <p className="font-semibold text-white">{formatCurrencyBRL(row.payout)}</p>
                   <p className="mt-1 text-xs text-white/45">
                     {row.payout > 0 ? "pronto para pagamento" : "sem valor liberado"}
@@ -215,6 +218,7 @@ export function ChallengePayoutReport({
                 </div>
 
                 <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/36 md:hidden">Resultado</p>
                   <p className="font-semibold text-white">{row.summary}</p>
                   <div className="mt-2 space-y-1 text-xs leading-5 text-white/58">
                     {row.metaLines.slice(0, 2).map((line) => (

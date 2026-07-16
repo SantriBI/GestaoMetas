@@ -8,6 +8,7 @@ import { ChallengeExistingList } from "@/components/challenges/ChallengeExisting
 import { ChallengeInlineWizard } from "@/components/challenges/ChallengeInlineWizard"
 import { ChallengesModeSwitcher } from "@/components/challenges/ChallengesModeSwitcher"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { useManagerChallenges } from "@/hooks/useChallenges"
 import { useRotatingMessage } from "@/hooks/useRotatingMessage"
 import {
@@ -213,7 +214,7 @@ export default function DesafiosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-[#0a0a0a] pb-mobile-tabbar">
       {saving ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 backdrop-blur-md">
           <div className="flex w-full max-w-sm animate-in fade-in zoom-in-95 flex-col items-center gap-5 rounded-[32px] border border-cyan-300/20 bg-[linear-gradient(160deg,rgba(15,23,42,0.98),rgba(8,13,24,0.98))] px-8 py-10 text-center shadow-[0_40px_120px_rgba(0,0,0,0.6)] duration-300">
@@ -242,6 +243,7 @@ export default function DesafiosPage() {
       ) : null}
 
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
 
       <main className="mx-auto max-w-[1400px] space-y-6 px-4 py-8 lg:px-6">
         <button

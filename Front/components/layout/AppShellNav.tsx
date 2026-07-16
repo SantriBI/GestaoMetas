@@ -3,22 +3,13 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import {
-  Building2,
-  Home,
-  Kanban,
-  LayoutDashboard,
-  LogOut,
-  MessageSquareMore,
-  PiggyBank,
-  UserCog,
-  UserRound
-} from "lucide-react"
+import { LogOut } from "lucide-react"
 import Image from "next/image"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { NotificationBell } from "@/components/notifications/NotificationBell"
 import { ensureFeedLastSeenAt, getFeedLastSeenAt, onFeedSeenChange } from "@/lib/feed-activity"
 import { cn } from "@/lib/utils"
+import { getNavItems, isNavItemActive } from "@/components/layout/nav-items"
 import {
   AuthUser,
   clearStoredUser,
@@ -49,38 +40,7 @@ export function AppShellNav({ user }: AppShellNavProps) {
     avatarRing: "border-[#21402c]",
   }
 
-  const lifeGoalHref = "/vendedor/minha-meta-de-vida"
-
-  const isAdmin = user?.role === "ADMIN"
-  const isSystemManager = user?.role === "GERENTE_SISTEMAS"
-  const systemManagerDashboardHref =
-    user?.gerente_sistemas_view === "VENDEDOR"
-      ? "/vendedor"
-      : user?.gerente_sistemas_view === "GERENTE"
-        ? "/dashboard"
-        : "/gerente-sistemas"
-
-  const navItems = isAdmin
-    ? [
-        { href: "/admin/organizacoes", label: "Organizações", icon: Building2 },
-        { href: "/perfil", label: "Perfil", icon: UserRound },
-      ]
-    : isSystemManager
-      ? [
-          { href: "/gerente-sistemas", label: "Selecionar", icon: Building2 },
-          { href: systemManagerDashboardHref, label: "Dashboard", icon: LayoutDashboard },
-          ...(user?.gerente_sistemas_view === "GERENTE" ? [{ href: "/usuarios", label: "Usuarios", icon: UserCog }] : []),
-          { href: "/perfil", label: "Perfil", icon: UserRound },
-        ]
-    : [
-        { href: dashboardHref, label: "Home", icon: Home },
-        { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
-        ...(user?.role === "VENDEDOR" ? [{ href: "/vendedor/kanban", label: "Kanban", icon: Kanban }] : []),
-        ...(user?.role === "VENDEDOR" ? [{ href: lifeGoalHref, label: "Meta de Vida", icon: PiggyBank }] : []),
-        { href: "/feed", label: "Feed", icon: MessageSquareMore },
-        ...(user?.role === "GERENTE" ? [{ href: "/usuarios", label: "Usuarios", icon: UserCog }] : []),
-        { href: "/perfil", label: "Perfil", icon: UserRound },
-      ]
+  const navItems = getNavItems(user)
 
   useEffect(() => {
     if (!user) return
@@ -142,7 +102,10 @@ export function AppShellNav({ user }: AppShellNavProps) {
   }, [pathname, user])
 
   return (
-    <nav className={cn("sticky top-0 z-50 border-b", palette.nav)}>
+    <nav
+      className={cn("sticky top-0 z-50 border-b", palette.nav)}
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
+    >
       <div className="mx-auto flex max-w-[1800px] flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:px-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
           <Link href={dashboardHref} className="flex items-center gap-3">
@@ -155,31 +118,10 @@ export function AppShellNav({ user }: AppShellNavProps) {
             />
           </Link>
 
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="hidden items-center gap-1 lg:flex lg:flex-wrap">
             {navItems.map((item) => {
               const Icon = item.icon
-              const isActive =
-                item.label === "Perfil"
-                  ? pathname === "/perfil"
-                  : item.label === "Usuarios"
-                    ? pathname.startsWith("/usuarios")
-                  : item.label === "Organizações"
-                    ? pathname.startsWith("/admin/organizacoes")
-                  : item.label === "Selecionar"
-                    ? pathname.startsWith("/gerente-sistemas")
-                  : item.label === "Kanban"
-                    ? pathname.startsWith("/vendedor/kanban")
-                  : item.label === "Meta de Vida"
-                    ? pathname.startsWith("/vendedor/minha-meta-de-vida")
-                  : item.label === "Feed"
-                    ? pathname.startsWith("/feed")
-                  : item.label === "Dashboard"
-                    ? !pathname.startsWith("/perfil")
-                      && !pathname.startsWith("/vendedor/kanban")
-                      && !pathname.startsWith("/vendedor/minha-meta-de-vida")
-                      && !pathname.startsWith("/feed")
-                      && !pathname.startsWith("/usuarios")
-                    : false
+              const isActive = isNavItemActive(item, pathname)
 
               return (
                 <Link
@@ -241,7 +183,7 @@ export function AppShellNav({ user }: AppShellNavProps) {
               router.push("/login")
             }}
             className={cn(
-              "inline-flex items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors",
+              "hidden items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors lg:inline-flex",
               palette.logout
             )}
           >

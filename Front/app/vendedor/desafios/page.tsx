@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { ChallengeDetailsPanel } from "@/components/challenges/ChallengeDetailsPanel"
 import { ChallengeExpandableCard } from "@/components/challenges/ChallengeExpandableCard"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { useNotifications } from "@/components/notifications/NotificationContext"
 import { useRotatingMessage } from "@/hooks/useRotatingMessage"
 import { ChallengeEmptyState } from "@/components/challenges/ChallengeEmptyState"
@@ -320,8 +321,9 @@ function VendedorDesafiosContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-[#0a0a0a] pb-mobile-tabbar">
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
       <main className="mx-auto max-w-[1200px] space-y-6 px-4 py-8 sm:px-6">
         {error ? (
           <div className="rounded-[20px] border border-rose-300/20 bg-rose-400/10 px-5 py-4 text-sm text-rose-100">
