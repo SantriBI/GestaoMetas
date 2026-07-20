@@ -10,6 +10,12 @@ export interface RadarAlerta {
   mensagem: string
 }
 
+export interface RadarVendasResponse {
+  equipe: RadarAlerta[]
+  clientes: RadarAlerta[]
+  categorias: RadarAlerta[]
+}
+
 export interface VendedorPanorama {
   indicadores: {
     vendedorId: number | string | null
@@ -32,6 +38,7 @@ export interface VendedorPanorama {
     receita: number
     participacao: number
   }>
+  top_produtos_desde: string | number | null
   top_clientes: Array<{
     nome_cliente: string | null
     classificacao: string | null

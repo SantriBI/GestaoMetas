@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { AlertTriangle, RadioTower, TrendingDown, TrendingUp } from "lucide-react"
-import { RadarAlerta, RadarAlertaTipo } from "@/lib/types"
+import { RadarAlerta, RadarAlertaTipo, RadarVendasResponse } from "@/lib/types"
 
 type AlertStyle = {
   icon: typeof TrendingUp
@@ -50,7 +50,19 @@ type RadarVendasProps = {
   empresaAcesso?: string | null
 }
 
-async function fetchRadarVendas(empresaId?: string | number | null, empresaAcesso?: string | null) {
+const GRUPOS_VAZIOS: RadarVendasResponse = { equipe: [], clientes: [], categorias: [] }
+
+type RadarGrupoKey = keyof RadarVendasResponse
+
+const GRUPO_LABELS: Record<RadarGrupoKey, string> = {
+  equipe: "Equipe · meta do mês",
+  clientes: "Clientes · sem compra recente",
+  categorias: "Categorias · últimos 30 dias vs. 30 dias anteriores",
+}
+
+const GRUPO_ORDEM: RadarGrupoKey[] = ["equipe", "clientes", "categorias"]
+
+async function fetchRadarVendas(empresaId?: string | number | null, empresaAcesso?: string | null): Promise<RadarVendasResponse> {
   const params = new URLSearchParams()
   if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
     params.set("empresa_id", String(empresaId))
@@ -70,7 +82,11 @@ async function fetchRadarVendas(empresaId?: string | number | null, empresaAcess
   }
 
   const json = await response.json()
-  return Array.isArray(json?.alertas) ? (json.alertas as RadarAlerta[]) : []
+  return {
+    equipe: Array.isArray(json?.equipe) ? (json.equipe as RadarAlerta[]) : [],
+    clientes: Array.isArray(json?.clientes) ? (json.clientes as RadarAlerta[]) : [],
+    categorias: Array.isArray(json?.categorias) ? (json.categorias as RadarAlerta[]) : [],
+  }
 }
 
 function RadarSkeleton() {
@@ -87,8 +103,10 @@ function RadarSkeleton() {
 }
 
 function RadarAlertList({ alertas }: { alertas: RadarAlerta[] }) {
+  const colunas = alertas.length > 1 ? "lg:grid-cols-2" : "lg:grid-cols-1"
+
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+    <div className={`grid grid-cols-1 gap-3 ${colunas}`}>
       {alertas.map((alerta, index) => {
         const style = getAlertStyle(alerta.tipo_alerta)
         const Icon = style.icon
@@ -125,7 +143,7 @@ function RadarAlertList({ alertas }: { alertas: RadarAlerta[] }) {
 }
 
 export function RadarVendas({ empresaId, empresaAcesso }: RadarVendasProps) {
-  const [alertas, setAlertas] = useState<RadarAlerta[]>([])
+  const [grupos, setGrupos] = useState<RadarVendasResponse>(GRUPOS_VAZIOS)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -139,7 +157,7 @@ export function RadarVendas({ empresaId, empresaAcesso }: RadarVendasProps) {
       try {
         const dados = await fetchRadarVendas(empresaId, empresaAcesso)
         if (ativo) {
-          setAlertas(dados)
+          setGrupos(dados)
         }
       } catch (err) {
         if (ativo) {
@@ -158,6 +176,10 @@ export function RadarVendas({ empresaId, empresaAcesso }: RadarVendasProps) {
       ativo = false
     }
   }, [empresaId, empresaAcesso])
+
+  const secoes = GRUPO_ORDEM
+    .map((chave) => ({ chave, label: GRUPO_LABELS[chave], alertas: grupos[chave] }))
+    .filter((secao) => secao.alertas.length > 0)
 
   return (
     <section className="h-full rounded-[28px] border bg-card p-4 shadow-[0_0_0_1px_rgba(15,23,42,0.06)] sm:p-6">
@@ -181,7 +203,24 @@ export function RadarVendas({ empresaId, empresaAcesso }: RadarVendasProps) {
         </div>
       ) : null}
 
-      {!isLoading && !error ? <RadarAlertList alertas={alertas} /> : null}
+      {!isLoading && !error ? (
+        secoes.length ? (
+          <div className="space-y-6">
+            {secoes.map((secao) => (
+              <div key={secao.chave}>
+                <p className="mb-3 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                  {secao.label}
+                </p>
+                <RadarAlertList alertas={secao.alertas} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border theme-shell-panel p-4 text-sm text-muted-foreground">
+            Nenhum alerta identificado no momento.
+          </div>
+        )
+      ) : null}
     </section>
   )
 }

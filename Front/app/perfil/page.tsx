@@ -4,6 +4,7 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react"
 import { Camera, KeyRound, LoaderCircle, Save, ShieldCheck, UserRound } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
   AuthUser,
@@ -211,8 +212,9 @@ export default function PerfilPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.12),transparent_26%),linear-gradient(180deg,#050814_0%,#0b1220_100%)] text-slate-50">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.12),transparent_26%),linear-gradient(180deg,#050814_0%,#0b1220_100%)] text-slate-50 pb-mobile-tabbar">
       <AppShellNav user={user} variant="dark" />
+      <MobileTabBar user={user} />
 
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <section className="rounded-[32px] border border-white/10 bg-[linear-gradient(145deg,rgba(15,23,42,0.94),rgba(8,15,30,0.90))] p-6 shadow-[0_24px_80px_rgba(2,6,23,0.34)] sm:p-8">

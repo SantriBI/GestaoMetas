@@ -6,6 +6,7 @@ import { Activity, Flame, Sparkles, Trophy } from "lucide-react"
 import { FeedComposer } from "@/components/feed/FeedComposer"
 import { FeedList } from "@/components/feed/FeedList"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { useFeed } from "@/hooks/useFeed"
 import { toast } from "@/hooks/use-toast"
 import { markFeedAsSeen } from "@/lib/feed-activity"
@@ -128,8 +129,9 @@ export default function FeedPage() {
   ]
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-mobile-tabbar">
       <AppShellNav user={user} />
+      <MobileTabBar user={user} />
 
       <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
         <section className="relative mb-6 overflow-hidden rounded-[30px] border border-emerald-500/16 bg-[radial-gradient(circle_at_top_right,rgba(34,197,94,0.14),transparent_26%),linear-gradient(135deg,rgba(9,18,31,0.98),rgba(10,14,22,0.98))] p-5 shadow-[0_28px_80px_rgba(0,0,0,0.22)] sm:p-8">

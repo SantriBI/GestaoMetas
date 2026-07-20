@@ -177,7 +177,9 @@ function buildEmpresaFilter(alias = null) {
 
   const column = alias ? `${alias}.empresa_id` : "empresa_id"
   return {
-    clause: `${column} = :empresa_id`,
+    // A conexao Oracle ja esta escopada pela organizacao. Registros antigos do
+    // modulo podem ter sido criados antes de EMPRESA_ID ser preenchido.
+    clause: `(${column} = :empresa_id OR ${column} IS NULL)`,
     binds: { empresa_id: empresaId },
   }
 }
@@ -236,7 +238,16 @@ async function sequenceExists(sequenceName) {
   return numberValue(rows[0]?.TOTAL ?? rows[0]?.total) > 0
 }
 
+let moduleReadinessCache = null
+let moduleReadinessCacheAt = 0
+const MODULE_READINESS_TTL_MS = 60_000
+
 async function inspectModuleReadiness() {
+  const now = Date.now()
+  if (moduleReadinessCache && now - moduleReadinessCacheAt < MODULE_READINESS_TTL_MS) {
+    return moduleReadinessCache
+  }
+
   const resolvedTables = await getChallengeTableNames()
   const [tableChecks, sequenceChecks] = await Promise.all([
     Promise.all(
@@ -248,11 +259,13 @@ async function inspectModuleReadiness() {
     Promise.all(SEQUENCES.map(async (sequenceName) => ({ name: sequenceName, exists: await sequenceExists(sequenceName) }))),
   ])
 
-  return {
+  moduleReadinessCache = {
     ready: [...tableChecks, ...sequenceChecks].every((item) => item.exists),
     missingTables: tableChecks.filter((item) => !item.exists).map((item) => item.name),
     missingSequences: sequenceChecks.filter((item) => !item.exists).map((item) => item.name),
   }
+  moduleReadinessCacheAt = now
+  return moduleReadinessCache
 }
 
 async function ensureModuleReadyForWrite() {
@@ -291,6 +304,61 @@ async function ensureTablesReady() {
 async function nextSequenceValue(sequenceName) {
   const rows = await query(`SELECT ${sequenceName}.NEXTVAL AS id FROM dual`)
   return numberValue(rows[0]?.ID ?? rows[0]?.id)
+}
+
+async function nextSequenceValues(sequenceName, count) {
+  if (count <= 0) return []
+  const rows = await query(
+    `
+    SELECT ${sequenceName}.NEXTVAL AS id
+    FROM dual
+    CONNECT BY LEVEL <= :n
+    `,
+    { n: count }
+  )
+  return rows.map((row) => numberValue(row.ID ?? row.id))
+}
+
+// Cada query() do modulo de desafios abre e fecha uma conexao Oracle nova
+// (ver queryOracleByEmpresaId em oracle-tenants.js: sem pool para conexoes
+// escopadas por tenant). Um INSERT por vendedor elegivel serializava N vezes
+// esse custo de conexao numa campanha para o time inteiro. Aqui buscamos os
+// IDs da sequence em uma unica query e inserimos todos os participantes em
+// lotes via INSERT ALL, reduzindo N*2 round-trips para ~2 por lote.
+const PARTICIPANT_INSERT_CHUNK_SIZE = 150
+
+async function insertChallengeParticipants(idDesafio, targetSellers, statusParticipacao) {
+  if (!targetSellers.length) return
+
+  const ids = await nextSequenceValues("DESAFIOS_COMERCIAIS_VENDEDORES_SEQ", targetSellers.length)
+
+  for (let offset = 0; offset < targetSellers.length; offset += PARTICIPANT_INSERT_CHUNK_SIZE) {
+    const chunkSellers = targetSellers.slice(offset, offset + PARTICIPANT_INSERT_CHUNK_SIZE)
+    const chunkIds = ids.slice(offset, offset + PARTICIPANT_INSERT_CHUNK_SIZE)
+    const binds = { id_desafio: idDesafio, status_participacao: statusParticipacao }
+
+    const intoClauses = chunkSellers.map((seller, index) => {
+      binds[`id_${index}`] = chunkIds[index]
+      binds[`sk_vendedor_${index}`] = seller.skVendedor
+      binds[`nome_vendedor_${index}`] = seller.nomeVendedor
+      return `
+        INTO DESAFIOS_COMERCIAIS_VENDEDORES (
+          id, id_desafio, sk_vendedor, nome_vendedor, status_participacao, ultima_atualizacao
+        ) VALUES (
+          :id_${index}, :id_desafio, :sk_vendedor_${index}, :nome_vendedor_${index}, :status_participacao, SYSDATE
+        )
+      `
+    })
+
+    await query(
+      `
+      INSERT ALL
+        ${intoClauses.join("\n")}
+      SELECT * FROM dual
+      `,
+      binds
+    )
+  }
 }
 
 function resolveChallengeStatus(dataInicio, dataFim) {
@@ -381,6 +449,22 @@ function normalizeParticipant(row) {
   }
 }
 
+function normalizeProgress(row) {
+  const item = normalizeRow(row)
+  return {
+    id: numberValue(item.id),
+    idDesafio: numberValue(item.id_desafio),
+    idMeta: numberValue(item.id_meta),
+    skVendedor: item.sk_vendedor,
+    progressoAtual: numberValue(item.progresso_atual),
+    percentualConclusao: numberValue(item.percentual_conclusao),
+    concluidoEm: item.concluido_em ?? null,
+    premioLiberado: boolFromOracle(item.premio_liberado),
+    premioValor: numberValue(item.premio_valor),
+    ultimaAtualizacao: item.ultima_atualizacao ?? null,
+  }
+}
+
 function summarizeMetaProgress(metaProgress) {
   return metaProgress.map((item) => ({
     idMeta: item.idMeta,
@@ -424,6 +508,33 @@ async function loadParticipants(idDesafio) {
     { id_desafio: idDesafio }
   )
   return rows.map(normalizeParticipant)
+}
+
+async function loadSellerParticipant(idDesafio, skVendedor) {
+  const rows = await query(
+    `
+    SELECT *
+    FROM DESAFIOS_COMERCIAIS_VENDEDORES
+    WHERE id_desafio = :id_desafio
+      AND sk_vendedor = :sk_vendedor
+    `,
+    { id_desafio: idDesafio, sk_vendedor: skVendedor }
+  )
+  return rows[0] ? normalizeParticipant(rows[0]) : null
+}
+
+async function loadProgressRows(idDesafio, skVendedor = null) {
+  const sellerWhere = skVendedor ? "AND sk_vendedor = :sk_vendedor" : ""
+  const rows = await query(
+    `
+    SELECT *
+    FROM DESAFIOS_COMERCIAIS_PROGRESSO
+    WHERE id_desafio = :id_desafio
+      ${sellerWhere}
+    `,
+    skVendedor ? { id_desafio: idDesafio, sk_vendedor: skVendedor } : { id_desafio: idDesafio }
+  )
+  return rows.map(normalizeProgress)
 }
 
 async function loadTimeline(idDesafio) {
@@ -735,6 +846,50 @@ function buildChallengeStats(participantsDetailed, metas) {
   }
 }
 
+function buildStoredParticipantDetails(challenge, metas, participants, progressRows) {
+  const progressByParticipantAndMeta = new Map(
+    progressRows.map((progress) => [`${String(progress.skVendedor)}:${String(progress.idMeta)}`, progress])
+  )
+
+  return participants.map((participant) => {
+    const metaProgress = metas.map((meta) => {
+      const progress = progressByParticipantAndMeta.get(`${String(participant.skVendedor)}:${String(meta.idMeta)}`)
+      const multiplier = meta.metaValor > 0
+        ? Math.floor(numberValue(progress?.progressoAtual) / meta.metaValor)
+        : 0
+
+      return {
+        ...meta,
+        progress: {
+          progressoAtual: numberValue(progress?.progressoAtual),
+          percentualConclusao: numberValue(progress?.percentualConclusao),
+          concluidoEm: progress?.concluidoEm ?? null,
+          premioLiberado: Boolean(progress?.premioLiberado),
+          premioValor: numberValue(progress?.premioValor),
+          multiplier,
+          concluido: Boolean(progress?.premioLiberado || progress?.concluidoEm),
+        },
+      }
+    })
+
+    const progressAverage = metaProgress.length
+      ? Number((metaProgress.reduce((sum, item) => sum + numberValue(item.progress.percentualConclusao), 0) / metaProgress.length).toFixed(2))
+      : 0
+    const completedMetas = metaProgress.filter((item) => item.progress.concluido).length
+
+    return {
+      participant,
+      metas: metaProgress,
+      resumo: {
+        totalMetas: metaProgress.length,
+        metasConcluidas: completedMetas,
+        percentualGeral: progressAverage,
+        premioTotalLiberado: numberValue(participant.premioTotalLiberado),
+      },
+    }
+  })
+}
+
 function aggregateImpactSummary(items) {
   const totals = items.reduce(
     (summary, item) => {
@@ -784,9 +939,9 @@ async function hydrateChallenge(challenge, { fullImpact = true } = {}) {
     loadParticipants(challenge.id),
   ])
 
-  const participantsDetailed = await Promise.all(
-    participants.map((participant) => calculateParticipantProgress(challenge, metas, participant))
-  )
+  const participantsDetailed = fullImpact
+    ? await Promise.all(participants.map((participant) => calculateParticipantProgress(challenge, metas, participant)))
+    : buildStoredParticipantDetails(challenge, metas, participants, await loadProgressRows(challenge.id))
 
   const stats = buildChallengeStats(participantsDetailed, metas)
   const impact = fullImpact
@@ -1109,7 +1264,7 @@ export async function listChallenges(context = {}) {
   })
 }
 
-export async function getChallengeById(idDesafio, context = {}) {
+export async function getChallengeById(idDesafio, context = {}, options = {}) {
   return withChallengeContext(context, async () => {
   const ready = await ensureTablesReady()
   if (!ready) {
@@ -1134,7 +1289,7 @@ export async function getChallengeById(idDesafio, context = {}) {
   )
   if (!rows.length) throw new Error("Desafio nao encontrado.")
 
-  const challenge = await hydrateChallenge(normalizeChallenge(rows[0]))
+  const challenge = await hydrateChallenge(normalizeChallenge(rows[0]), { fullImpact: options.fullImpact !== false })
   return { ...challenge, timeline: await loadTimeline(idDesafio), mock: false }
   })
 }
@@ -1192,38 +1347,17 @@ export async function createChallenge(payload, context = {}) {
     await insertChallengeMeta(idDesafio, meta, index)
   }
 
-  for (const seller of targetSellers) {
-    const id = await nextSequenceValue("DESAFIOS_COMERCIAIS_VENDEDORES_SEQ")
-    await query(
-      `
-      INSERT INTO DESAFIOS_COMERCIAIS_VENDEDORES (
-        id,
-        id_desafio,
-        sk_vendedor,
-        nome_vendedor,
-        status_participacao,
-        ultima_atualizacao
-      ) VALUES (
-        :id,
-        :id_desafio,
-        :sk_vendedor,
-        :nome_vendedor,
-        :status_participacao,
-        SYSDATE
-      )
-      `,
-      {
-        id,
-        id_desafio: idDesafio,
-        sk_vendedor: seller.skVendedor,
-        nome_vendedor: seller.nomeVendedor,
-        status_participacao: scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL",
-      }
-    )
-  }
+  await insertChallengeParticipants(
+    idDesafio,
+    targetSellers,
+    scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL"
+  )
 
   await insertLog(idDesafio, "CRIADO", `Desafio publicado com ${scopedPayload.metas.length} meta(s).`)
-  return getChallengeById(idDesafio)
+  // Participantes acabam de ser inseridos sem progresso: recalcular por vendedor aqui
+  // (Promise.all de queries pesadas em FATO_VENDAS_LUCRATIVIDADE) so atrasa a resposta
+  // sem mudar o resultado. A listagem e o detalhe ja recalculam sob demanda.
+  return getChallengeById(idDesafio, {}, { fullImpact: false })
   })
 }
 
@@ -1266,38 +1400,16 @@ export async function updateChallenge(idDesafio, payload, context = {}) {
     await insertChallengeMeta(idDesafio, meta, index)
   }
 
-  for (const seller of targetSellers) {
-    const id = await nextSequenceValue("DESAFIOS_COMERCIAIS_VENDEDORES_SEQ")
-    await query(
-      `
-      INSERT INTO DESAFIOS_COMERCIAIS_VENDEDORES (
-        id,
-        id_desafio,
-        sk_vendedor,
-        nome_vendedor,
-        status_participacao,
-        ultima_atualizacao
-      ) VALUES (
-        :id,
-        :id_desafio,
-        :sk_vendedor,
-        :nome_vendedor,
-        :status_participacao,
-        SYSDATE
-      )
-      `,
-      {
-        id,
-        id_desafio: idDesafio,
-        sk_vendedor: seller.skVendedor,
-        nome_vendedor: seller.nomeVendedor,
-        status_participacao: scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL",
-      }
-    )
-  }
+  await insertChallengeParticipants(
+    idDesafio,
+    targetSellers,
+    scopedPayload.exigeAceite === false ? "CONVIDADO" : "DISPONIVEL"
+  )
 
   await insertLog(idDesafio, "ATUALIZADO", "Desafio reconfigurado pelo gerente.")
-  return getChallengeById(idDesafio)
+  // Mesma razao do createChallenge: progresso/participantes acabaram de ser recriados
+  // do zero, entao o recalculo completo aqui e so custo, sem ganho de precisao.
+  return getChallengeById(idDesafio, {}, { fullImpact: false })
   })
 }
 
@@ -1363,8 +1475,8 @@ async function markViewed(idDesafio, skVendedor) {
   )
 }
 
-async function buildSellerChallengeDetail(idDesafio, skVendedor) {
-  const detail = await getChallengeById(idDesafio)
+async function buildSellerChallengeDetail(idDesafio, skVendedor, options = {}) {
+  const detail = await getChallengeById(idDesafio, {}, { fullImpact: options.fullImpact !== false })
   const participant = detail.participants?.find((item) => String(item.skVendedor) === String(skVendedor))
   if (!participant) throw new Error("Desafio nao encontrado para este vendedor.")
 
@@ -1389,6 +1501,54 @@ async function buildSellerChallengeDetail(idDesafio, skVendedor) {
     ...detail,
     participant,
     ctas,
+  }
+}
+
+function buildSellerSummaryCtas(metas, skVendedor) {
+  const metaTypes = new Set((metas ?? []).map((meta) => String(meta.tipoMeta ?? "").toUpperCase()))
+  const sellerId = encodeURIComponent(String(skVendedor))
+  const ctas = []
+
+  if (metaTypes.has("PRODUTO_OU_MARCA") || metaTypes.has("FATURAMENTO") || metaTypes.has("PEDIDOS_FECHADOS")) {
+    ctas.push({ label: "Area de Ataque", href: `/area-ataque?sk_vendedor=${sellerId}` })
+  }
+
+  if (metaTypes.has("RECUPERAR_CLIENTES") || metaTypes.has("CLIENTES_ATENDIDOS")) {
+    const segment = metaTypes.has("RECUPERAR_CLIENTES") ? "&segmento=hibernando" : ""
+    ctas.push({ label: "Ver clientes", href: `/ativacao-clientes?sk_vendedor=${sellerId}${segment}` })
+  }
+
+  if (!ctas.length) {
+    ctas.push({ label: "Area de Ataque", href: `/area-ataque?sk_vendedor=${sellerId}` })
+  }
+
+  return ctas
+}
+
+async function buildSellerChallengeSummary(challenge, skVendedor) {
+  const [metas, participant, progressRows] = await Promise.all([
+    loadMetas(challenge.id),
+    loadSellerParticipant(challenge.id, skVendedor),
+    loadProgressRows(challenge.id, skVendedor),
+  ])
+  if (!participant) throw new Error("Desafio nao encontrado para este vendedor.")
+
+  const participantsDetailed = buildStoredParticipantDetails(challenge, metas, [participant], progressRows)
+  const detailedParticipant = {
+    ...participantsDetailed[0].participant,
+    metas: summarizeMetaProgress(participantsDetailed[0].metas),
+    resumo: participantsDetailed[0].resumo,
+  }
+
+  return {
+    ...challenge,
+    metas,
+    stats: buildChallengeStats(participantsDetailed, metas),
+    impact: calculateBonusSummary({ metas, participantsDetailed }),
+    participants: [detailedParticipant],
+    participant: detailedParticipant,
+    leaderboard: [],
+    ctas: buildSellerSummaryCtas(metas, skVendedor),
   }
 }
 
@@ -1564,7 +1724,7 @@ export async function listSellerChallenges(skVendedor, mode = "all", context = {
   )
 
   const items = await Promise.all(
-    rows.map((row) => buildSellerChallengeDetail(row.ID_DESAFIO ?? row.id_desafio, skVendedor))
+    rows.map((row) => buildSellerChallengeSummary(normalizeChallenge(row), skVendedor))
   )
 
   const filteredItems = items.filter((item) => {
@@ -1638,25 +1798,26 @@ export async function getSellerChallengeAlert(skVendedor, context = {}) {
     }
   }
 
-  const items = []
-  for (const item of rows) {
-    const row = normalizeRow(item)
-    const challengeId = numberValue(row.id_desafio)
-    const metas = challengeId ? await loadMetas(challengeId) : []
+  const items = await Promise.all(
+    rows.map(async (item) => {
+      const row = normalizeRow(item)
+      const challengeId = numberValue(row.id_desafio)
+      const metas = challengeId ? await loadMetas(challengeId) : []
 
-    items.push({
-      id: challengeId,
-      titulo: textValue(row.titulo),
-      descricao: textValue(row.descricao),
-      dataInicio: row.data_inicio ?? null,
-      dataFim: row.data_fim ?? null,
-      brandNames: extractChallengeBrandNames(metas),
-      metas,
-      exigeAceite: boolFromOracle(row.exige_aceite),
-      status: textValue(row.status),
-      participantStatus: textValue(row.status_participacao),
+      return {
+        id: challengeId,
+        titulo: textValue(row.titulo),
+        descricao: textValue(row.descricao),
+        dataInicio: row.data_inicio ?? null,
+        dataFim: row.data_fim ?? null,
+        brandNames: extractChallengeBrandNames(metas),
+        metas,
+        exigeAceite: boolFromOracle(row.exige_aceite),
+        status: textValue(row.status),
+        participantStatus: textValue(row.status_participacao),
+      }
     })
-  }
+  )
 
   return {
     hasNewChallenge: true,

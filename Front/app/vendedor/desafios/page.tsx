@@ -8,7 +8,9 @@ import { toast } from "sonner"
 import { ChallengeDetailsPanel } from "@/components/challenges/ChallengeDetailsPanel"
 import { ChallengeExpandableCard } from "@/components/challenges/ChallengeExpandableCard"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { useNotifications } from "@/components/notifications/NotificationContext"
+import { useRotatingMessage } from "@/hooks/useRotatingMessage"
 import { ChallengeEmptyState } from "@/components/challenges/ChallengeEmptyState"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useSellerChallengeAlert, useSellerChallenges } from "@/hooks/useChallenges"
@@ -31,6 +33,13 @@ import { getStoredUser, setStoredUser, type AuthUser } from "@/lib/user-session"
 type SellerTab = "andamento" | "disponiveis" | "encerrados"
 type SellerAlertNotificationItem = SellerChallengeAlertItem & Pick<Partial<Challenge>, "metas" | "participant">
 
+const OPENING_LOADING_MESSAGES = [
+  "Buscando suas campanhas e seu progresso.",
+  "Isso pode levar alguns segundos, já já aparece tudo aqui.",
+  "Existem muitos dados sendo cruzados agora, calma que já vem.",
+  "Só mais um instante...",
+]
+
 function VendedorDesafiosContent() {
   const router = useRouter()
   const pathname = usePathname()
@@ -41,6 +50,7 @@ function VendedorDesafiosContent() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [activeTab, setActiveTab] = useState<SellerTab>("andamento")
   const [openingChallengeId, setOpeningChallengeId] = useState<string | null>(null)
+  const openingLoadingMessage = useRotatingMessage(OPENING_LOADING_MESSAGES)
   const {
     data,
     selectedChallenge,
@@ -295,9 +305,25 @@ function VendedorDesafiosContent() {
 
   const activeChallengesCount = inProgressChallenges.length + availableChallengesRaw.length
 
+  if (loading && !data) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a]">
+        <AppShellNav user={authUser} />
+        <main className="mx-auto flex max-w-[1200px] flex-col items-center justify-center gap-4 px-4 py-32 text-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-white/10 border-t-cyan-300" />
+          <p className="text-lg font-semibold text-white">Estamos abrindo seus desafios...</p>
+          <p key={openingLoadingMessage} className="max-w-md animate-in fade-in text-sm text-white/45 duration-500">
+            {openingLoadingMessage}
+          </p>
+        </main>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-[#0a0a0a] pb-mobile-tabbar">
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
       <main className="mx-auto max-w-[1200px] space-y-6 px-4 py-8 sm:px-6">
         {error ? (
           <div className="rounded-[20px] border border-rose-300/20 bg-rose-400/10 px-5 py-4 text-sm text-rose-100">

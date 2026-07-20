@@ -1,5 +1,5 @@
 import pLimit from "p-limit"
-import { buildOrcamentosClienteCTE } from "./kanbanQueries.js"
+import { buildOrcamentosClienteCTE, ORCAMENTO_STATUS_IGNORAR, JANELA_ORCAMENTO_RELEVANTE_DIAS } from "./kanbanQueries.js"
 import { criarCardAutomatico, moverCard, addInteracao, toggleArquivar } from "./kanbanCardService.js"
 import { buildLojaInCondition, resolveLojaColumnName } from "../lojaScopeService.js"
 
@@ -20,10 +20,11 @@ export const ORCAMENTO_STATUS_COLUMN_MAP = {
 }
 
 const COLUNAS_ABERTAS = ["A_CONTATAR", "EM_CONTATO", "ORCAMENTO_ENVIADO"]
-const JANELA_CAMPANHA_RELEVANTE_DIAS = 30
+export const JANELA_CAMPANHA_RELEVANTE_DIAS = 30
 const JANELA_ORCAMENTO_PARADO_DIAS = 15
 const JANELA_ARQUIVAMENTO_DIAS = 15
 const CONCORRENCIA_MAXIMA = 15
+const STATUS_ENVIO_CAMPANHA_RELEVANTE = ["ENVIADO_WEBHOOK", "ENVIADO", "ENTREGUE", "LIDO", "RESPONDIDO"]
 
 function normalizeRow(row) {
   return Object.fromEntries(Object.entries(row ?? {}).map(([key, value]) => [key.toLowerCase(), value]))
@@ -77,7 +78,7 @@ async function buscarSinaisCampanha(dbQuery, skVendedor) {
     FROM DM_VENDAS.CAMPANHAS_ATIVACAO_CLIENTES cac
     JOIN DM_VENDAS.CAMPANHAS_ATIVACAO ca ON ca.ID = cac.CAMPANHA_ID
     WHERE ca.VENDEDOR_ID = :sk_vendedor
-      AND cac.STATUS_ENVIO IN ('ENVIADO_WEBHOOK', 'ENVIADO', 'ENTREGUE', 'LIDO', 'RESPONDIDO')
+      AND cac.STATUS_ENVIO IN (${STATUS_ENVIO_CAMPANHA_RELEVANTE.map((status) => `'${status}'`).join(", ")})
       AND NVL(cac.DATA_ENVIO_ZAPI, NVL(cac.ULTIMO_EVENTO_EM, ca.DATA_CRIACAO)) >= TRUNC(SYSDATE) - ${JANELA_CAMPANHA_RELEVANTE_DIAS}
     `,
     { sk_vendedor: skVendedor }
@@ -223,4 +224,40 @@ export async function sincronizarKanban({ dbQuery, empresaId, skVendedor, lojaSc
       )
     )
   )
+}
+
+/**
+ * Lista os SK_VENDEDOR com algum sinal que a sincronizacao levaria em conta (orcamento recente,
+ * campanha de ativacao recente ou card ja existente no kanban). O board so e sincronizado quando
+ * o vendedor abre a tela (getBoard chama sincronizarKanban so para o skVendedor da requisicao) -
+ * esta funcao existe para permitir um backfill que rode a sincronizacao proativamente para todos
+ * os vendedores com sinal pendente, em vez de depender de alguem acessar a tela.
+ */
+export async function listarVendedoresComSinalPendente(dbQuery) {
+  const statusIgnorar = ORCAMENTO_STATUS_IGNORAR.map((status) => `'${status}'`).join(", ")
+  const statusEnvio = STATUS_ENVIO_CAMPANHA_RELEVANTE.map((status) => `'${status}'`).join(", ")
+
+  const rows = await dbQuery(`
+    SELECT DISTINCT sk_vendedor FROM (
+      SELECT ven.sk_vendedor
+      FROM fato_orcamento orc
+      JOIN dim_vendedor ven ON ven.vendedor_id = orc.vendedor_id
+      WHERE orc.status NOT IN (${statusIgnorar})
+        AND orc.data_cadastro >= TRUNC(SYSDATE) - ${JANELA_ORCAMENTO_RELEVANTE_DIAS}
+
+      UNION
+
+      SELECT ca.VENDEDOR_ID AS sk_vendedor
+      FROM DM_VENDAS.CAMPANHAS_ATIVACAO_CLIENTES cac
+      JOIN DM_VENDAS.CAMPANHAS_ATIVACAO ca ON ca.ID = cac.CAMPANHA_ID
+      WHERE cac.STATUS_ENVIO IN (${statusEnvio})
+        AND NVL(cac.DATA_ENVIO_ZAPI, NVL(cac.ULTIMO_EVENTO_EM, ca.DATA_CRIACAO)) >= TRUNC(SYSDATE) - ${JANELA_CAMPANHA_RELEVANTE_DIAS}
+
+      UNION
+
+      SELECT SK_VENDEDOR AS sk_vendedor FROM CRM_KANBAN_CARD
+    )
+  `)
+
+  return rows.map((row) => normalizeRow(row).sk_vendedor)
 }

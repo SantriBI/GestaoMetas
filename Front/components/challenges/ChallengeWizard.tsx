@@ -65,6 +65,7 @@ export function ChallengeWizard({
   moduleSetup?: ChallengeModuleSetup | null
 }) {
   const scrollAreaRef = useRef<HTMLDivElement | null>(null)
+  const isSubmittingRef = useRef(false)
   const [step, setStep] = useState(0)
   const [titulo, setTitulo] = useState("")
   const [descricao, setDescricao] = useState("")
@@ -173,7 +174,13 @@ export function ChallengeWizard({
 
   async function handleCreate() {
     if (step !== STEPS.length - 1 || !canAdvance || moduleSetup?.ready === false) return
-    await onSubmit(draftPayload, editingChallenge?.id)
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
+    try {
+      await onSubmit(draftPayload, editingChallenge?.id)
+    } finally {
+      isSubmittingRef.current = false
+    }
   }
 
   function handleBack() {

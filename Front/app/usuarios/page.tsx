@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { UserManagementPanel } from "@/components/users/UserManagementPanel"
 import { AuthUser, getStoredUser } from "@/lib/user-session"
 
@@ -30,8 +31,9 @@ export default function UsuariosPage() {
   }, [router])
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.1),transparent_28%),linear-gradient(180deg,#f8fafc_0%,#f0fdf4_100%)] text-foreground dark:bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.12),transparent_26%),linear-gradient(180deg,#050814_0%,#0b1220_100%)] dark:text-slate-50">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.1),transparent_28%),linear-gradient(180deg,#f8fafc_0%,#f0fdf4_100%)] text-foreground dark:bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.12),transparent_26%),linear-gradient(180deg,#050814_0%,#0b1220_100%)] dark:text-slate-50 pb-mobile-tabbar">
       <AppShellNav user={user} />
+      <MobileTabBar user={user} />
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <UserManagementPanel
           empresaId={user?.empresa_id ?? user?.sk_empresa ?? null}

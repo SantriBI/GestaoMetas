@@ -1,13 +1,16 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   Activity,
   AlertTriangle,
   Calendar,
   CalendarDays,
+  Download,
+  History,
   LineChart,
+  Loader2,
   MessageCircle,
   Search,
   Sparkles,
@@ -23,17 +26,24 @@ import { RadarVendas } from "@/components/dashboard/RadarVendas"
 import { RankingTable } from "@/components/dashboard/ranking-table"
 import { Podium } from "@/components/dashboard/podium"
 import { ProgressTrail } from "@/components/dashboard/progress-trail"
+import { ShareRankingModal } from "@/components/dashboard/share-ranking-modal"
 import { SidebarHUD } from "@/components/dashboard/sidebar-hud"
 import { CardDashboard, dashboardCardThemes, dashboardCardThemesLight, type CardDashboardConfig } from "@/components/dashboard/CardDashboard"
 import { DashboardSkeleton } from "@/components/dashboard/loading-skeleton"
 import RankingAlerts from "@/components/RankingAlerts"
 import { gerarResumoDiario } from "@/lib/diario"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { AuthUser, setStoredUser } from "@/lib/user-session"
 import { fetchMinhasLojas, TODAS_LOJAS_VALUE, type LojaAcesso } from "@/lib/loja-acesso"
 import SeletorLoja from "@/components/SeletorLoja"
 
 type ActiveView = "jornada" | "grandprix" | null
+
+interface ComparativoVendedor {
+  variacaoMesAnterior: number | null
+  variacaoAnoAnterior: number | null
+}
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -54,6 +64,17 @@ export default function DashboardPage() {
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false)
   const [feedbackTexto, setFeedbackTexto] = useState("")
   const [feedbackStatus, setFeedbackStatus] = useState<"idle" | "sending" | "success" | "error">("idle")
+  const [gpPeriodo, setGpPeriodo] = useState<"atual" | "anterior">("atual")
+  const [gpPeriodoCache, setGpPeriodoCache] = useState<Partial<Record<"mensal" | "diario", VendedorProcessado[]>>>({})
+  const [gpPeriodoLoading, setGpPeriodoLoading] = useState(false)
+  const [gpPeriodoError, setGpPeriodoError] = useState<string | null>(null)
+  const [rkPeriodo, setRkPeriodo] = useState<"atual" | "anterior">("atual")
+  const [rkPeriodoCache, setRkPeriodoCache] = useState<Partial<Record<"mensal" | "diario", VendedorProcessado[]>>>({})
+  const [rkPeriodoLoading, setRkPeriodoLoading] = useState(false)
+  const [rkPeriodoError, setRkPeriodoError] = useState<string | null>(null)
+  const [comparativo, setComparativo] = useState<Record<number, ComparativoVendedor>>({})
+  const grandPrixCaptureRef = useRef<HTMLDivElement | null>(null)
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false)
   const resumoDiario = viewMode === "diario" ? gerarResumoDiario(vendedores) : null
   const hasMetaHerdada = vendedores.some((v) => v.metaHerdada === 1)
   const textoResumoDiario =
@@ -150,8 +171,11 @@ export default function DashboardPage() {
     return null
   }
 
-  function buildRankingUrl(modo: "mensal" | "diario") {
+  function buildRankingUrl(modo: "mensal" | "diario", periodo?: "atual" | "anterior") {
     const params = new URLSearchParams({ modo })
+    if (periodo === "anterior") {
+      params.set("periodo", "anterior")
+    }
     if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
       params.set("empresa_id", String(empresaId))
     }
@@ -160,6 +184,15 @@ export default function DashboardPage() {
     }
 
     return `/api/ranking-vendedores?${params.toString()}`
+  }
+
+  function buildComparativoUrl() {
+    const params = new URLSearchParams()
+    if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
+      params.set("empresa_id", String(empresaId))
+    }
+    const qs = params.toString()
+    return `/api/ranking-vendedores/comparativo${qs ? `?${qs}` : ""}`
   }
 
   async function parseApiError(response: Response) {
@@ -274,6 +307,169 @@ export default function DashboardPage() {
 
     fetchData()
   }, [lojasResolvidas, viewMode, empresaId, empresaAcesso, authUser])
+
+  // O periodo do Grand Prix (atual/anterior) e independente do toggle Diario/Mensal
+  // da pagina, mas sempre volta para "atual" quando o modo ou a empresa mudam.
+  useEffect(() => {
+    setGpPeriodo("atual")
+    setGpPeriodoError(null)
+  }, [viewMode])
+
+  useEffect(() => {
+    setGpPeriodoCache({})
+    setGpPeriodo("atual")
+    setGpPeriodoError(null)
+  }, [empresaId])
+
+  async function fetchGrandPrixAnterior(modo: "mensal" | "diario") {
+    setGpPeriodoLoading(true)
+    setGpPeriodoError(null)
+    try {
+      const response = await fetch(buildRankingUrl(modo, "anterior"), {
+        credentials: "include",
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response))
+      }
+
+      const json = await response.json()
+      const data: Vendedor[] = json.data ?? json
+      const processed = data.map((v) => processVendedor(v, modo))
+
+      setGpPeriodoCache((prev) => ({ ...prev, [modo]: processed }))
+    } catch (err) {
+      setGpPeriodoError(err instanceof Error ? err.message : "Erro desconhecido")
+    } finally {
+      setGpPeriodoLoading(false)
+    }
+  }
+
+  function handleToggleGpPeriodo() {
+    if (gpPeriodo === "anterior") {
+      setGpPeriodo("atual")
+      return
+    }
+
+    setGpPeriodo("anterior")
+    if (!gpPeriodoCache[viewMode]) {
+      void fetchGrandPrixAnterior(viewMode)
+    }
+  }
+
+  const gpPeriodoAnteriorLabel = viewMode === "diario" ? "Dia anterior" : "Mes anterior"
+  const gpVoltarAtualLabel = viewMode === "diario" ? "Voltar para hoje" : "Voltar para o mes atual"
+  const vendedoresGrandPrix = gpPeriodo === "anterior" ? gpPeriodoCache[viewMode] ?? [] : vendedores
+
+  // O periodo do Ranking da equipe (atual/anterior) e independente do Grand Prix,
+  // mas segue o mesmo padrao: sempre volta para "atual" quando o modo ou a empresa mudam.
+  useEffect(() => {
+    setRkPeriodo("atual")
+    setRkPeriodoError(null)
+  }, [viewMode])
+
+  useEffect(() => {
+    setRkPeriodoCache({})
+    setRkPeriodo("atual")
+    setRkPeriodoError(null)
+  }, [empresaId])
+
+  async function fetchRankingAnterior(modo: "mensal" | "diario") {
+    setRkPeriodoLoading(true)
+    setRkPeriodoError(null)
+    try {
+      const response = await fetch(buildRankingUrl(modo, "anterior"), {
+        credentials: "include",
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        throw new Error(await parseApiError(response))
+      }
+
+      const json = await response.json()
+      const data: Vendedor[] = json.data ?? json
+      const processed = data.map((v) => processVendedor(v, modo))
+
+      setRkPeriodoCache((prev) => ({ ...prev, [modo]: processed }))
+    } catch (err) {
+      setRkPeriodoError(err instanceof Error ? err.message : "Erro desconhecido")
+    } finally {
+      setRkPeriodoLoading(false)
+    }
+  }
+
+  function handleToggleRkPeriodo() {
+    if (rkPeriodo === "anterior") {
+      setRkPeriodo("atual")
+      return
+    }
+
+    setRkPeriodo("anterior")
+    if (!rkPeriodoCache[viewMode]) {
+      void fetchRankingAnterior(viewMode)
+    }
+  }
+
+  const vendedoresRanking = rkPeriodo === "anterior" ? rkPeriodoCache[viewMode] ?? [] : vendedores
+
+  // Comparativo (% mes anterior / % ano anterior) so faz sentido no modo mensal
+  // e na visao "atual"; busca em paralelo ao fetch principal do ranking.
+  useEffect(() => {
+    if (viewMode !== "mensal" || !authUser) {
+      setComparativo({})
+      return
+    }
+
+    let cancelled = false
+
+    async function fetchComparativo() {
+      try {
+        const response = await fetch(buildComparativoUrl(), {
+          credentials: "include",
+          cache: "no-store",
+        })
+        if (!response.ok) throw new Error(await parseApiError(response))
+
+        const json = await response.json()
+        const rows: Array<{
+          sk_vendedor: number | string
+          variacao_mes_anterior: number | string | null
+          variacao_ano_anterior: number | string | null
+        }> = json.data ?? []
+
+        if (cancelled) return
+
+        const map: Record<number, ComparativoVendedor> = {}
+        for (const row of rows) {
+          const id = Number(row.sk_vendedor)
+          if (!Number.isFinite(id)) continue
+          map[id] = {
+            variacaoMesAnterior:
+              row.variacao_mes_anterior === null || row.variacao_mes_anterior === undefined
+                ? null
+                : Number(row.variacao_mes_anterior),
+            variacaoAnoAnterior:
+              row.variacao_ano_anterior === null || row.variacao_ano_anterior === undefined
+                ? null
+                : Number(row.variacao_ano_anterior),
+          }
+        }
+        setComparativo(map)
+      } catch {
+        if (!cancelled) setComparativo({})
+      }
+    }
+
+    void fetchComparativo()
+
+    return () => {
+      cancelled = true
+    }
+  }, [viewMode, empresaId, authUser])
+
+  const mostrarComparativo = viewMode === "mensal" && rkPeriodo === "atual"
 
   const nomeFinal = pareceCpf(nomeUsuario) ? "" : nomeUsuario
   const fraseSaudacao = nomeFinal
@@ -395,8 +591,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-mobile-tabbar">
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
 
       <div className="flex">
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 py-5 sm:px-6 sm:py-8 xl:pr-[340px]">
@@ -532,9 +729,9 @@ export default function DashboardPage() {
                     <div className="space-y-3 xl:flex xl:flex-col">
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">
                         <Sparkles className="h-4 w-4 text-emerald-300" />
-                        Distribuicao da equipe para priorizar acao com mais clareza
+                        Distribuicao da equipe
                       </div>
-                      <TeamStatus vendedores={vendedores} />
+                      <TeamStatus vendedores={vendedores} viewMode={viewMode} />
                     </div>
                   </section>
 
@@ -550,7 +747,17 @@ export default function DashboardPage() {
                         Toque em um vendedor para abrir o panorama detalhado e entender ritmo, receita e potencial.
                       </p>
                     </div>
-                    <RankingTable vendedores={vendedores} viewMode={viewMode} empresaId={empresaId} />
+                    <RankingTable
+                      vendedores={vendedoresRanking}
+                      viewMode={viewMode}
+                      empresaId={empresaId}
+                      periodo={rkPeriodo}
+                      periodoLoading={rkPeriodoLoading}
+                      periodoError={rkPeriodoError}
+                      onTogglePeriodo={handleToggleRkPeriodo}
+                      onRetryPeriodo={() => void fetchRankingAnterior(viewMode)}
+                      comparativo={mostrarComparativo ? comparativo : undefined}
+                    />
                   </section>
                 </div>
               </section>
@@ -572,14 +779,61 @@ export default function DashboardPage() {
                         Grand Prix de Vendas
                       </h2>
                     </div>
-                    <span className="animate-pulse rounded-full border border-violet-300/18 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-100 shadow-[0_0_24px_rgba(168,85,247,0.18)]">
-                      Top 3 em destaque
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="animate-pulse rounded-full border border-violet-300/18 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-100 shadow-[0_0_24px_rgba(168,85,247,0.18)]">
+                        Top 3 em destaque
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleToggleGpPeriodo}
+                        disabled={gpPeriodoLoading}
+                        className="flex items-center gap-1.5 rounded-full border border-violet-300/25 bg-violet-500/10 px-3 py-1.5 text-xs font-semibold text-violet-100 transition-colors hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {gpPeriodoLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <History className="h-3.5 w-3.5" />
+                        )}
+                        {gpPeriodo === "anterior" ? gpVoltarAtualLabel : gpPeriodoAnteriorLabel}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsShareModalOpen(true)}
+                        className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-[0_0_18px_rgba(16,185,129,0.25)] transition-colors hover:bg-emerald-500"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Baixar ranking
+                      </button>
+                    </div>
                   </div>
 
-                  <div className="space-y-6 overflow-visible rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5">
-                    <Podium vendedores={vendedores} viewMode={viewMode} />
-                    <ProgressTrail vendedores={vendedores} viewMode={viewMode} />
+                  <div
+                    ref={grandPrixCaptureRef}
+                    className="space-y-6 overflow-visible rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.015))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:p-5"
+                  >
+                    {gpPeriodo === "anterior" && gpPeriodoLoading ? (
+                      <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-slate-300">
+                        <Loader2 className="h-6 w-6 animate-spin text-violet-300" />
+                        Carregando {viewMode === "diario" ? "o dia anterior" : "o mes anterior"}...
+                      </div>
+                    ) : gpPeriodo === "anterior" && gpPeriodoError ? (
+                      <div className="flex flex-col items-center justify-center gap-3 py-16 text-center text-sm text-slate-300">
+                        <AlertTriangle className="h-6 w-6 text-red-400" />
+                        <span>{gpPeriodoError}</span>
+                        <button
+                          type="button"
+                          onClick={() => void fetchGrandPrixAnterior(viewMode)}
+                          className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/10"
+                        >
+                          Tentar novamente
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <Podium vendedores={vendedoresGrandPrix} viewMode={viewMode} />
+                        <ProgressTrail vendedores={vendedoresGrandPrix} viewMode={viewMode} />
+                      </>
+                    )}
                   </div>
                 </section>
               </section>
@@ -598,6 +852,13 @@ export default function DashboardPage() {
         ) : null}
       </div>
 
+      <ShareRankingModal
+        open={isShareModalOpen}
+        onOpenChange={setIsShareModalOpen}
+        captureRef={grandPrixCaptureRef}
+        fileNameHint={`grand-prix-vendas-${viewMode}-${gpPeriodo}`}
+      />
+
       {/* FEEDBACK FLUTUANTE */}
       {isFeedbackOpen && (
         <div
@@ -606,7 +867,7 @@ export default function DashboardPage() {
         />
       )}
       {isFeedbackOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-80 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl backdrop-blur-md dark:border-white/10 dark:bg-zinc-900/95">
+        <div className="fixed bottom-44 right-6 z-50 w-80 rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-2xl backdrop-blur-md dark:border-white/10 dark:bg-zinc-900/95 lg:bottom-24">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold text-slate-950 dark:text-white">Sugestão de melhoria</h3>
@@ -655,7 +916,7 @@ export default function DashboardPage() {
       <button
         type="button"
         onClick={() => setIsFeedbackOpen((prev) => !prev)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition-all hover:scale-105 hover:bg-emerald-500 active:scale-95"
+        className="fixed bottom-24 right-6 z-50 flex items-center gap-2 rounded-full bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition-all hover:scale-105 hover:bg-emerald-500 active:scale-95 lg:bottom-6"
       >
         <MessageCircle className="h-4 w-4" />
         Feedback

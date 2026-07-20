@@ -4,7 +4,7 @@ import oracledb, {
   sanitizeConnectString,
 } from "./oracleClient.js"
 import centralPool from "./mysql.js"
-import { decryptSecret, SecretDecryptError } from "../security/secrets.js"
+import { decryptSecret, SecretDecryptError, KEY_FINGERPRINT } from "../security/secrets.js"
 
 oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT
 oracledb.fetchAsString = [oracledb.CLOB]
@@ -133,7 +133,8 @@ async function decryptOraclePassword(org) {
     if (error instanceof SecretDecryptError) {
       throwOracleCredentialsUnavailable(
         org,
-        "falha ao decriptar; APP_ENCRYPTION_KEY pode estar incorreta ou ter sido rotacionada, " +
+        `falha ao decriptar; APP_ENCRYPTION_KEY pode estar incorreta ou ter sido rotacionada ` +
+        `(fingerprint atual do processo: ${KEY_FINGERPRINT}), ` +
         "corrija a chave ou reinforme a senha Oracle da organizacao no admin"
       )
     }

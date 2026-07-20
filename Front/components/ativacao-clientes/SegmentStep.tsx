@@ -261,24 +261,24 @@ export function SegmentStep({
                     <p className="mt-2 min-h-[3rem] text-sm leading-6 text-[#a3a3a3]">{visual.description}</p>
                   </div>
 
-                  <div className="relative mt-6 grid grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,0.82fr)] gap-4 border-t border-[#242424] pt-4">
-                    <div className="rounded-2xl border border-[#222222] bg-[#181818] px-3 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a5a5a5]">Total</p>
-                      <p className="mt-2 text-[1.8rem] font-black leading-none tabular-nums text-white">
+                  <div className="relative mt-6 grid grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,0.82fr)] gap-2 border-t border-[#242424] pt-4 sm:gap-4">
+                    <div className="min-w-0 rounded-2xl border border-[#222222] bg-[#181818] px-2 py-3 sm:px-3">
+                      <p className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a5a5a5]">Total</p>
+                      <p className="mt-2 text-xl font-black leading-none tabular-nums text-white sm:text-[1.8rem]">
                         {formatStat(statValue(summary?.total_clientes, visual.defaults.total, isLoading))}
                       </p>
                     </div>
 
                     <div className="min-w-0 rounded-2xl bg-transparent px-1 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8fb4ff]">Com Tel.</p>
-                      <p className="mt-2 text-[1.8rem] font-black leading-none tabular-nums text-[#8fb4ff]">
+                      <p className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8fb4ff]">Com Tel.</p>
+                      <p className="mt-2 text-xl font-black leading-none tabular-nums text-[#8fb4ff] sm:text-[1.8rem]">
                         {formatStat(statValue(summary?.total_com_telefone, visual.defaults.withPhone, isLoading))}
                       </p>
                     </div>
 
                     <div className="min-w-0 rounded-2xl bg-transparent px-1 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#f59e0b]">Sem Tel.</p>
-                      <p className="mt-2 text-[1.8rem] font-black leading-none tabular-nums text-[#f59e0b]">
+                      <p className="truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-[#f59e0b]">Sem Tel.</p>
+                      <p className="mt-2 text-xl font-black leading-none tabular-nums text-[#f59e0b] sm:text-[1.8rem]">
                         {formatStat(statValue(summary?.total_sem_telefone, visual.defaults.withoutPhone, isLoading))}
                       </p>
                     </div>

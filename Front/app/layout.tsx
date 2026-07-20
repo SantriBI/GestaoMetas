@@ -1,5 +1,5 @@
 import React from "react"
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Space_Grotesk, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from "@/components/ui/sonner"
@@ -18,11 +18,24 @@ export const metadata: Metadata = {
   title: 'SIP - Gestão de Metas',
   description: 'Sistema de Performance de Vendedores',
   generator: 'v0.app',
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: [{ url: '/logo%20sip%202.0.svg', type: 'image/svg+xml' }],
     shortcut: '/logo%20sip%202.0.svg',
-    apple: '/logo%20sip%202.0.svg',
+    apple: '/icons/apple-touch-icon.png',
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'SIP',
+  },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#0c0f18',
 }
 
 export default function RootLayout({

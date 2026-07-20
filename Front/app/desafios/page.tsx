@@ -1,14 +1,16 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { useEffect, useMemo, useState } from "react"
-import { ArrowLeft, Gift, Swords } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { ArrowLeft, CheckCircle2, Gift, Loader2, Swords } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { ChallengeExistingList } from "@/components/challenges/ChallengeExistingList"
 import { ChallengeInlineWizard } from "@/components/challenges/ChallengeInlineWizard"
 import { ChallengesModeSwitcher } from "@/components/challenges/ChallengesModeSwitcher"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { useManagerChallenges } from "@/hooks/useChallenges"
+import { useRotatingMessage } from "@/hooks/useRotatingMessage"
 import {
   getChallengeCampaignKind,
   getChallengeLifecycleStatus,
@@ -19,6 +21,20 @@ import {
 import { getStoredUser, setStoredUser, type AuthUser } from "@/lib/user-session"
 
 type ChallengesMode = "create" | "list"
+
+const OPENING_LOADING_MESSAGES = [
+  "Buscando campanhas, metas e progresso do time.",
+  "Isso pode levar alguns segundos, já já aparece tudo aqui.",
+  "Existem muitos dados sendo cruzados agora, calma que já vem.",
+  "Só mais um instante...",
+]
+
+const SAVING_LOADING_MESSAGES = [
+  "Isso pode levar alguns segundos.",
+  "Estamos conferindo os vendedores elegíveis.",
+  "Existem muitos dados sendo processados, calma que já vai.",
+  "Só mais um instante...",
+]
 
 const campaignTabs: Array<{
   kind: ChallengeCampaignKind
@@ -44,6 +60,10 @@ export default function DesafiosPage() {
   const [campaignKind, setCampaignKind] = useState<ChallengeCampaignKind>("DESAFIO")
   const [editingChallenge, setEditingChallenge] = useState<Challenge | null>(null)
   const [modeInitialized, setModeInitialized] = useState(false)
+  const [publishedMessage, setPublishedMessage] = useState<string | null>(null)
+  const dismissPublishedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const openingLoadingMessage = useRotatingMessage(OPENING_LOADING_MESSAGES)
+  const savingLoadingMessage = useRotatingMessage(SAVING_LOADING_MESSAGES)
   const {
     data,
     metadata,
@@ -59,6 +79,12 @@ export default function DesafiosPage() {
     openDetails,
     cancelChallenge,
   } = useManagerChallenges()
+
+  useEffect(() => {
+    return () => {
+      if (dismissPublishedTimeoutRef.current) clearTimeout(dismissPublishedTimeoutRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     const user = getStoredUser()
@@ -116,8 +142,16 @@ export default function DesafiosPage() {
       setSelectedChallenge(saved)
       setCampaignKind(getChallengeCampaignKind(saved))
       setMode("list")
+      const kindLabel = getChallengeCampaignKind(saved) === "BONUS" ? "Bônus" : "Desafio"
+      showPublishedFeedback(id ? `${kindLabel} atualizado com sucesso!` : `${kindLabel} publicado com sucesso!`)
     }
     return saved
+  }
+
+  function showPublishedFeedback(message: string) {
+    if (dismissPublishedTimeoutRef.current) clearTimeout(dismissPublishedTimeoutRef.current)
+    setPublishedMessage(message)
+    dismissPublishedTimeoutRef.current = setTimeout(() => setPublishedMessage(null), 3200)
   }
 
   function handleModeChange(nextMode: ChallengesMode) {
@@ -159,9 +193,57 @@ export default function DesafiosPage() {
     }
   }
 
+  const campaignNoun = campaignKind === "BONUS" ? "bônus" : "desafio"
+  const savingMessage = editingChallenge
+    ? `Salvando alterações no ${campaignNoun}...`
+    : `Publicando o ${campaignNoun} para todos os vendedores...`
+
+  if (loadingChallenges && !data) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a]">
+        <AppShellNav user={authUser} />
+        <main className="mx-auto flex max-w-[1400px] flex-col items-center justify-center gap-4 px-4 py-32 text-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-white/10 border-t-cyan-300" />
+          <p className="text-lg font-semibold text-white">Estamos abrindo os desafios...</p>
+          <p key={openingLoadingMessage} className="max-w-md animate-in fade-in text-sm text-white/45 duration-500">
+            {openingLoadingMessage}
+          </p>
+        </main>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-[#0a0a0a] pb-mobile-tabbar">
+      {saving ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 backdrop-blur-md">
+          <div className="flex w-full max-w-sm animate-in fade-in zoom-in-95 flex-col items-center gap-5 rounded-[32px] border border-cyan-300/20 bg-[linear-gradient(160deg,rgba(15,23,42,0.98),rgba(8,13,24,0.98))] px-8 py-10 text-center shadow-[0_40px_120px_rgba(0,0,0,0.6)] duration-300">
+            <div className="relative flex h-16 w-16 items-center justify-center">
+              <div className="absolute inset-0 rounded-full bg-cyan-400/20 blur-xl" />
+              <Loader2 className="relative h-14 w-14 animate-spin text-cyan-300" />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-lg font-bold text-white">{savingMessage}</p>
+              <p key={savingLoadingMessage} className="animate-in fade-in text-sm text-white/45 duration-500">
+                {savingLoadingMessage}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : publishedMessage ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 backdrop-blur-md">
+          <div className="flex w-full max-w-sm animate-in fade-in zoom-in-95 flex-col items-center gap-5 rounded-[32px] border border-emerald-300/25 bg-[linear-gradient(160deg,rgba(6,20,15,0.98),rgba(4,14,10,0.98))] px-8 py-10 text-center shadow-[0_40px_120px_rgba(0,0,0,0.6)] duration-300">
+            <div className="relative flex h-16 w-16 items-center justify-center">
+              <div className="absolute inset-0 rounded-full bg-emerald-400/20 blur-xl" />
+              <CheckCircle2 className="relative h-14 w-14 text-emerald-300" />
+            </div>
+            <p className="text-lg font-bold text-emerald-50">{publishedMessage}</p>
+          </div>
+        </div>
+      ) : null}
+
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
 
       <main className="mx-auto max-w-[1400px] space-y-6 px-4 py-8 lg:px-6">
         <button

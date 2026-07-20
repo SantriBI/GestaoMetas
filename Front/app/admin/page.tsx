@@ -751,60 +751,106 @@ export default function AdminPage() {
               <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
             ) : (
               <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-sm">
-                    <thead>
-                      <tr className="border-b border-[#1c2940]">
-                        {["ID", "Nome", "Status", "Ações"].map((h) => (
-                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#1c2940]/60">
-                      {orgs.length === 0 && (
-                        <tr><td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">Nenhuma organização cadastrada.</td></tr>
-                      )}
-                      {orgs.map((org) => (
-                        <tr key={org.id_organizacao} className="hover:bg-white/[0.02]">
-                          <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{org.id_organizacao}</td>
-                          <td className="px-4 py-3">
-                            <p className="font-medium">{org.nome}</p>
-                            {org.db_name && <p className="text-xs text-muted-foreground font-mono">{org.db_name}</p>}
-                          </td>
-                          <td className="px-4 py-3"><Badge ativo={org.ativo} /></td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-1.5">
-                              <button className={btnSuccess} onClick={() => onSyncOrg(org)} disabled={syncingOrg === org.id_organizacao}>
-                                {syncingOrg === org.id_organizacao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}Sync
-                              </button>
-                              <button
-                                className={btnSecondary + " py-1.5 text-xs"}
-                                onClick={() => onProvisionSchema(org)}
-                                disabled={provisioningOrg === org.id_organizacao}
-                                title="Cria no Oracle da organização as tabelas, sequences, índices, triggers e views que estiverem faltando"
-                              >
-                                {provisioningOrg === org.id_organizacao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}Atualizar banco
-                              </button>
-                              <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => {
-                                setEditOrg({ nome: org.nome, codigo: org.codigo, oracleUser: org.oracle_user ?? "", oraclePassword: "", oracleConnectString: org.oracle_connect_string ?? "", ativo: org.ativo, _id: org.id_organizacao } as OrgFormState & { _id: number })
-                                setShowOrgForm(false)
-                              }}>
-                                <UserCog className="h-3.5 w-3.5" />Editar
-                              </button>
-                              <button className={btnWarn} onClick={() => onToggleOrgStatus(org).catch((e) => toast.error((e as Error).message))}>
-                                {org.ativo === "S" ? "Desativar" : "Ativar"}
-                              </button>
-                              <button className={btnDanger} onClick={() => onDeleteOrg(org).catch((e) => toast.error((e as Error).message))}>
-                                <Trash2 className="h-3.5 w-3.5" />Excluir
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-3 p-4 md:hidden">
+                  {orgs.length === 0 && (
+                    <p className="py-6 text-center text-sm text-muted-foreground">Nenhuma organização cadastrada.</p>
+                  )}
+                  {orgs.map((org) => (
+                    <div key={`${org.id_organizacao}-card`} className="rounded-xl border border-[#1c2940] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium">{org.nome}</p>
+                          {org.db_name && <p className="text-xs text-muted-foreground font-mono">{org.db_name}</p>}
+                          <p className="mt-1 font-mono text-xs text-muted-foreground">ID {org.id_organizacao}</p>
+                        </div>
+                        <Badge ativo={org.ativo} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        <button className={btnSuccess} onClick={() => onSyncOrg(org)} disabled={syncingOrg === org.id_organizacao}>
+                          {syncingOrg === org.id_organizacao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}Sync
+                        </button>
+                        <button
+                          className={btnSecondary + " py-1.5 text-xs"}
+                          onClick={() => onProvisionSchema(org)}
+                          disabled={provisioningOrg === org.id_organizacao}
+                          title="Cria no Oracle da organização as tabelas, sequences, índices, triggers e views que estiverem faltando"
+                        >
+                          {provisioningOrg === org.id_organizacao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}Atualizar banco
+                        </button>
+                        <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => {
+                          setEditOrg({ nome: org.nome, codigo: org.codigo, oracleUser: org.oracle_user ?? "", oraclePassword: "", oracleConnectString: org.oracle_connect_string ?? "", ativo: org.ativo, _id: org.id_organizacao } as OrgFormState & { _id: number })
+                          setShowOrgForm(false)
+                        }}>
+                          <UserCog className="h-3.5 w-3.5" />Editar
+                        </button>
+                        <button className={btnWarn} onClick={() => onToggleOrgStatus(org).catch((e) => toast.error((e as Error).message))}>
+                          {org.ativo === "S" ? "Desativar" : "Ativar"}
+                        </button>
+                        <button className={btnDanger} onClick={() => onDeleteOrg(org).catch((e) => toast.error((e as Error).message))}>
+                          <Trash2 className="h-3.5 w-3.5" />Excluir
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-center text-xs text-muted-foreground">{orgs.length} organização(ões)</p>
                 </div>
-                <div className="border-t border-[#1c2940] px-4 py-2 text-xs text-muted-foreground">{orgs.length} organização(ões)</div>
+
+                <div className="hidden md:block">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-sm">
+                      <thead>
+                        <tr className="border-b border-[#1c2940]">
+                          {["ID", "Nome", "Status", "Ações"].map((h) => (
+                            <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1c2940]/60">
+                        {orgs.length === 0 && (
+                          <tr><td colSpan={4} className="px-4 py-10 text-center text-muted-foreground">Nenhuma organização cadastrada.</td></tr>
+                        )}
+                        {orgs.map((org) => (
+                          <tr key={org.id_organizacao} className="hover:bg-white/[0.02]">
+                            <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{org.id_organizacao}</td>
+                            <td className="px-4 py-3">
+                              <p className="font-medium">{org.nome}</p>
+                              {org.db_name && <p className="text-xs text-muted-foreground font-mono">{org.db_name}</p>}
+                            </td>
+                            <td className="px-4 py-3"><Badge ativo={org.ativo} /></td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap gap-1.5">
+                                <button className={btnSuccess} onClick={() => onSyncOrg(org)} disabled={syncingOrg === org.id_organizacao}>
+                                  {syncingOrg === org.id_organizacao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}Sync
+                                </button>
+                                <button
+                                  className={btnSecondary + " py-1.5 text-xs"}
+                                  onClick={() => onProvisionSchema(org)}
+                                  disabled={provisioningOrg === org.id_organizacao}
+                                  title="Cria no Oracle da organização as tabelas, sequences, índices, triggers e views que estiverem faltando"
+                                >
+                                  {provisioningOrg === org.id_organizacao ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}Atualizar banco
+                                </button>
+                                <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => {
+                                  setEditOrg({ nome: org.nome, codigo: org.codigo, oracleUser: org.oracle_user ?? "", oraclePassword: "", oracleConnectString: org.oracle_connect_string ?? "", ativo: org.ativo, _id: org.id_organizacao } as OrgFormState & { _id: number })
+                                  setShowOrgForm(false)
+                                }}>
+                                  <UserCog className="h-3.5 w-3.5" />Editar
+                                </button>
+                                <button className={btnWarn} onClick={() => onToggleOrgStatus(org).catch((e) => toast.error((e as Error).message))}>
+                                  {org.ativo === "S" ? "Desativar" : "Ativar"}
+                                </button>
+                                <button className={btnDanger} onClick={() => onDeleteOrg(org).catch((e) => toast.error((e as Error).message))}>
+                                  <Trash2 className="h-3.5 w-3.5" />Excluir
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="border-t border-[#1c2940] px-4 py-2 text-xs text-muted-foreground">{orgs.length} organização(ões)</div>
+                </div>
               </div>
             )}
           </div>
@@ -1079,52 +1125,89 @@ export default function AdminPage() {
               </div>
             ) : (
               <div className="overflow-hidden rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))]">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] text-sm">
-                    <thead>
-                      <tr className="border-b border-[#1c2940]">
-                        {["Usuario", "Status", "Organizacoes liberadas", "Ultimo login", "Acoes"].map((h) => (
-                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#1c2940]/60">
-                      {gerentesSistemas.map((item) => (
-                        <tr key={item.id_usuario} className="align-top hover:bg-white/[0.02]">
-                          <td className="px-4 py-3">
-                            <p className="font-medium">{item.nome_completo ?? item.nome ?? item.login}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">Login: {item.login}{item.cpf ? ` - CPF: ${item.cpf}` : ""}</p>
-                          </td>
-                          <td className="px-4 py-3"><Badge ativo={item.ativo} /></td>
-                          <td className="px-4 py-3">
-                            <div className="flex max-w-xl flex-wrap gap-1.5">
-                              {item.organizacoes.length ? item.organizacoes.map((org) => (
-                                <span key={org.id_organizacao} className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-200">
-                                  {org.nome}
-                                </span>
-                              )) : (
-                                <span className="text-xs text-muted-foreground">Sem organizacoes vinculadas</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground">{item.ultimo_login ? formatDateTime(item.ultimo_login) : "-"}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-2">
-                              <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => startEditGerenteSistema(item)}>
-                                <UserCog className="h-3.5 w-3.5" />Editar
-                              </button>
-                              <button className={btnWarn} onClick={() => onToggleGerenteSistema(item).catch((e) => toast.error((e as Error).message))}>
-                                {item.ativo === "S" ? "Desativar" : "Ativar"}
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-3 p-4 md:hidden">
+                  {gerentesSistemas.map((item) => (
+                    <div key={`${item.id_usuario}-card`} className="rounded-xl border border-[#1c2940] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium">{item.nome_completo ?? item.nome ?? item.login}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">Login: {item.login}{item.cpf ? ` - CPF: ${item.cpf}` : ""}</p>
+                        </div>
+                        <Badge ativo={item.ativo} />
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {item.organizacoes.length ? item.organizacoes.map((org) => (
+                          <span key={org.id_organizacao} className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-200">
+                            {org.nome}
+                          </span>
+                        )) : (
+                          <span className="text-xs text-muted-foreground">Sem organizacoes vinculadas</span>
+                        )}
+                      </div>
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        Ultimo login: {item.ultimo_login ? formatDateTime(item.ultimo_login) : "-"}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => startEditGerenteSistema(item)}>
+                          <UserCog className="h-3.5 w-3.5" />Editar
+                        </button>
+                        <button className={btnWarn} onClick={() => onToggleGerenteSistema(item).catch((e) => toast.error((e as Error).message))}>
+                          {item.ativo === "S" ? "Desativar" : "Ativar"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-center text-xs text-muted-foreground">{gerentesSistemas.length} Gerente(s) de Sistemas</p>
                 </div>
-                <div className="border-t border-[#1c2940] px-4 py-3 text-xs text-muted-foreground">
-                  {gerentesSistemas.length} Gerente(s) de Sistemas
+
+                <div className="hidden md:block">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[980px] text-sm">
+                      <thead>
+                        <tr className="border-b border-[#1c2940]">
+                          {["Usuario", "Status", "Organizacoes liberadas", "Ultimo login", "Acoes"].map((h) => (
+                            <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1c2940]/60">
+                        {gerentesSistemas.map((item) => (
+                          <tr key={item.id_usuario} className="align-top hover:bg-white/[0.02]">
+                            <td className="px-4 py-3">
+                              <p className="font-medium">{item.nome_completo ?? item.nome ?? item.login}</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">Login: {item.login}{item.cpf ? ` - CPF: ${item.cpf}` : ""}</p>
+                            </td>
+                            <td className="px-4 py-3"><Badge ativo={item.ativo} /></td>
+                            <td className="px-4 py-3">
+                              <div className="flex max-w-xl flex-wrap gap-1.5">
+                                {item.organizacoes.length ? item.organizacoes.map((org) => (
+                                  <span key={org.id_organizacao} className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-200">
+                                    {org.nome}
+                                  </span>
+                                )) : (
+                                  <span className="text-xs text-muted-foreground">Sem organizacoes vinculadas</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground">{item.ultimo_login ? formatDateTime(item.ultimo_login) : "-"}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap gap-2">
+                                <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => startEditGerenteSistema(item)}>
+                                  <UserCog className="h-3.5 w-3.5" />Editar
+                                </button>
+                                <button className={btnWarn} onClick={() => onToggleGerenteSistema(item).catch((e) => toast.error((e as Error).message))}>
+                                  {item.ativo === "S" ? "Desativar" : "Ativar"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="border-t border-[#1c2940] px-4 py-3 text-xs text-muted-foreground">
+                    {gerentesSistemas.length} Gerente(s) de Sistemas
+                  </div>
                 </div>
               </div>
             )}
@@ -1205,45 +1288,68 @@ export default function AdminPage() {
               </div>
             ) : (
               <div className="overflow-hidden rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))]">
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] text-sm">
-                    <thead>
-                      <tr className="border-b border-[#1c2940]">
-                        {["Data e hora", "Organizacao", "Quem enviou", "Perfil", "Mensagem"].map((h) => (
-                          <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#1c2940]/60">
-                      {filteredFeedbacks.map((item) => (
-                        <tr key={item.id_feedback} className="align-top hover:bg-white/[0.02]">
-                          <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDateTime(item.criado_em)}</td>
-                          <td className="px-4 py-3">
-                            <p className="font-medium">{item.organizacao_nome ?? "Sem organizacao"}</p>
-                            {item.empresa_id != null && <p className="mt-0.5 font-mono text-xs text-muted-foreground">ID {item.empresa_id}</p>}
-                          </td>
-                          <td className="px-4 py-3">
-                            <p className="font-medium">{item.nome_usuario ?? item.login_usuario ?? "Usuario nao identificado"}</p>
-                            <p className="mt-0.5 text-xs text-muted-foreground">
-                              {item.login_usuario ? `Login: ${item.login_usuario}` : "Sem login"}
-                              {item.sk_vendedor != null ? ` - SK: ${item.sk_vendedor}` : ""}
-                            </p>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-xs font-semibold text-blue-200">
-                              {item.tipo_usuario ?? "USUARIO"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-foreground/90">
-                            <p className="max-w-[520px] whitespace-pre-wrap leading-relaxed">{item.feedback}</p>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-3 p-4 md:hidden">
+                  {filteredFeedbacks.map((item) => (
+                    <div key={`${item.id_feedback}-card`} className="rounded-xl border border-[#1c2940] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="font-medium">{item.organizacao_nome ?? "Sem organizacao"}</p>
+                        <span className="shrink-0 rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-xs font-semibold text-blue-200">
+                          {item.tipo_usuario ?? "USUARIO"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(item.criado_em)}</p>
+                      <p className="mt-2 text-sm font-medium">{item.nome_usuario ?? item.login_usuario ?? "Usuario nao identificado"}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {item.login_usuario ? `Login: ${item.login_usuario}` : "Sem login"}
+                        {item.sk_vendedor != null ? ` - SK: ${item.sk_vendedor}` : ""}
+                      </p>
+                      <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{item.feedback}</p>
+                    </div>
+                  ))}
+                  <p className="text-center text-xs text-muted-foreground">{filteredFeedbacks.length} feedback(s) exibido(s)</p>
                 </div>
-                <div className="border-t border-[#1c2940] px-4 py-3 text-xs text-muted-foreground">
-                  {filteredFeedbacks.length} feedback(s) exibido(s)
+
+                <div className="hidden md:block">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[980px] text-sm">
+                      <thead>
+                        <tr className="border-b border-[#1c2940]">
+                          {["Data e hora", "Organizacao", "Quem enviou", "Perfil", "Mensagem"].map((h) => (
+                            <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1c2940]/60">
+                        {filteredFeedbacks.map((item) => (
+                          <tr key={item.id_feedback} className="align-top hover:bg-white/[0.02]">
+                            <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDateTime(item.criado_em)}</td>
+                            <td className="px-4 py-3">
+                              <p className="font-medium">{item.organizacao_nome ?? "Sem organizacao"}</p>
+                              {item.empresa_id != null && <p className="mt-0.5 font-mono text-xs text-muted-foreground">ID {item.empresa_id}</p>}
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="font-medium">{item.nome_usuario ?? item.login_usuario ?? "Usuario nao identificado"}</p>
+                              <p className="mt-0.5 text-xs text-muted-foreground">
+                                {item.login_usuario ? `Login: ${item.login_usuario}` : "Sem login"}
+                                {item.sk_vendedor != null ? ` - SK: ${item.sk_vendedor}` : ""}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-xs font-semibold text-blue-200">
+                                {item.tipo_usuario ?? "USUARIO"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-foreground/90">
+                              <p className="max-w-[520px] whitespace-pre-wrap leading-relaxed">{item.feedback}</p>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="border-t border-[#1c2940] px-4 py-3 text-xs text-muted-foreground">
+                    {filteredFeedbacks.length} feedback(s) exibido(s)
+                  </div>
                 </div>
               </div>
             )}

@@ -287,7 +287,109 @@ export function UserManagementPanel({
         </div>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-2xl border border-border dark:border-white/10">
+      <div className="mt-5 space-y-3 md:hidden">
+        {loading ? (
+          <div className="rounded-2xl border border-border px-4 py-10 text-center text-sm text-muted-foreground dark:border-white/10 dark:text-slate-400">
+            Carregando usuarios...
+          </div>
+        ) : users.length === 0 ? (
+          <div className="rounded-2xl border border-border px-4 py-10 text-center text-sm text-muted-foreground dark:border-white/10 dark:text-slate-400">
+            Nenhum usuario encontrado.
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="rounded-2xl border border-border px-4 py-10 text-center text-sm text-muted-foreground dark:border-white/10 dark:text-slate-400">
+            Nenhum usuario encontrado para a pesquisa.
+          </div>
+        ) : filteredUsers.map((user) => {
+          const editingPassword = passwordUserId === String(user.id_usuario)
+          const cpf = formatCpf(user.cpf ?? user.login)
+          return (
+            <div key={`${user.empresa_id}-${user.id_usuario}-card`} className="rounded-2xl border border-border p-4 dark:border-white/10">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium text-foreground dark:text-slate-100">{displayName(user)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground dark:text-slate-500">Login: {user.login}</p>
+                  {cpf ? <p className="mt-1 text-xs text-muted-foreground dark:text-slate-500">CPF: {cpf}</p> : null}
+                </div>
+                <span className={cn("inline-flex shrink-0 rounded-full border px-2 py-1 text-xs font-semibold", statusClass(user.ativo))}>
+                  {user.ativo === "S" ? "Ativo" : "Inativo"}
+                </span>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground dark:text-slate-400">
+                <span>Perfil: {user.role}</span>
+                {allowOrganizationSelect ? <span>Organizacao: {user.organizacao_nome ?? user.empresa_id ?? "-"}</span> : null}
+              </div>
+
+              {editingPassword ? (
+                <div className="mt-3 flex gap-2">
+                  <input
+                    type="password"
+                    className={cn(inputCls, "flex-1")}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    placeholder="Nova senha"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => changePassword(user)}
+                    disabled={actionKey === `senha-${user.id_usuario}`}
+                    className={cn(btnBase, "border-emerald-400/25 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/18")}
+                  >
+                    {actionKey === `senha-${user.id_usuario}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Salvar
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordUserId(editingPassword ? null : String(user.id_usuario))
+                    setNewPassword("")
+                  }}
+                  className={cn(btnBase, "border-border bg-secondary text-foreground hover:bg-accent dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10")}
+                >
+                  <KeyRound className="h-4 w-4" />
+                  Senha
+                </button>
+                <button
+                  type="button"
+                  onClick={() => logoutUser(user)}
+                  disabled={actionKey === `logoff-${user.id_usuario}`}
+                  className={cn(btnBase, "border-amber-400/25 bg-amber-500/10 text-amber-200 hover:bg-amber-500/18")}
+                >
+                  {actionKey === `logoff-${user.id_usuario}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+                  Logoff
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleStatus(user)}
+                  disabled={actionKey === `status-${user.id_usuario}`}
+                  className={cn(
+                    btnBase,
+                    user.ativo === "S"
+                      ? "border-red-400/25 bg-red-500/10 text-red-200 hover:bg-red-500/18"
+                      : "border-emerald-400/25 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/18"
+                  )}
+                >
+                  {actionKey === `status-${user.id_usuario}` ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : user.ativo === "S" ? (
+                    <PowerOff className="h-4 w-4" />
+                  ) : (
+                    <Power className="h-4 w-4" />
+                  )}
+                  {user.ativo === "S" ? "Inativar" : "Ativar"}
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-5 hidden overflow-hidden rounded-2xl border border-border dark:border-white/10 md:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-sm">
             <thead className="bg-muted/50 dark:bg-white/[0.03]">

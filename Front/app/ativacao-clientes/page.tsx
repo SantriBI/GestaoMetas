@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { AlertTriangle } from "lucide-react"
 import { AppShellNav } from "@/components/layout/AppShellNav"
+import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { getStoredUser, setStoredUser, type AuthUser } from "@/lib/user-session"
 import { useActivationWizard } from "@/hooks/useActivationWizard"
 import {
@@ -84,8 +85,9 @@ export default function AtivacaoClientesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen bg-[#0a0a0a] pb-mobile-tabbar">
       <AppShellNav user={authUser} />
+      <MobileTabBar user={authUser} />
 
       <main className="mx-auto max-w-[1400px] px-4 py-8 lg:px-6">
         <div className="space-y-6">

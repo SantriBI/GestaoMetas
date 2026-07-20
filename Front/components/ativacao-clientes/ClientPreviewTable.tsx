@@ -63,7 +63,69 @@ export function ClientPreviewTable({
         </div>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-[24px] border border-white/10">
+      <div className="mt-5 space-y-3 md:hidden">
+        <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-white/48">
+          <input type="checkbox" checked={allSelected} onChange={(event) => onToggleAll(event.target.checked)} />
+          Selecionar todos
+        </label>
+        {clients.map((client) => {
+          const isSelected = selectedIds.includes(client.id)
+          return (
+            <div
+              key={`${client.id}-card`}
+              className={`rounded-[22px] border border-white/10 p-4 ${isSelected ? "bg-cyan-400/[0.06]" : "bg-white/[0.02]"}`}
+            >
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggle(client.id)}
+                  className="mt-1"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-white">{client.nome_cliente ?? "-"}</p>
+                  <p className="mt-1 text-xs text-white/45">
+                    {client.origem === "orcamento" ? "Cliente com orçamento recente" : "Cliente do relacionamento"}
+                  </p>
+
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs text-white/62">
+                    <div>
+                      <p className="text-white/38">Telefone</p>
+                      <p className="mt-0.5 text-white/80">{client.telefone ?? "Sem telefone"}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/38">Classificação</p>
+                      <p className="mt-0.5 text-white/80">{client.classificacao_rfv ?? "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/38">Última compra</p>
+                      <p className="mt-0.5 text-white/80">{formatActivationDate(client.ultima_compra)}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/38">Valor</p>
+                      <p className="mt-0.5 text-white/80">
+                        {formatActivationCurrency((client.valor_potencial ?? 0) + (client.valor_orcamento ?? 0))}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-xs text-white/55">{client.mensagem_final}</p>
+
+                  <button
+                    type="button"
+                    onClick={() => onRemove(client.id)}
+                    className="mt-3 rounded-full border border-red-400/20 bg-red-400/8 px-3 py-1.5 text-xs font-semibold text-red-200"
+                  >
+                    Remover
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="mt-5 hidden overflow-hidden rounded-[24px] border border-white/10 md:block">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-white/[0.04] text-left text-white/48">

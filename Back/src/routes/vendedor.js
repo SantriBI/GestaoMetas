@@ -294,6 +294,7 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
         WITH base AS (
           SELECT
             NVL(p.nome_pai_nivel1, 'Sem grupo') AS grupo,
+            f.sk_dt_recebimento,
             CASE
               WHEN f.tipo = 'DEV' THEN NVL(f.valor_liquido_item, 0) * -1
               ELSE NVL(f.valor_liquido_item, 0)
@@ -305,7 +306,9 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
             AND ${vendasLojaCondition.clause}
         ),
         total AS (
-          SELECT NVL(SUM(receita), 0) AS receita_total
+          SELECT
+            NVL(SUM(receita), 0) AS receita_total,
+            MIN(sk_dt_recebimento) AS data_inicio
           FROM base
         )
         SELECT
@@ -317,7 +320,8 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
               ELSE (SUM(receita) / (SELECT receita_total FROM total)) * 100
             END,
             2
-          ) AS participacao
+          ) AS participacao,
+          (SELECT data_inicio FROM total) AS data_inicio
         FROM base
         GROUP BY grupo
         ORDER BY receita DESC
@@ -482,6 +486,9 @@ router.get("/vendedor-panorama/:sk_vendedor", requireAuth, async (req, res) => {
           participacao: numero(item.participacao),
         }
       }),
+      top_produtos_desde: topProdutosRows.length
+        ? normalizeRow(topProdutosRows[0]).data_inicio ?? null
+        : null,
       top_clientes: topClientesRows.map((row) => {
         const item = normalizeRow(row)
         return {

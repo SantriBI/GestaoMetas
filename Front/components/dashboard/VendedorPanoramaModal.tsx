@@ -64,6 +64,28 @@ function formatarDataBR(value: string | number | null) {
   return date.toLocaleDateString("pt-BR")
 }
 
+function formatarMesAnoBR(value: string | number | null) {
+  if (!value) return null
+
+  const raw = String(value).trim()
+  let date: Date
+
+  if (/^\d{8}$/.test(raw)) {
+    const ano = Number(raw.slice(0, 4))
+    const mes = Number(raw.slice(4, 6)) - 1
+    date = new Date(ano, mes, 1)
+  } else {
+    date = new Date(raw)
+  }
+
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  const texto = date.toLocaleDateString("pt-BR", { month: "short", year: "numeric" })
+  return texto.replace(".", "")
+}
+
 function diasDesdeData(value: string | number | null) {
   if (!value) return null
 
@@ -136,23 +158,32 @@ function PainelSecao({
   titulo,
   subtitulo,
   icone: Icon,
+  badge,
   children,
 }: {
   titulo: string
   subtitulo: string
   icone: typeof Target
+  badge?: string | null
   children: React.ReactNode
 }) {
   return (
     <section className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,8,23,0.96))] p-5 shadow-[0_24px_80px_rgba(2,6,23,0.36)] sm:p-6">
-      <div className="mb-5 flex items-start gap-3">
-        <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
-          <Icon className="h-4 w-4" />
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-400/20 bg-emerald-500/10 text-emerald-200">
+            <Icon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-100">{titulo}</h3>
+            <p className="mt-1 text-sm text-slate-400">{subtitulo}</p>
+          </div>
         </div>
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-100">{titulo}</h3>
-          <p className="mt-1 text-sm text-slate-400">{subtitulo}</p>
-        </div>
+        {badge ? (
+          <span className="shrink-0 rounded-full border border-white/10 bg-white/6 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-300">
+            {badge}
+          </span>
+        ) : null}
       </div>
       {children}
     </section>
@@ -316,12 +347,21 @@ function PanoramaIndicadores({ data }: { data: VendedorPanorama }) {
   )
 }
 
-function PanoramaProdutos({ produtos }: { produtos: VendedorPanorama["top_produtos"] }) {
+function PanoramaProdutos({
+  produtos,
+  desde,
+}: {
+  produtos: VendedorPanorama["top_produtos"]
+  desde: VendedorPanorama["top_produtos_desde"]
+}) {
+  const desdeFormatado = formatarMesAnoBR(desde)
+
   return (
     <PainelSecao
-      titulo="Produtos em destaque"
-      subtitulo="Grupos que mais puxaram o faturamento e o peso de cada um no mix."
+      titulo="O que o vendedor mais vendeu?"
+      subtitulo="Tudo que este vendedor já vendeu por grupo, desde o início dos dados. Não é o mês atual."
       icone={Package}
+      badge={desdeFormatado ? `Desde ${desdeFormatado}` : null}
     >
       <div className="space-y-3">
         {produtos.length === 0 ? (
@@ -344,7 +384,7 @@ function PanoramaProdutos({ produtos }: { produtos: VendedorPanorama["top_produt
                 <div className="sm:text-right">
                   <p className="text-lg font-semibold text-emerald-300">{formatCurrency(item.receita)}</p>
                   <p className="mt-1 text-sm text-slate-400">
-                    {formatarPercentual(item.participacao)} de participação
+                    {formatarPercentual(item.participacao)} do total histórico vendido
                   </p>
                 </div>
               </div>
@@ -740,7 +780,7 @@ export function VendedorPanoramaModal({
                   {/* Blocos estrategicos empilhados para preservar leitura no mobile
                       e distribuicao premium em telas maiores. */}
                   <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_1.05fr]">
-                    <PanoramaProdutos produtos={data.top_produtos} />
+                    <PanoramaProdutos produtos={data.top_produtos} desde={data.top_produtos_desde} />
                     <PanoramaClientes clientes={data.top_clientes} />
                   </div>
 

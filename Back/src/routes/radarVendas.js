@@ -31,16 +31,12 @@ function normalizarGrupo(value) {
   return String(value ?? "Sem grupo").trim().toLowerCase()
 }
 
-function selecionarTopCategorias(categorias, criterio, limite = 2) {
-  return categorias.filter(criterio).slice(0, limite)
-}
-
 async function getQueryContext(empresaId) {
   return {
     empresaId,
     query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
     rankingView: "VW_RANKING_VENDEDORES",
-    rfvVendedorTable: "FATO_RFV_VENDEDOR",
+    rfvClienteTable: "FATO_RFV_CLIENTE",
     vendasLucratividadeTable: "FATO_VENDAS_LUCRATIVIDADE",
     produtosTable: "DIM_PRODUTOS",
   }
@@ -67,25 +63,37 @@ async function carregarRankingMensal(context) {
 // FATO_RFV_VENDEDOR nao tem coluna de loja (metrica de relacionamento vendedor-cliente,
 // independente de loja por natureza) - nao aplicar filtro de loja aqui.
 async function carregarResumoRfv(context) {
-  const sellerScope = buildSellerInCondition("sk_vendedor", context.allowedSellerCodes, "rfv_seller")
+  const sellerScope = buildSellerInCondition("f.sk_vendedor", context.allowedSellerCodes, "rfv_cliente_seller")
   const rows = await context.query(`
     SELECT
+      SUM(CASE WHEN UPPER(TRIM(rfv.classificacao)) LIKE 'CAMPE%' THEN 1 ELSE 0 END) AS clientes_campeoes_total,
       SUM(
         CASE
-          WHEN UPPER(TRIM(classificacao)) LIKE 'CAMPE%' AND NVL(recencia, 0) > 30 THEN 1
+          WHEN UPPER(TRIM(rfv.classificacao)) LIKE 'CAMPE%' AND NVL(rfv.recencia, 0) > 30 THEN 1
           ELSE 0
         END
       ) AS clientes_campeoes_esfriando,
       SUM(
         CASE
-          WHEN UPPER(TRIM(TRANSLATE(classificacao, 'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ', 'AAAAAEEEEIIIIOOOOOUUUUC'))) LIKE 'CLIENTES FI%'
-            AND NVL(recencia, 0) > 45
+          WHEN UPPER(TRIM(TRANSLATE(rfv.classificacao, 'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ', 'AAAAAEEEEIIIIOOOOOUUUUC'))) LIKE 'CLIENTES FI%'
+            THEN 1
+          ELSE 0
+        END
+      ) AS clientes_fieis_total,
+      SUM(
+        CASE
+          WHEN UPPER(TRIM(TRANSLATE(rfv.classificacao, 'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ', 'AAAAAEEEEIIIIOOOOOUUUUC'))) LIKE 'CLIENTES FI%'
+            AND NVL(rfv.recencia, 0) > 45
           THEN 1
           ELSE 0
         END
       ) AS clientes_fieis_esfriando
-    FROM ${context.rfvVendedorTable}
-    WHERE ${sellerScope.clause}
+    FROM ${context.rfvClienteTable} rfv
+    WHERE rfv.sk_cliente IN (
+      SELECT DISTINCT f.sk_cliente
+      FROM ${context.vendasLucratividadeTable} f
+      WHERE ${sellerScope.clause}
+    )
   `, sellerScope.binds, { suppressErrorLog: true })
 
   return rows[0] ?? {}
@@ -167,54 +175,61 @@ function gerarAlertasVendedores(rankingRows) {
   const vendedoresEmRisco = ranking.filter((item) => item.percentual < 30)
   const semVendas = ranking.find((item) => item.receita <= 0)
   const alertas = [
-    criarAlerta("sucesso", `🚀 ${lider.nome} lidera a equipe com ${lider.percentual}% da meta`),
+    criarAlerta("sucesso", `${lider.nome} lidera a equipe com ${lider.percentual}% da meta`),
   ]
 
   if (ultimoColocado) {
     alertas.push(
       criarAlerta(
         "alerta",
-        `📉 ${ultimoColocado.nome} esta na ultima posicao com ${ultimoColocado.percentual}% da meta`
+        `${ultimoColocado.nome} esta na ultima posicao com ${ultimoColocado.percentual}% da meta`
       )
     )
   }
 
   if (vendedoresEmRisco.length > 0) {
     alertas.push(
-      criarAlerta("alerta", `⚠️ ${vendedoresEmRisco.length} vendedores precisam de atencao`)
+      criarAlerta("alerta", `${vendedoresEmRisco.length} vendedores precisam de atencao`)
     )
   }
 
   if (semVendas) {
     alertas.push(
-      criarAlerta("alerta", `⚠️ ${semVendas.nome} ainda nao realizou vendas no periodo`)
+      criarAlerta("alerta", `${semVendas.nome} ainda nao realizou vendas no periodo`)
     )
   }
 
-  return alertas
+  return alertas.slice(0, 2)
 }
 
 function gerarAlertasRfv(rfvResumo) {
   const alertas = []
+  const campeoesTotal = numero(rfvResumo.CLIENTES_CAMPEOES_TOTAL ?? rfvResumo.clientes_campeoes_total)
   const campeoesEsfriando = numero(
     rfvResumo.CLIENTES_CAMPEOES_ESFRIANDO ?? rfvResumo.clientes_campeoes_esfriando
   )
+  const fieisTotal = numero(rfvResumo.CLIENTES_FIEIS_TOTAL ?? rfvResumo.clientes_fieis_total)
   const fieisEsfriando = numero(
     rfvResumo.CLIENTES_FIEIS_ESFRIANDO ?? rfvResumo.clientes_fieis_esfriando
   )
 
-  if (campeoesEsfriando > 0) {
+  if (campeoesEsfriando > 0 && campeoesTotal > 0) {
+    const percentual = Math.round((campeoesEsfriando / campeoesTotal) * 100)
     alertas.push(
       criarAlerta(
         "alerta",
-        `⚠️ ${campeoesEsfriando} clientes campeoes estao esfriando`
+        `${campeoesEsfriando.toLocaleString("pt-BR")} clientes campeoes (${percentual}% da base) estao esfriando`
       )
     )
   }
 
-  if (fieisEsfriando > 0) {
+  if (fieisEsfriando > 0 && fieisTotal > 0) {
+    const percentual = Math.round((fieisEsfriando / fieisTotal) * 100)
     alertas.push(
-      criarAlerta("alerta", `⚠️ ${fieisEsfriando} clientes fieis estao esfriando`)
+      criarAlerta(
+        "alerta",
+        `${fieisEsfriando.toLocaleString("pt-BR")} clientes fieis (${percentual}% da base) estao esfriando`
+      )
     )
   }
 
@@ -227,26 +242,15 @@ function gerarAlertasCategorias(categoriasRows) {
       grupo: normalizarGrupo(row.GRUPO ?? row.grupo),
       variacao: numero(row.VARIACAO_PERCENTUAL ?? row.variacao_percentual),
     }))
-    .filter((item) => Number.isFinite(item.variacao))
+    .filter((item) => Number.isFinite(item.variacao) && (item.variacao <= -20 || item.variacao >= 25))
     .sort((a, b) => Math.abs(b.variacao) - Math.abs(a.variacao))
+    .slice(0, 2)
 
-  const quedas = selecionarTopCategorias(categorias, (item) => item.variacao <= -20)
-  const crescimentos = selecionarTopCategorias(categorias, (item) => item.variacao >= 25)
-  const alertas = []
-
-  for (const item of quedas) {
-    alertas.push(
-      criarAlerta("queda", `📉 Categoria ${item.grupo} caiu ${Math.abs(item.variacao)}%`)
-    )
-  }
-
-  for (const item of crescimentos) {
-    alertas.push(
-      criarAlerta("sucesso", `🚀 Categoria ${item.grupo} cresceu ${item.variacao}%`)
-    )
-  }
-
-  return alertas
+  return categorias.map((item) =>
+    item.variacao <= -20
+      ? criarAlerta("queda", `Categoria ${item.grupo} caiu ${Math.abs(item.variacao)}%`)
+      : criarAlerta("sucesso", `Categoria ${item.grupo} cresceu ${item.variacao}%`)
+  )
 }
 
 router.get("/radar-vendas", requireAuth, async (req, res) => {
@@ -282,16 +286,10 @@ router.get("/radar-vendas", requireAuth, async (req, res) => {
       console.warn("Radar de vendas sem tendencias de categorias:", categoriasResult.reason?.message ?? categoriasResult.reason)
     }
 
-    const alertas = [
-      ...gerarAlertasVendedores(rankingRows),
-      ...gerarAlertasRfv(rfvResumo),
-      ...gerarAlertasCategorias(categoriasRows),
-    ]
-
     return res.json({
-      alertas: alertas.length
-        ? alertas
-        : [criarAlerta("sucesso", "🚀 Nenhuma queda relevante foi identificada nos ultimos 30 dias")],
+      equipe: gerarAlertasVendedores(rankingRows),
+      clientes: gerarAlertasRfv(rfvResumo),
+      categorias: gerarAlertasCategorias(categoriasRows),
     })
   } catch (err) {
     console.error("Erro radar-vendas:", err)
