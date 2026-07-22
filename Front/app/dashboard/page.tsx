@@ -751,6 +751,7 @@ export default function DashboardPage() {
                       vendedores={vendedoresRanking}
                       viewMode={viewMode}
                       empresaId={empresaId}
+                      empresaAcesso={empresaAcesso}
                       periodo={rkPeriodo}
                       periodoLoading={rkPeriodoLoading}
                       periodoError={rkPeriodoError}

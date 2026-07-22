@@ -15,6 +15,7 @@ interface RankingTableProps {
   vendedores: VendedorProcessado[]
   viewMode: "mensal" | "diario"
   empresaId?: string | number | null
+  empresaAcesso?: string | null
   periodo?: "atual" | "anterior"
   periodoLoading?: boolean
   periodoError?: string | null
@@ -53,6 +54,7 @@ export function RankingTable({
   vendedores,
   viewMode,
   empresaId,
+  empresaAcesso,
   periodo = "atual",
   periodoLoading = false,
   periodoError = null,
@@ -407,6 +409,7 @@ export function RankingTable({
         vendedorId={vendedorSelecionado}
         nomeVendedor={nomeVendedorSelecionado}
         empresaId={empresaId}
+        empresaAcesso={empresaAcesso}
         open={panoramaAberto}
         onOpenChange={setPanoramaAberto}
       />
