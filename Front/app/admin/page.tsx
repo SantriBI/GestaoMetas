@@ -10,6 +10,7 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { clearStoredUser, getStoredUser } from "@/lib/user-session"
 import { UserManagementPanel } from "@/components/users/UserManagementPanel"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,11 @@ interface GerenteSistema {
   organizacoes: GerenteSistemaOrganizacao[]
 }
 
+interface LojaOpcao {
+  empresaAcesso: string
+  nomeResumido: string
+}
+
 interface FuncionarioPreview {
   cpf: string
   nome: string
@@ -85,6 +91,7 @@ interface FuncionarioPreview {
   role_sugerido: string
   empresa_id: number
   organizacao_nome: string
+  lojasPadrao: LojaOpcao[]
 }
 
 interface FeedbackUsuario {
@@ -186,6 +193,84 @@ function PasswordInput({ value, onChange, placeholder }: { value: string; onChan
         {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
       </button>
     </div>
+  )
+}
+
+function LojasLiberadasField({
+  lojas,
+  lojasPadrao,
+  selecionadas,
+  onToggle,
+  loading,
+  placeholder,
+  emptyMessage,
+}: {
+  lojas: LojaOpcao[]
+  lojasPadrao: string[]
+  selecionadas: string[]
+  onToggle: (codigo: string) => void
+  loading: boolean
+  placeholder: string
+  emptyMessage: string
+}) {
+  const ordenadas = [...lojas].sort((a, b) => {
+    const aPadrao = lojasPadrao.includes(a.empresaAcesso)
+    const bPadrao = lojasPadrao.includes(b.empresaAcesso)
+    if (aPadrao !== bPadrao) return aPadrao ? -1 : 1
+    return a.nomeResumido.localeCompare(b.nomeResumido)
+  })
+
+  const resumo = loading
+    ? "Carregando lojas..."
+    : selecionadas.length === 0
+    ? placeholder
+    : selecionadas.length === 1
+    ? (lojas.find((l) => l.empresaAcesso === selecionadas[0])?.nomeResumido ?? "1 loja selecionada")
+    : `${selecionadas.length} lojas selecionadas`
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={loading || lojas.length === 0}
+          className={cn(inputCls, "flex items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60")}
+        >
+          <span className="truncate">{resumo}</span>
+          <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] max-h-64 overflow-y-auto p-0">
+        {ordenadas.length === 0 ? (
+          <p className="p-3 text-sm text-muted-foreground">{emptyMessage}</p>
+        ) : (
+          <div className="divide-y divide-[#1c2940]/60">
+            {ordenadas.map((loja) => {
+              const isPadrao = lojasPadrao.includes(loja.empresaAcesso)
+              return (
+                <label
+                  key={loja.empresaAcesso}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-2 px-3 py-2 text-sm transition-colors hover:bg-muted",
+                    isPadrao && "cursor-default bg-emerald-500/10"
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-emerald-500"
+                    checked={selecionadas.includes(loja.empresaAcesso)}
+                    disabled={isPadrao}
+                    onChange={() => onToggle(loja.empresaAcesso)}
+                  />
+                  <span className="flex-1 font-medium text-foreground">{loja.nomeResumido}</span>
+                  {isPadrao && <span className="text-xs text-emerald-400">Padrão</span>}
+                </label>
+              )
+            })}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -320,6 +405,18 @@ export default function AdminPage() {
   const [editGerenteSenha, setEditGerenteSenha] = useState("")
   const [expandedGerenteOrgs, setExpandedGerenteOrgs] = useState<Record<string, boolean>>({})
 
+  // Lojas liberadas (checkboxes DIM_EMPRESAS) - form de criacao
+  const [lojasDisponiveis, setLojasDisponiveis] = useState<LojaOpcao[]>([])
+  const [lojasPadrao, setLojasPadrao] = useState<string[]>([])
+  const [lojasSelecionadas, setLojasSelecionadas] = useState<string[]>([])
+  const [loadingLojas, setLoadingLojas] = useState(false)
+
+  // Lojas liberadas - form de edicao
+  const [editLojasDisponiveis, setEditLojasDisponiveis] = useState<LojaOpcao[]>([])
+  const [editLojasPadrao, setEditLojasPadrao] = useState<string[]>([])
+  const [editLojasSelecionadas, setEditLojasSelecionadas] = useState<string[]>([])
+  const [loadingEditLojas, setLoadingEditLojas] = useState(false)
+
   // Gerente de Sistemas form state
   const [showGerenteSistemaForm, setShowGerenteSistemaForm] = useState(false)
   const [gerenteSistemaLogin, setGerenteSistemaLogin] = useState("")
@@ -365,6 +462,78 @@ export default function AdminPage() {
     }
     void fetchData()
   }, [router, fetchData])
+
+  useEffect(() => {
+    if (!gerenteEmpresaId) { setLojasDisponiveis([]); return }
+    let cancelled = false
+    setLoadingLojas(true)
+    apiFetch<{ data: LojaOpcao[] }>(`/api/superadmin/lojas?empresa_id=${gerenteEmpresaId}`)
+      .then((r) => { if (!cancelled) setLojasDisponiveis(r.data) })
+      .catch((err) => { if (!cancelled) toast.error((err as Error).message) })
+      .finally(() => { if (!cancelled) setLoadingLojas(false) })
+    return () => { cancelled = true }
+  }, [gerenteEmpresaId])
+
+  function toggleLojaGerente(codigo: string, editing = false) {
+    const padrao = editing ? editLojasPadrao : lojasPadrao
+    if (padrao.includes(codigo)) return
+    const setter = editing ? setEditLojasSelecionadas : setLojasSelecionadas
+    setter((current) => (current.includes(codigo) ? current.filter((c) => c !== codigo) : [...current, codigo]))
+  }
+
+  async function startEditGerente(g: Gerente) {
+    setEditGerente(g)
+    setEditGerenteNovaEmpresa("")
+    setEditGerenteSenha("")
+    setEditLojasDisponiveis([])
+    setEditLojasPadrao([])
+    setEditLojasSelecionadas([])
+
+    if (g.source === "central") return // gerentes legados (central) ainda nao suportam lojas manuais
+
+    setLoadingEditLojas(true)
+    try {
+      const [lojasResp, gerenteLojasResp] = await Promise.all([
+        apiFetch<{ data: LojaOpcao[] }>(`/api/superadmin/lojas?empresa_id=${g.empresa_id}`),
+        apiFetch<{ lojasPadrao: LojaOpcao[]; lojasManuais: LojaOpcao[] }>(
+          `/api/superadmin/gerentes/${g.id_usuario}/lojas?empresa_id=${g.empresa_id}&cpf=${g.cpf ?? ""}`
+        ),
+      ])
+      const padraoCodes = gerenteLojasResp.lojasPadrao.map((l) => l.empresaAcesso)
+      const manuaisCodes = gerenteLojasResp.lojasManuais.map((l) => l.empresaAcesso)
+      setEditLojasDisponiveis(lojasResp.data)
+      setEditLojasPadrao(padraoCodes)
+      setEditLojasSelecionadas([...new Set([...padraoCodes, ...manuaisCodes])])
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setLoadingEditLojas(false)
+    }
+  }
+
+  async function handleMoverGerenteOrg(novaEmpresaId: string) {
+    setEditGerenteNovaEmpresa(novaEmpresaId)
+    if (!editGerente || editGerente.source === "central") return
+
+    const empresaAlvo = novaEmpresaId || editGerente.empresa_id
+    setLoadingEditLojas(true)
+    try {
+      const lojasResp = await apiFetch<{ data: LojaOpcao[] }>(`/api/superadmin/lojas?empresa_id=${empresaAlvo}`)
+      setEditLojasDisponiveis(lojasResp.data)
+      if (novaEmpresaId) {
+        // organizacao diferente = codigos de loja diferentes; sem padrao conhecido ainda,
+        // admin escolhe manualmente as lojas na organizacao de destino
+        setEditLojasPadrao([])
+        setEditLojasSelecionadas([])
+      } else {
+        void startEditGerente(editGerente)
+      }
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setLoadingEditLojas(false)
+    }
+  }
 
   async function handleLogout() {
     await fetch("/api/logout", { method: "POST", credentials: "include" }).catch(() => {})
@@ -471,6 +640,9 @@ export default function AdminPage() {
       setGerenteNome(r.nome)
       setGerenteEmpresaId(String(r.empresa_id))
       setFuncionarioPreview(r)
+      const padraoCodes = (r.lojasPadrao ?? []).map((l) => l.empresaAcesso)
+      setLojasPadrao(padraoCodes)
+      setLojasSelecionadas((current) => [...new Set([...current, ...padraoCodes])])
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
@@ -478,15 +650,30 @@ export default function AdminPage() {
     }
   }
 
+  function resetGerenteLojasForm() {
+    setLojasDisponiveis([]); setLojasPadrao([]); setLojasSelecionadas([])
+  }
+
   async function onCreateGerente(e: React.FormEvent) {
     e.preventDefault()
     if (!gerenteEmpresaId) { toast.error("Selecione a organização."); return }
     if (!gerenteNome.trim()) { toast.error("Informe o nome do gerente."); return }
+    if (!lojasSelecionadas.length) { toast.error("Selecione pelo menos uma loja/empresa."); return }
     setSavingGerente(true)
     try {
-      await apiFetch("/api/superadmin/gerentes", { method: "POST", body: JSON.stringify({ cpf: gerenteCpf, senha: gerenteSenha, empresaId: Number(gerenteEmpresaId), nome: gerenteNome.trim() }) })
+      await apiFetch("/api/superadmin/gerentes", {
+        method: "POST",
+        body: JSON.stringify({
+          cpf: gerenteCpf,
+          senha: gerenteSenha,
+          empresaId: Number(gerenteEmpresaId),
+          nome: gerenteNome.trim(),
+          lojasLiberadas: lojasSelecionadas,
+        }),
+      })
       toast.success("Gerente cadastrado com sucesso!")
       setGerenteCpf(""); setGerenteNome(""); setGerenteSenha(""); setGerenteEmpresaId(""); setFuncionarioPreview(null); setShowGerenteForm(false)
+      resetGerenteLojasForm()
       void fetchData()
     } catch (err) {
       toast.error((err as Error).message)
@@ -497,14 +684,23 @@ export default function AdminPage() {
 
   async function onSaveGerente() {
     if (!editGerente) return
+    if (editGerente.source !== "central" && !editLojasSelecionadas.length) {
+      toast.error("Selecione pelo menos uma loja/empresa.")
+      return
+    }
     setSavingGerente(true)
     try {
       await apiFetch(`/api/superadmin/gerentes/${editGerente.id_usuario}${gerenteQuery(editGerente)}`, {
         method: "PATCH",
-        body: JSON.stringify({ empresaId: editGerenteNovaEmpresa ? Number(editGerenteNovaEmpresa) : undefined, novaSenha: editGerenteSenha || undefined }),
+        body: JSON.stringify({
+          empresaId: editGerenteNovaEmpresa ? Number(editGerenteNovaEmpresa) : undefined,
+          novaSenha: editGerenteSenha || undefined,
+          lojasLiberadas: editGerente.source === "central" ? undefined : editLojasSelecionadas,
+        }),
       })
       toast.success("Gerente atualizado!")
       setEditGerente(null); setEditGerenteNovaEmpresa(""); setEditGerenteSenha("")
+      setEditLojasDisponiveis([]); setEditLojasPadrao([]); setEditLojasSelecionadas([])
       void fetchData()
     } catch (err) {
       toast.error((err as Error).message)
@@ -881,12 +1077,32 @@ export default function AdminPage() {
                       <PasswordInput value={gerenteSenha} onChange={setGerenteSenha} placeholder="Mínimo 6 caracteres" />
                     </Field>
                     <Field label="Organização" required>
-                      <select className={inputCls} value={gerenteEmpresaId} onChange={(e) => { setGerenteEmpresaId(e.target.value); setFuncionarioPreview(null) }} required>
+                      <select
+                        className={inputCls}
+                        value={gerenteEmpresaId}
+                        onChange={(e) => { setGerenteEmpresaId(e.target.value); setFuncionarioPreview(null); resetGerenteLojasForm() }}
+                        required
+                      >
                         <option value="">Selecione...</option>
                         {activeOrgs.map((o) => <option key={o.id_organizacao} value={o.id_organizacao}>{o.nome}</option>)}
                       </select>
                     </Field>
                   </div>
+
+                  <Field label="Lojas liberadas" required>
+                    <LojasLiberadasField
+                      lojas={lojasDisponiveis}
+                      lojasPadrao={lojasPadrao}
+                      selecionadas={lojasSelecionadas}
+                      onToggle={toggleLojaGerente}
+                      loading={loadingLojas}
+                      placeholder={!gerenteEmpresaId ? "Selecione a organização primeiro" : "Selecione as lojas..."}
+                      emptyMessage="Nenhuma loja encontrada em DIM_EMPRESAS para esta organização."
+                    />
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Verifique o CPF no Oracle para marcar a loja padrão automaticamente. As demais lojas marcadas aqui ficam liberadas manualmente.
+                    </p>
+                  </Field>
 
                   <div className="flex flex-wrap gap-3">
                     <button type="button" onClick={onLookupFuncionario} disabled={lookingUp} className={btnSecondary}>
@@ -897,7 +1113,11 @@ export default function AdminPage() {
                       {savingGerente ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                       Cadastrar gerente
                     </button>
-                    <button type="button" onClick={() => { setShowGerenteForm(false); setGerenteNome(""); setGerenteEmpresaId(""); setFuncionarioPreview(null) }} className={btnSecondary}>
+                    <button
+                      type="button"
+                      onClick={() => { setShowGerenteForm(false); setGerenteNome(""); setGerenteEmpresaId(""); setFuncionarioPreview(null); resetGerenteLojasForm() }}
+                      className={btnSecondary}
+                    >
                       <X className="h-4 w-4" />Cancelar
                     </button>
                   </div>
@@ -922,7 +1142,7 @@ export default function AdminPage() {
                 <h3 className="mb-4 text-sm font-semibold">Editar: {editGerente.nome_completo ?? editGerente.login}</h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field label="Mover para outra organização">
-                    <select className={inputCls} value={editGerenteNovaEmpresa} onChange={(e) => setEditGerenteNovaEmpresa(e.target.value)}>
+                    <select className={inputCls} value={editGerenteNovaEmpresa} onChange={(e) => void handleMoverGerenteOrg(e.target.value)}>
                       <option value="">Manter organização atual</option>
                       {activeOrgs.filter((o) => o.id_organizacao !== editGerente.empresa_id).map((o) => (
                         <option key={o.id_organizacao} value={o.id_organizacao}>{o.nome}</option>
@@ -933,11 +1153,41 @@ export default function AdminPage() {
                     <PasswordInput value={editGerenteSenha} onChange={setEditGerenteSenha} />
                   </Field>
                 </div>
+
+                {editGerente.source === "central" ? (
+                  <p className="mt-4 text-xs text-muted-foreground">
+                    Este gerente usa um cadastro legado (central) e ainda não suporta liberação manual de lojas.
+                  </p>
+                ) : (
+                  <Field label="Lojas liberadas" required>
+                    <LojasLiberadasField
+                      lojas={editLojasDisponiveis}
+                      lojasPadrao={editLojasPadrao}
+                      selecionadas={editLojasSelecionadas}
+                      onToggle={(codigo) => toggleLojaGerente(codigo, true)}
+                      loading={loadingEditLojas}
+                      placeholder="Selecione as lojas..."
+                      emptyMessage="Nenhuma loja encontrada em DIM_EMPRESAS para esta organização."
+                    />
+                    {editGerenteNovaEmpresa && (
+                      <p className="mt-1 text-xs text-amber-400">
+                        Organização de destino: selecione manualmente as lojas do gerente lá, o padrão anterior não se aplica.
+                      </p>
+                    )}
+                  </Field>
+                )}
+
                 <div className="mt-4 flex gap-3">
                   <button onClick={onSaveGerente} disabled={savingGerente} className={btnPrimary}>
                     {savingGerente ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Salvar
                   </button>
-                  <button onClick={() => { setEditGerente(null); setEditGerenteNovaEmpresa(""); setEditGerenteSenha("") }} className={btnSecondary}>
+                  <button
+                    onClick={() => {
+                      setEditGerente(null); setEditGerenteNovaEmpresa(""); setEditGerenteSenha("")
+                      setEditLojasDisponiveis([]); setEditLojasPadrao([]); setEditLojasSelecionadas([])
+                    }}
+                    className={btnSecondary}
+                  >
                     <X className="h-4 w-4" />Cancelar
                   </button>
                 </div>
@@ -982,7 +1232,7 @@ export default function AdminPage() {
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge ativo={g.ativo} />
-                            <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => { setEditGerente(g); setEditGerenteNovaEmpresa(""); setEditGerenteSenha("") }}>
+                            <button className={btnSecondary + " py-1.5 text-xs"} onClick={() => void startEditGerente(g)}>
                               <UserCog className="h-3.5 w-3.5" />Editar
                             </button>
                             <button className={btnWarn} onClick={() => onToggleGerente(g).catch((e) => toast.error((e as Error).message))}>
