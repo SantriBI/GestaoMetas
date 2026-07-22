@@ -64,6 +64,22 @@ function getTenantPool(dbName) {
   return pool
 }
 
+const GERENTE_LOJAS_LIBERADAS_DDL = `
+CREATE TABLE IF NOT EXISTS gerente_lojas_liberadas (
+  id_acesso       BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
+  id_usuario      INT UNSIGNED     NOT NULL,
+  empresa_acesso  VARCHAR(50)      NOT NULL,
+  nome_resumido   VARCHAR(200),
+  criado_em       DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id_acesso),
+  UNIQUE KEY uq_gerente_loja (id_usuario, empresa_acesso),
+  CONSTRAINT fk_gerente_lojas_usuario
+    FOREIGN KEY (id_usuario)
+    REFERENCES usuarios_auth (id_usuario)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+`
+
 const TENANT_SCHEMA_DDL = `
 CREATE TABLE IF NOT EXISTS usuarios_auth (
   id_usuario      INT UNSIGNED     NOT NULL AUTO_INCREMENT,
@@ -87,6 +103,8 @@ CREATE TABLE IF NOT EXISTS usuarios_auth (
   PRIMARY KEY (id_usuario),
   UNIQUE KEY uq_tenant_usuarios_login (login)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+${GERENTE_LOJAS_LIBERADAS_DDL}
 `
 
 export async function ensureCentralSchema() {
@@ -206,7 +224,17 @@ export async function ensureCentralSchema() {
     try {
       await ensureTenantUsuariosAuthColumn(org.id_organizacao, "token_version", "INT UNSIGNED NOT NULL DEFAULT 0")
     } catch {}
+    try {
+      await ensureTenantGerenteLojasLiberadasTable(org.id_organizacao)
+    } catch {}
   }
+}
+
+async function ensureTenantGerenteLojasLiberadasTable(empresaId) {
+  const dbName = await getTenantDbNameByEmpresaId(empresaId)
+  if (!dbName) return
+  const pool = getTenantPool(dbName)
+  await pool.query(GERENTE_LOJAS_LIBERADAS_DDL)
 }
 
 async function ensureCentralUsuarioRoleEnum() {

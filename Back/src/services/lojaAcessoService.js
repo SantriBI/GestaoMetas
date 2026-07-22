@@ -1,4 +1,5 @@
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
+import { getLojasManuaisPorUsuario, resolveLojasByCodigos } from "./gerenteLojasService.js"
 
 const ACCESS_TABLE = "FATO_FUNCIONARIOS_ACESSOS"
 
@@ -100,17 +101,39 @@ export async function getLojasAcessoByCpf(empresaId, cpf) {
 }
 
 /**
+ * Lojas liberadas manualmente por um admin (tabela gerente_lojas_liberadas) para o gerente
+ * dono de idUsuario, resolvidas com nome_resumido/sk_empresas atuais via DIM_EMPRESAS. Lojas ja
+ * presentes em `automaticas` sao ignoradas aqui (evita roundtrip Oracle redundante) - a uniao
+ * final e feita por getLojasForRole.
+ */
+async function getLojasManuaisResolvidas(empresaId, idUsuario, automaticas) {
+  const manuais = await getLojasManuaisPorUsuario(empresaId, idUsuario)
+  if (!manuais.length) return []
+
+  const jaAutomaticas = new Set(automaticas.map((loja) => loja.empresaAcesso))
+  const codigosExtras = manuais.map((loja) => loja.empresaAcesso).filter((codigo) => !jaAutomaticas.has(codigo))
+  if (!codigosExtras.length) return []
+
+  return resolveLojasByCodigos(empresaId, codigosExtras)
+}
+
+/**
  * Mesma lista de getLojasAcessoByCpf, mas ja recortada pelo papel do usuario:
  * - VENDEDOR: todas as lojas onde o CPF aparece (independente da flag GERENTE).
- * - GERENTE: apenas as lojas onde GERENTE = 'S'.
+ * - GERENTE: lojas onde GERENTE = 'S' (automaticas, sempre presentes) + lojas liberadas
+ *   manualmente por um admin em gerente_lojas_liberadas (uniao, sem duplicar por codigo).
  */
-export async function getLojasForRole({ empresaId, cpf, role }) {
+export async function getLojasForRole({ empresaId, cpf, role, idUsuario = null }) {
   const lojas = await getLojasAcessoByCpf(empresaId, cpf)
   const normalizedRole = String(role ?? "").toUpperCase()
 
-  if (normalizedRole === "GERENTE") {
-    return lojas.filter((loja) => loja.gerente)
+  if (normalizedRole !== "GERENTE") {
+    return lojas
   }
 
-  return lojas
+  const automaticas = lojas.filter((loja) => loja.gerente)
+  if (!idUsuario) return automaticas
+
+  const manuais = await getLojasManuaisResolvidas(empresaId, idUsuario, automaticas).catch(() => [])
+  return [...automaticas, ...manuais]
 }

@@ -44,7 +44,7 @@ export async function getMinhasLojas(req, res) {
       return res.json({ lojas: [], exibirSeletor: false, permiteTodasLojas: false, empresaAcessoPadrao: null })
     }
 
-    const lojas = await getLojasForRole({ empresaId, cpf, role })
+    const lojas = await getLojasForRole({ empresaId, cpf, role, idUsuario: req.auth?.id_usuario ?? null })
     const skVendedor = role === "VENDEDOR" ? req.auth?.sk_vendedor ?? null : null
     const empresaAcessoPadrao = await resolveEmpresaAcessoPadrao(empresaId, skVendedor, lojas)
 

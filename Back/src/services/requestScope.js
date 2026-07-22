@@ -55,7 +55,7 @@ export async function getScopedLojaScope(req, { required = true } = {}) {
     return { applies: false, lojaIds: null, error: null }
   }
 
-  const lojas = await getLojasForRole({ empresaId, cpf, role })
+  const lojas = await getLojasForRole({ empresaId, cpf, role, idUsuario: req.auth?.id_usuario ?? null })
   if (!lojas.length) {
     return { applies: false, lojaIds: null, error: null }
   }
