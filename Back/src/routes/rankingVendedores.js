@@ -22,7 +22,8 @@ function normalizeRow(row) {
     receita: lower.receita_mes ?? lower.receita_dia ?? 0,
     meta: lower.meta_mes ?? lower.meta_diaria_necessaria ?? 0,
     percentual: lower.perc_atingimento ?? lower.perc_performance_dia ?? 0,
-    posicao: lower.ranking_atingimento ?? lower.ranking_dia ?? null
+    posicao: lower.ranking_atingimento ?? lower.ranking_dia ?? null,
+    margem: lower.margem_total ?? 0
   }
 }
 

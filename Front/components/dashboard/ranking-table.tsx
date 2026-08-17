@@ -203,6 +203,14 @@ export function RankingTable({
                           )}
                         </div>
                       </div>
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Margem
+                        </div>
+                        <div className="mt-1 font-medium text-foreground">
+                          {formatCurrency(vendedor.margem)}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="mt-4">
@@ -273,6 +281,10 @@ export function RankingTable({
 
                 <th className="w-[145px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Receita
+                </th>
+
+                <th className="w-[145px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Margem
                 </th>
 
                 {viewMode === "mensal" ? (
@@ -350,6 +362,10 @@ export function RankingTable({
                       <span className="font-semibold text-success">
                         {formatCurrency(vendedor.receita)}
                       </span>
+                    </td>
+
+                    <td className="overflow-hidden whitespace-nowrap px-3 py-4 text-foreground">
+                      {formatCurrency(vendedor.margem)}
                     </td>
 
                     <td className="overflow-hidden whitespace-nowrap px-3 py-4">

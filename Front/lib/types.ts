@@ -78,6 +78,8 @@ export interface Vendedor {
   meta_diaria_necessaria?: number | string
   status_dia?: string
   ranking_dia?: number | string
+
+  margem_total?: number | string
 }
 export interface VendedorDia {
   sk_empresa: number
@@ -98,6 +100,7 @@ export interface VendedorProcessado {
   iniciais: string
   receita: number
   meta: number
+  margem: number
   percentual: number
   ranking: number
   status: "achieved" | "progress" | "risk"
@@ -163,6 +166,7 @@ export function processVendedor(v: Vendedor, viewMode: ViewMode): VendedorProces
 
     receita,
     meta: viewMode === "diario" ? metaDia : metaMes,
+    margem: Number(v.margem_total ?? 0),
 
     percentual,
     ranking,

@@ -12,6 +12,7 @@ import {
   LineChart,
   Loader2,
   MessageCircle,
+  Percent,
   Search,
   Sparkles,
   Swords,
@@ -24,6 +25,7 @@ import { KPICards } from "@/components/dashboard/kpi-cards"
 import { TeamStatus } from "@/components/dashboard/team-status"
 import { RadarVendas } from "@/components/dashboard/RadarVendas"
 import { RankingTable } from "@/components/dashboard/ranking-table"
+import { PremiacaoEquipeSection } from "@/components/dashboard/premiacao-equipe"
 import { Podium } from "@/components/dashboard/podium"
 import { ProgressTrail } from "@/components/dashboard/progress-trail"
 import { ShareRankingModal } from "@/components/dashboard/share-ranking-modal"
@@ -36,6 +38,7 @@ import { AppShellNav } from "@/components/layout/AppShellNav"
 import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { AuthUser, setStoredUser } from "@/lib/user-session"
 import { fetchMinhasLojas, TODAS_LOJAS_VALUE, type LojaAcesso } from "@/lib/loja-acesso"
+import { fetchPremiacaoEquipe, PremiacaoVendedorApiError, type PremiacaoEquipe } from "@/lib/premiacao-vendedor"
 import SeletorLoja from "@/components/SeletorLoja"
 
 type ActiveView = "jornada" | "grandprix" | null
@@ -55,6 +58,9 @@ export default function DashboardPage() {
   const [empresaAcesso, setEmpresaAcesso] = useState<string | null>(null)
   const [permiteTodasLojas, setPermiteTodasLojas] = useState(false)
   const [lojasResolvidas, setLojasResolvidas] = useState(false)
+  const [premiacaoEquipe, setPremiacaoEquipe] = useState<PremiacaoEquipe | null>(null)
+  const [premiacaoEquipeLoading, setPremiacaoEquipeLoading] = useState(false)
+  const [premiacaoEquipeError, setPremiacaoEquipeError] = useState<string | null>(null)
   const [dataReferencia, setDataReferencia] = useState<string | Date | number | null>(null)
   const [fallbackDataReferencia, setFallbackDataReferencia] = useState<string | Date | number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -308,6 +314,31 @@ export default function DashboardPage() {
     fetchData()
   }, [lojasResolvidas, viewMode, empresaId, empresaAcesso, authUser])
 
+  useEffect(() => {
+    if (!lojasResolvidas || !authUser) return
+    void carregarPremiacaoEquipe()
+  }, [lojasResolvidas, empresaId, empresaAcesso, authUser])
+
+  async function carregarPremiacaoEquipe() {
+    setPremiacaoEquipeLoading(true)
+    try {
+      const data = await fetchPremiacaoEquipe(empresaAcesso)
+      setPremiacaoEquipe(data)
+      setPremiacaoEquipeError(null)
+    } catch (err) {
+      const message =
+        err instanceof PremiacaoVendedorApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Erro ao carregar a premiacao da equipe."
+      setPremiacaoEquipeError(message)
+      setPremiacaoEquipe(null)
+    } finally {
+      setPremiacaoEquipeLoading(false)
+    }
+  }
+
   // O periodo do Grand Prix (atual/anterior) e independente do toggle Diario/Mensal
   // da pagina, mas sempre volta para "atual" quando o modo ou a empresa mudam.
   useEffect(() => {
@@ -554,6 +585,21 @@ export default function DashboardPage() {
       microcopy: `${frentesEmReacao} frente${frentesEmReacao === 1 ? "" : "s"} pedem reacao`,
       onClick: () => router.push("/ativacao-clientes"),
     },
+    ...(authUser?.featureComissoesHabilitada
+      ? [
+          {
+            title: "Comissões",
+            description: "Cadastre o % de premiação por grupo de produto.",
+            icon: Percent,
+            gradient: dashboardCardThemes.emerald,
+            gradientLight: dashboardCardThemesLight.emerald,
+            actionLabel: "Configurar percentuais",
+            tag: "PREMIACAO",
+            microcopy: "Defina o percentual em qualquer nivel do produto",
+            onClick: () => router.push("/comissoes"),
+          },
+        ]
+      : []),
   ]
 
   function handleToggleView(nextView: ActiveView) {
@@ -758,6 +804,19 @@ export default function DashboardPage() {
                       onTogglePeriodo={handleToggleRkPeriodo}
                       onRetryPeriodo={() => void fetchRankingAnterior(viewMode)}
                       comparativo={mostrarComparativo ? comparativo : undefined}
+                    />
+                  </section>
+
+                  <section className="space-y-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Comissoes</p>
+                      <h2 className="text-xl font-semibold text-foreground">Premiação da equipe</h2>
+                    </div>
+                    <PremiacaoEquipeSection
+                      premiacao={premiacaoEquipe}
+                      loading={premiacaoEquipeLoading}
+                      error={premiacaoEquipeError}
+                      onRetry={() => void carregarPremiacaoEquipe()}
                     />
                   </section>
                 </div>
