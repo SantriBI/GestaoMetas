@@ -2,6 +2,7 @@ import { AUTH_COOKIE_NAME, verifyAuthToken } from "../auth/token.js"
 import { findAuthUserById } from "../services/authUsersService.js"
 import { assertSystemManagerOrganizationAccess } from "../services/gerenteSistemasService.js"
 import { getRequestedEmpresaId } from "../services/requestScope.js"
+import { getOrganizacaoFeatureFlags } from "../services/featureFlagsService.js"
 
 export async function requireAuth(req, res, next) {
   const cookieToken = req.cookies?.[AUTH_COOKIE_NAME]
@@ -32,6 +33,11 @@ export async function requireAuth(req, res, next) {
       scopedEmpresaId = requestedEmpresaId
     }
 
+    const featureFlags = await getOrganizacaoFeatureFlags(scopedEmpresaId).catch((error) => {
+      console.error("Erro ao ler feature flags da organizacao:", error)
+      return { featureComissoesHabilitada: false }
+    })
+
     req.auth = {
       ...claims,
       id_usuario: user.id_usuario ?? claims.id_usuario ?? claims.sub,
@@ -45,6 +51,7 @@ export async function requireAuth(req, res, next) {
       sk_vendedor: user.sk_vendedor ?? claims.sk_vendedor ?? null,
       cpf: user.cpf ?? claims.cpf ?? null,
       token_version: Number(user.token_version ?? claims.token_version ?? 0),
+      ...featureFlags,
     }
   } catch (error) {
     if (error?.status) {

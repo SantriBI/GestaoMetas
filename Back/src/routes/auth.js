@@ -6,6 +6,7 @@ import { issueAuthToken, setAuthCookie, clearAuthCookie, AUTH_COOKIE_NAME, verif
 import { requireAuth, requireRole } from "../middleware/auth.js"
 import centralPool, { describeMysqlTarget, formatDbError } from "../db/mysql.js"
 import { queryTenantByEmpresaId } from "../db/mysql-tenants.js"
+import { getOrganizacaoFeatureFlags } from "../services/featureFlagsService.js"
 
 const router = express.Router()
 
@@ -88,6 +89,8 @@ router.post("/login", loginRateLimiter, async (req, res) => {
       const token = issueAuthToken(centralUser)
       setAuthCookie(res, token)
 
+      const { featureComissoesHabilitada } = await getOrganizacaoFeatureFlags(centralUser.empresa_id ?? null)
+
       return res.json({
         id_usuario: centralUser.id_usuario,
         nome: centralUser.nome ?? centralUser.nome_completo,
@@ -97,6 +100,7 @@ router.post("/login", loginRateLimiter, async (req, res) => {
         sk_vendedor: centralUser.sk_vendedor ?? null,
         foto_url: centralUser.foto_url ?? null,
         senha_temporaria: centralUser.senha_temporaria ?? "N",
+        featureComissoesHabilitada,
       })
     }
 
@@ -141,6 +145,8 @@ router.post("/login", loginRateLimiter, async (req, res) => {
       const token = issueAuthToken({ ...user, empresa_id })
       setAuthCookie(res, token)
 
+      const { featureComissoesHabilitada } = await getOrganizacaoFeatureFlags(empresa_id)
+
       return res.json({
         id_usuario: user.id_usuario,
         nome: user.nome ?? user.nome_completo,
@@ -150,6 +156,7 @@ router.post("/login", loginRateLimiter, async (req, res) => {
         sk_vendedor: user.sk_vendedor ?? null,
         foto_url: user.foto_url ?? null,
         senha_temporaria: user.senha_temporaria ?? "N",
+        featureComissoesHabilitada,
       })
     }
 

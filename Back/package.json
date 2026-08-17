@@ -7,6 +7,7 @@
     "dev": "node --watch index.js",
     "start": "node index.js",
     "oracle:smoke": "node test-oracle.js",
+    "test": "node --test src/**/__tests__/*.test.js",
     "prefect:validate": "python -m jobs.run_prefect validate",
     "prefect:serve": "python -m jobs.run_prefect serve"
   },

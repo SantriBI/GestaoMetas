@@ -216,6 +216,7 @@ export async function ensureCentralSchema() {
   }
 
   await ensureUsuariosAuthColumn(centralPool, null, "token_version", "INT UNSIGNED NOT NULL DEFAULT 0")
+  await ensureOrganizacoesAuthColumn("FEATURE_COMISSOES_HABILITADA", "TINYINT(1) NOT NULL DEFAULT 0")
 
   const [orgs] = await centralPool.query(
     "SELECT id_organizacao FROM organizacoes_auth WHERE ativo = 'S' AND db_name IS NOT NULL"
@@ -272,6 +273,23 @@ async function ensureUsuariosAuthColumn(pool, databaseName, columnName, definiti
 
   if (Number(rows[0]?.cnt ?? 0) === 0) {
     await pool.query(`ALTER TABLE usuarios_auth ADD COLUMN ${columnName} ${definition}`)
+  }
+}
+
+async function ensureOrganizacoesAuthColumn(columnName, definition) {
+  const [rows] = await centralPool.query(
+    `
+    SELECT COUNT(*) AS cnt
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'organizacoes_auth'
+      AND column_name = ?
+    `,
+    [columnName]
+  )
+
+  if (Number(rows[0]?.cnt ?? 0) === 0) {
+    await centralPool.query(`ALTER TABLE organizacoes_auth ADD COLUMN ${columnName} ${definition}`)
   }
 }
 
