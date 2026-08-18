@@ -300,11 +300,16 @@ export async function listarGruposSemPercentual(empresaId, mes, { query = queryO
  * Revalida contra FATO_FUNCIONARIOS_ACESSOS (nunca confia no role vindo do cliente): busca o CPF
  * do usuario do token e verifica se ele tem GERENTE = 'S' em pelo menos uma loja da organizacao.
  * Aceita cpf ja resolvido (req.auth.cpf) para evitar um lookup redundante.
+ *
+ * Fallback: o ERP nem sempre marca GERENTE='S' para gerentes recem-cadastrados no app (flag fora
+ * do controle deste sistema). Quando isso acontece, aceita tambem quem o admin ja cadastrou como
+ * GERENTE no app (role, vindo do token assinado pelo servidor - nao do cliente) desde que o CPF
+ * exista de fato em FATO_FUNCIONARIOS_ACESSOS (confirma vinculo real com a organizacao no ERP).
  */
 export async function verificarSeUsuarioEhGerente(
   empresaId,
   usuarioId,
-  { cpf = null, getLojas = getLojasAcessoByCpf, resolveUser = findAuthUserById } = {}
+  { cpf = null, role = null, getLojas = getLojasAcessoByCpf, resolveUser = findAuthUserById } = {}
 ) {
   if (!empresaId) return false
 
@@ -317,5 +322,7 @@ export async function verificarSeUsuarioEhGerente(
   if (!resolvedCpf) return false
 
   const lojas = await getLojas(empresaId, resolvedCpf)
-  return lojas.some((loja) => loja.gerente)
+  if (lojas.some((loja) => loja.gerente)) return true
+
+  return String(role ?? "").toUpperCase() === "GERENTE" && lojas.length > 0
 }

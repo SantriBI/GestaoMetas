@@ -16,12 +16,8 @@ export default function SeletorLoja({ lojas, value, onValueChange, permiteTodasL
     return null
   }
 
-  // Com 1 loja so, nao ha o que trocar, mas o seletor continua visivel (desabilitado) para
-  // deixar claro qual loja esta sendo exibida.
-  const somenteUmaLoja = lojas.length === 1
-
   return (
-    <Select value={value} onValueChange={onValueChange} disabled={somenteUmaLoja}>
+    <Select value={value} onValueChange={onValueChange}>
       <SelectTrigger className={className ?? "w-56"}>
         <SelectValue placeholder="Selecione a loja" />
       </SelectTrigger>

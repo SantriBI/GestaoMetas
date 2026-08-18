@@ -45,8 +45,9 @@ export function createPremiacaoVendedorController(deps = {}) {
       const empresaId = req.auth?.empresa_id ?? null
       const usuarioId = req.auth?.id_usuario ?? null
       const cpf = req.auth?.cpf ?? null
+      const role = req.auth?.role ?? null
 
-      const ehGerente = await verificarGerente(empresaId, usuarioId, { cpf })
+      const ehGerente = await verificarGerente(empresaId, usuarioId, { cpf, role })
       if (!ehGerente) {
         return res.status(403).json({ error: "Apenas gerentes podem visualizar a premiacao da equipe." })
       }

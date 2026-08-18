@@ -154,3 +154,31 @@ test("verificarSeUsuarioEhGerente retorna false sem empresaId ou sem CPF resolvi
     false
   )
 })
+
+test("verificarSeUsuarioEhGerente aceita fallback: role GERENTE no app + CPF existente no ERP mesmo sem GERENTE = 'S'", async () => {
+  const ehGerente = await verificarSeUsuarioEhGerente(1, 42, {
+    cpf: "33333333333",
+    role: "GERENTE",
+    getLojas: async () => [{ empresaAcesso: "1", gerente: false, nomeResumido: "Loja 1", skEmpresas: "10" }],
+  })
+  assert.equal(ehGerente, true)
+})
+
+test("verificarSeUsuarioEhGerente ignora fallback quando role nao e GERENTE ou CPF nao existe no ERP", async () => {
+  assert.equal(
+    await verificarSeUsuarioEhGerente(1, 42, {
+      cpf: "44444444444",
+      role: "VENDEDOR",
+      getLojas: async () => [{ empresaAcesso: "1", gerente: false, nomeResumido: "Loja 1", skEmpresas: "10" }],
+    }),
+    false
+  )
+  assert.equal(
+    await verificarSeUsuarioEhGerente(1, 42, {
+      cpf: "55555555555",
+      role: "GERENTE",
+      getLojas: async () => [],
+    }),
+    false
+  )
+})

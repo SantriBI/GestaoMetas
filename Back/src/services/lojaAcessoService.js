@@ -122,6 +122,10 @@ async function getLojasManuaisResolvidas(empresaId, idUsuario, automaticas) {
  * - VENDEDOR: todas as lojas onde o CPF aparece (independente da flag GERENTE).
  * - GERENTE: lojas onde GERENTE = 'S' (automaticas, sempre presentes) + lojas liberadas
  *   manualmente por um admin em gerente_lojas_liberadas (uniao, sem duplicar por codigo).
+ *   Fallback: o ERP as vezes nao marca GERENTE='S' para gerentes recem-cadastrados no app
+ *   (a flag e mantida no ERP, fora do controle deste sistema). Sem isso o gerente fica sem
+ *   nenhuma loja padrao - usamos a(s) loja(s) onde o CPF esta cadastrado como funcionario ate
+ *   o ERP corrigir o flag; um admin ainda pode liberar lojas extras manualmente.
  */
 export async function getLojasForRole({ empresaId, cpf, role, idUsuario = null }) {
   const lojas = await getLojasAcessoByCpf(empresaId, cpf)
@@ -131,7 +135,8 @@ export async function getLojasForRole({ empresaId, cpf, role, idUsuario = null }
     return lojas
   }
 
-  const automaticas = lojas.filter((loja) => loja.gerente)
+  const marcadasComoGerente = lojas.filter((loja) => loja.gerente)
+  const automaticas = marcadasComoGerente.length > 0 ? marcadasComoGerente : lojas
   if (!idUsuario) return automaticas
 
   const manuais = await getLojasManuaisResolvidas(empresaId, idUsuario, automaticas).catch(() => [])
