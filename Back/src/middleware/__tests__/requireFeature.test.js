@@ -64,3 +64,31 @@ test("requisicao sem req.auth recebe 401", () => {
 test("feature desconhecida lanca erro ao registrar a rota", () => {
   assert.throws(() => requireFeature("ALGO_QUE_NAO_EXISTE"))
 })
+
+test("organizacao sem featurePremiacaoHabilitada recebe 403 (rotas de premiacao restritas por organizacao)", () => {
+  const middleware = requireFeature("PREMIACAO")
+  const req = { auth: { empresa_id: 22, role: "VENDEDOR", featurePremiacaoHabilitada: false } }
+  const res = createFakeRes()
+  let nextCalled = false
+
+  middleware(req, res, () => {
+    nextCalled = true
+  })
+
+  assert.equal(nextCalled, false)
+  assert.equal(res.statusCode, 403)
+})
+
+test("organizacao com featurePremiacaoHabilitada segue para o proximo handler normalmente", () => {
+  const middleware = requireFeature("PREMIACAO")
+  const req = { auth: { empresa_id: 19, role: "VENDEDOR", featurePremiacaoHabilitada: true } }
+  const res = createFakeRes()
+  let nextCalled = false
+
+  middleware(req, res, () => {
+    nextCalled = true
+  })
+
+  assert.equal(nextCalled, true)
+  assert.equal(res.statusCode, 200)
+})

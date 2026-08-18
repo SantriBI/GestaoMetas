@@ -7,15 +7,21 @@ import centralPool from "../db/mysql.js"
  */
 export async function getOrganizacaoFeatureFlags(empresaId) {
   if (!empresaId) {
-    return { featureComissoesHabilitada: false }
+    return { featureComissoesHabilitada: false, featurePremiacaoHabilitada: false }
   }
 
   const [rows] = await centralPool.query(
-    "SELECT FEATURE_COMISSOES_HABILITADA AS feature_comissoes_habilitada FROM organizacoes_auth WHERE id_organizacao = ? LIMIT 1",
+    `SELECT
+       FEATURE_COMISSOES_HABILITADA AS feature_comissoes_habilitada,
+       FEATURE_PREMIACAO_HABILITADA AS feature_premiacao_habilitada
+     FROM organizacoes_auth
+     WHERE id_organizacao = ?
+     LIMIT 1`,
     [empresaId]
   )
 
   return {
     featureComissoesHabilitada: Number(rows[0]?.feature_comissoes_habilitada ?? 0) === 1,
+    featurePremiacaoHabilitada: Number(rows[0]?.feature_premiacao_habilitada ?? 0) === 1,
   }
 }

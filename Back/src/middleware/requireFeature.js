@@ -2,6 +2,7 @@
 // preenchido por requireAuth a partir de organizacoes_auth (ver services/featureFlagsService.js).
 const FEATURE_FIELDS = {
   COMISSOES: "featureComissoesHabilitada",
+  PREMIACAO: "featurePremiacaoHabilitada",
 }
 
 export function requireFeature(nomeFeature) {

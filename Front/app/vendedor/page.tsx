@@ -443,6 +443,8 @@ export default function VendedorDashboard() {
     }
 
     async function fetchPremiacao() {
+      if (!authUser?.featurePremiacaoHabilitada) return
+
       try {
         const data = await fetchMinhaPremiacao()
         setPremiacao(data)
@@ -1244,26 +1246,28 @@ export default function VendedorDashboard() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => router.push("/vendedor/minha-premiacao")}
-                    className={`group inline-flex items-center gap-3 rounded-2xl border px-4 py-2 text-left transition-all duration-300 hover:-translate-y-0.5 active:scale-[0.98] ${isDark ? "border-amber-300/25 bg-[linear-gradient(135deg,rgba(120,53,15,0.35),rgba(245,158,11,0.14))] hover:border-amber-300/40 hover:shadow-[0_14px_32px_rgba(245,158,11,0.22)]" : "border-amber-200/70 bg-[linear-gradient(135deg,#fffbeb,#fef3c7)] hover:border-amber-300 hover:shadow-[0_10px_24px_rgba(245,158,11,0.18)]"}`}
-                  >
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 shadow-[0_8px_18px_rgba(245,158,11,0.3)]">
-                      <Trophy className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${isDark ? "text-amber-200/75" : "text-amber-600"}`}>
-                        Premiação
-                      </p>
-                      <p className={`truncate text-base font-black ${isDark ? "text-white" : "text-slate-900"}`}>
-                        {premiacao?.elegivel
-                          ? formatCurrency(premiacao.valorPremiacaoFinal)
-                          : "Ver minha premiação"}
-                      </p>
-                    </div>
-                    <ArrowRight className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:translate-x-1 ${isDark ? "text-amber-200" : "text-amber-600"}`} />
-                  </button>
+                  {authUser?.featurePremiacaoHabilitada ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push("/vendedor/minha-premiacao")}
+                      className={`group inline-flex items-center gap-3 rounded-2xl border px-4 py-2 text-left transition-all duration-300 hover:-translate-y-0.5 active:scale-[0.98] ${isDark ? "border-amber-300/25 bg-[linear-gradient(135deg,rgba(120,53,15,0.35),rgba(245,158,11,0.14))] hover:border-amber-300/40 hover:shadow-[0_14px_32px_rgba(245,158,11,0.22)]" : "border-amber-200/70 bg-[linear-gradient(135deg,#fffbeb,#fef3c7)] hover:border-amber-300 hover:shadow-[0_10px_24px_rgba(245,158,11,0.18)]"}`}
+                    >
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 shadow-[0_8px_18px_rgba(245,158,11,0.3)]">
+                        <Trophy className="h-5 w-5 text-white" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${isDark ? "text-amber-200/75" : "text-amber-600"}`}>
+                          Premiação
+                        </p>
+                        <p className={`truncate text-base font-black ${isDark ? "text-white" : "text-slate-900"}`}>
+                          {premiacao?.elegivel
+                            ? formatCurrency(premiacao.valorPremiacaoFinal)
+                            : "Ver minha premiação"}
+                        </p>
+                      </div>
+                      <ArrowRight className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:translate-x-1 ${isDark ? "text-amber-200" : "text-amber-600"}`} />
+                    </button>
+                  ) : null}
                 </div>
                 <div className={`mt-3 flex items-start gap-3 text-sm ${isDark ? "text-emerald-100/85" : "text-emerald-700"}`}>
                   <div className="mt-0.5">{getPositionIcon()}</div>

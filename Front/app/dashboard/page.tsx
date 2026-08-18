@@ -315,7 +315,7 @@ export default function DashboardPage() {
   }, [lojasResolvidas, viewMode, empresaId, empresaAcesso, authUser])
 
   useEffect(() => {
-    if (!lojasResolvidas || !authUser) return
+    if (!lojasResolvidas || !authUser || !authUser.featurePremiacaoHabilitada) return
     void carregarPremiacaoEquipe()
   }, [lojasResolvidas, empresaId, empresaAcesso, authUser])
 
@@ -807,18 +807,20 @@ export default function DashboardPage() {
                     />
                   </section>
 
-                  <section className="space-y-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Comissoes</p>
-                      <h2 className="text-xl font-semibold text-foreground">Premiação da equipe</h2>
-                    </div>
-                    <PremiacaoEquipeSection
-                      premiacao={premiacaoEquipe}
-                      loading={premiacaoEquipeLoading}
-                      error={premiacaoEquipeError}
-                      onRetry={() => void carregarPremiacaoEquipe()}
-                    />
-                  </section>
+                  {authUser?.featurePremiacaoHabilitada ? (
+                    <section className="space-y-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Comissoes</p>
+                        <h2 className="text-xl font-semibold text-foreground">Premiação da equipe</h2>
+                      </div>
+                      <PremiacaoEquipeSection
+                        premiacao={premiacaoEquipe}
+                        loading={premiacaoEquipeLoading}
+                        error={premiacaoEquipeError}
+                        onRetry={() => void carregarPremiacaoEquipe()}
+                      />
+                    </section>
+                  ) : null}
                 </div>
               </section>
 

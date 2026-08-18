@@ -217,6 +217,7 @@ export async function ensureCentralSchema() {
 
   await ensureUsuariosAuthColumn(centralPool, null, "token_version", "INT UNSIGNED NOT NULL DEFAULT 0")
   await ensureOrganizacoesAuthColumn("FEATURE_COMISSOES_HABILITADA", "TINYINT(1) NOT NULL DEFAULT 0")
+  await ensureOrganizacoesAuthColumn("FEATURE_PREMIACAO_HABILITADA", "TINYINT(1) NOT NULL DEFAULT 0")
 
   const [orgs] = await centralPool.query(
     "SELECT id_organizacao FROM organizacoes_auth WHERE ativo = 'S' AND db_name IS NOT NULL"

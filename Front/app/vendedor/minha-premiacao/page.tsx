@@ -26,6 +26,11 @@ export default function MinhaPremiacaoPage() {
       return
     }
 
+    if (!user.featurePremiacaoHabilitada) {
+      router.push("/vendedor")
+      return
+    }
+
     setStoredUser(user)
     setAuthUser(user)
   }, [router])

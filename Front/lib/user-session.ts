@@ -19,6 +19,7 @@ export interface AuthUser {
   gerente_sistemas_view?: "GERENTE" | "VENDEDOR" | null
   gerente_sistemas_original_role?: "GERENTE_SISTEMAS" | null
   featureComissoesHabilitada?: boolean
+  featurePremiacaoHabilitada?: boolean
 }
 
 const USER_STORAGE_KEY = "user"

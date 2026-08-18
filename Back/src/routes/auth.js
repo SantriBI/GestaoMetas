@@ -89,7 +89,9 @@ router.post("/login", loginRateLimiter, async (req, res) => {
       const token = issueAuthToken(centralUser)
       setAuthCookie(res, token)
 
-      const { featureComissoesHabilitada } = await getOrganizacaoFeatureFlags(centralUser.empresa_id ?? null)
+      const { featureComissoesHabilitada, featurePremiacaoHabilitada } = await getOrganizacaoFeatureFlags(
+        centralUser.empresa_id ?? null
+      )
 
       return res.json({
         id_usuario: centralUser.id_usuario,
@@ -101,6 +103,7 @@ router.post("/login", loginRateLimiter, async (req, res) => {
         foto_url: centralUser.foto_url ?? null,
         senha_temporaria: centralUser.senha_temporaria ?? "N",
         featureComissoesHabilitada,
+        featurePremiacaoHabilitada,
       })
     }
 
@@ -145,7 +148,7 @@ router.post("/login", loginRateLimiter, async (req, res) => {
       const token = issueAuthToken({ ...user, empresa_id })
       setAuthCookie(res, token)
 
-      const { featureComissoesHabilitada } = await getOrganizacaoFeatureFlags(empresa_id)
+      const { featureComissoesHabilitada, featurePremiacaoHabilitada } = await getOrganizacaoFeatureFlags(empresa_id)
 
       return res.json({
         id_usuario: user.id_usuario,
@@ -157,6 +160,7 @@ router.post("/login", loginRateLimiter, async (req, res) => {
         foto_url: user.foto_url ?? null,
         senha_temporaria: user.senha_temporaria ?? "N",
         featureComissoesHabilitada,
+        featurePremiacaoHabilitada,
       })
     }
 

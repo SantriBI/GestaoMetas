@@ -35,7 +35,7 @@ export async function requireAuth(req, res, next) {
 
     const featureFlags = await getOrganizacaoFeatureFlags(scopedEmpresaId).catch((error) => {
       console.error("Erro ao ler feature flags da organizacao:", error)
-      return { featureComissoesHabilitada: false }
+      return { featureComissoesHabilitada: false, featurePremiacaoHabilitada: false }
     })
 
     req.auth = {
