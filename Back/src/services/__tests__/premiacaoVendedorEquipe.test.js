@@ -65,6 +65,21 @@ test("listarPremiacaoEquipe: resumo agrega elegiveis/nao elegiveis, soma da prem
   assert.equal(resultado.resumo.totalProximosDoGatilho, 1)
 })
 
+test("listarPremiacaoEquipe: zera valorComissaoBase para vendedores nao elegiveis, mesmo com VALOR_COMISSAO_A_PAGAR > 0 no ERP", async () => {
+  const query = async () => [
+    linha({ skVendedor: 1, nomeVendedor: "Ana", margemMaisFrete: 25000, statusGatilho: "ELEGÍVEL", valorPremiacaoFinal: 500 }),
+    linha({ skVendedor: 2, nomeVendedor: "Bruno", margemMaisFrete: 16000, statusGatilho: "NÃO ELEGÍVEL", valorPremiacaoFinal: 0 }),
+  ]
+
+  const lojaScope = { applies: true, lojaIds: [541], error: null }
+  const resultado = await listarPremiacaoEquipe(7, lojaScope, { query })
+
+  const ana = resultado.vendedores.find((v) => v.nomeVendedor === "Ana")
+  const bruno = resultado.vendedores.find((v) => v.nomeVendedor === "Bruno")
+  assert.equal(ana.valorComissaoBase, 1000)
+  assert.equal(bruno.valorComissaoBase, 0)
+})
+
 test("listarPremiacaoEquipe: empresa_id ausente lanca PremiacaoVendedorError", async () => {
   await assert.rejects(
     () => listarPremiacaoEquipe(null, { applies: true, lojaIds: [541] }, { query: async () => [] }),

@@ -49,7 +49,11 @@ function mapPremiacaoRow(row) {
     vendedorId: row.vendedor_id,
     nomeVendedor: row.nome_vendedor,
     mesReferencia: row.mes_referencia,
-    valorComissaoBase: Number(row.valor_comissao_a_pagar ?? 0),
+    // Comissao base do ERP so e exibida quando o vendedor bate o gatilho minimo de margem
+    // (STATUS_GATILHO = ELEGIVEL) - abaixo disso o valor exibido e zerado, mesmo que o ERP
+    // tenha calculado uma comissao (pedido do usuario: nao faz sentido mostrar comissao base
+    // pra quem nao vai receber premiacao por nao ter batido a margem minima).
+    valorComissaoBase: elegivel ? Number(row.valor_comissao_a_pagar ?? 0) : 0,
     margemMaisFrete,
     statusGatilho: row.status_gatilho,
     elegivel,
