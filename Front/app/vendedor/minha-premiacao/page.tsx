@@ -196,7 +196,7 @@ export default function MinhaPremiacaoPage() {
           {!premiacao?.elegivel ? (
             <p className="mt-5 rounded-2xl border border-amber-300/16 bg-amber-400/8 px-4 py-3 text-sm leading-6 text-amber-50/90">
               Como voce ainda nao bateu o gatilho minimo de margem+frete, o acelerador desta faixa e 0% e a
-              premiacao final fica zerada - mas a comissao base continua sendo paga normalmente.
+              premiacao final fica zerada.
             </p>
           ) : null}
         </section>
