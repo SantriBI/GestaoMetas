@@ -144,7 +144,7 @@ export function PremiacaoEquipeSection({ premiacao, loading, error, onRetry }: P
                   <th className="w-[130px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Margem + Frete
                   </th>
-                  <th className="w-[170px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <th className="w-[220px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Faixa / Acelerador
                   </th>
                   <th className="w-[130px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -173,9 +173,9 @@ export function PremiacaoEquipeSection({ premiacao, loading, error, onRetry }: P
                     <td className="overflow-hidden whitespace-nowrap px-3 py-4 text-foreground">
                       {formatCurrency(vendedor.margemMaisFrete)}
                     </td>
-                    <td className="overflow-hidden px-3 py-4">
+                    <td className="px-3 py-4">
                       <div className="flex flex-col">
-                        <span className="truncate text-foreground">{vendedor.faixaAcelerador ?? "-"}</span>
+                        <span className="whitespace-normal break-words text-foreground">{vendedor.faixaAcelerador ?? "-"}</span>
                         <span className="text-xs text-muted-foreground">
                           {(vendedor.percAcelerador * 100).toFixed(0)}% de acelerador
                         </span>
