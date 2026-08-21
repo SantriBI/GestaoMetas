@@ -23,7 +23,9 @@ function normalizeRow(row) {
     meta: lower.meta_mes ?? lower.meta_diaria_necessaria ?? 0,
     percentual: lower.perc_atingimento ?? lower.perc_performance_dia ?? 0,
     posicao: lower.ranking_atingimento ?? lower.ranking_dia ?? null,
-    margem: lower.margem_total ?? 0
+    // Mesma coluna exibida na tela de premiacao (VW_PREMIACAO_VENDEDOR_COMISSAO_ERP.MARGEM_MAIS_FRETE) -
+    // VW_RANKING_VENDEDORES/VW_RANKING_VENDEDORES_DIA nao tem coluna de margem propria.
+    margem: lower.margem_mais_frete ?? 0
   }
 }
 
@@ -421,6 +423,25 @@ router.get("/ranking-vendedores/comparativo", requireAuth, async (req, res) => {
   }
 })
 
+// MARGEM_MAIS_FRETE do mes corrente, keyed por VENDEDOR_ID (mesma chave usada por
+// VW_APURACAO_PREMIACAO_VENDEDOR - VENDEDOR_ID + MES_REFERENCIA 'MM/YYYY', ver
+// vw_premiacao_vendedor_fase3.sql). Nao usa VW_PREMIACAO_VENDEDOR_COMISSAO_ERP aqui porque essa
+// view so tem linha para vendedores com comissao ja parametrizada no ERP
+// (FT_COMISSAO_PARAMETRIZADA) - vendedores sem comissao parametrizada ainda (comum fora do
+// fechamento do mes) ficariam com margem zerada no ranking mesmo tendo apuracao de margem.
+function buildAtualRankingSql(view, orderColumn, sellerCondition, lojaCondition) {
+  return `
+    SELECT r.*, p.MARGEM_MAIS_FRETE
+    FROM ${view} r
+    LEFT JOIN VW_APURACAO_PREMIACAO_VENDEDOR p
+      ON p.VENDEDOR_ID = r.VENDEDOR_ID
+     AND p.MES_REFERENCIA = TO_CHAR(SYSDATE, 'MM/YYYY')
+    WHERE ${sellerCondition.clause}
+      AND ${lojaCondition.clause}
+    ORDER BY ${orderColumn}
+  `
+}
+
 router.get("/ranking-vendedores", requireAuth, async (req, res) => {
   try {
     const modo = req.query.modo || "mensal"
@@ -439,6 +460,8 @@ router.get("/ranking-vendedores", requireAuth, async (req, res) => {
       return res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
     }
 
+    const podeIncluirMargem = !!req.auth?.featurePremiacaoHabilitada
+
     let sql = ""
     let binds = sellerScope.binds
 
@@ -446,28 +469,50 @@ router.get("/ranking-vendedores", requireAuth, async (req, res) => {
       const lojaColumn = await resolveLojaColumnName(empresaId, context.rankingDayView)
       const lojaCondition = buildLojaInCondition(lojaColumn, lojaScope, "loja_scope_dia")
       binds = { ...binds, ...lojaCondition.binds }
-      sql = periodo === "anterior"
-        ? buildDiarioAnteriorSql(sellerScope, lojaCondition)
-        : `
+      if (periodo === "anterior") {
+        sql = buildDiarioAnteriorSql(sellerScope, lojaCondition)
+      } else if (podeIncluirMargem) {
+        const lojaConditionR = buildLojaInCondition(
+          lojaColumn ? `r.${lojaColumn}` : lojaColumn,
+          lojaScope,
+          "loja_scope_dia"
+        )
+        const sellerScopeR = buildSellerInCondition("r.sk_vendedor", allowedSellerCodes, "seller_scope_dia")
+        binds = { ...sellerScopeR.binds, ...lojaConditionR.binds }
+        sql = buildAtualRankingSql(context.rankingDayView, "ranking_dia", sellerScopeR, lojaConditionR)
+      } else {
+        sql = `
         SELECT *
         FROM ${context.rankingDayView}
         WHERE ${sellerScope.clause}
           AND ${lojaCondition.clause}
         ORDER BY ranking_dia
       `
+      }
     } else {
       const lojaColumn = await resolveLojaColumnName(empresaId, context.rankingView)
       const lojaCondition = buildLojaInCondition(lojaColumn, lojaScope, "loja_scope_mensal")
       binds = { ...binds, ...lojaCondition.binds }
-      sql = periodo === "anterior"
-        ? buildMensalAnteriorSql(sellerScope, lojaCondition)
-        : `
+      if (periodo === "anterior") {
+        sql = buildMensalAnteriorSql(sellerScope, lojaCondition)
+      } else if (podeIncluirMargem) {
+        const lojaConditionR = buildLojaInCondition(
+          lojaColumn ? `r.${lojaColumn}` : lojaColumn,
+          lojaScope,
+          "loja_scope_mensal"
+        )
+        const sellerScopeR = buildSellerInCondition("r.sk_vendedor", allowedSellerCodes, "seller_scope_mensal")
+        binds = { ...sellerScopeR.binds, ...lojaConditionR.binds }
+        sql = buildAtualRankingSql(context.rankingView, "ranking_atingimento", sellerScopeR, lojaConditionR)
+      } else {
+        sql = `
         SELECT *
         FROM ${context.rankingView}
         WHERE ${sellerScope.clause}
           AND ${lojaCondition.clause}
         ORDER BY ranking_atingimento
       `
+      }
     }
 
     const rows = await context.query(sql, binds)

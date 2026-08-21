@@ -75,6 +75,7 @@ interface VendedorData {
   ticketMedioDia?: number
   clientesMes?: number
   ticketMedioMes?: number
+  margem?: number
   metaHerdada?: number
   meta_herdada?: number
   META_HERDADA?: number
@@ -125,6 +126,7 @@ function createFallbackVendedor(user?: AuthUser | null): VendedorData {
     ticketMedioDia: 0,
     clientesMes: 0,
     ticketMedioMes: 0,
+    margem: 0,
     metaHerdada: 0,
   }
 }
@@ -1373,6 +1375,20 @@ export default function VendedorDashboard() {
                     <p className="text-xs text-muted-foreground">Ticket médio do Mês</p>
                     <p className="text-lg font-bold text-foreground">
                       {formatCurrency(vendedor.ticketMedioMes ?? 0)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="hidden h-8 w-px bg-white/10 sm:block" />
+
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15">
+                    <TrendingUp className="h-5 w-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Margem</p>
+                    <p className="text-lg font-bold text-foreground">
+                      {formatCurrency(vendedor.margem ?? 0)}
                     </p>
                   </div>
                 </div>

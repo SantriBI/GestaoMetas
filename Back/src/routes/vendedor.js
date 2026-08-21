@@ -119,6 +119,7 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
         SELECT *
         FROM (
           SELECT
+            vendedor_id,
             nome_vendedor,
             receita_mes,
             meta_mes,
@@ -177,6 +178,29 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
     const diarioData = diarioRows[0] ? normalizeRow(diarioRows[0]) : {}
     const totalVendedoresData = totalVendedoresRows[0] ? normalizeRow(totalVendedoresRows[0]) : {}
 
+    // Mesma coluna exibida na tela de premiacao (VW_APURACAO_PREMIACAO_VENDEDOR.MARGEM_MAIS_FRETE,
+    // keyed por VENDEDOR_ID + MES_REFERENCIA do mes corrente - ver rankingVendedores.js). So
+    // consultada quando a organizacao tem a feature de premiacao habilitada - a view nem sempre
+    // existe nos tenants sem premiacao (ex.: ambiente local).
+    let premiacaoData = {}
+    if (req.auth?.featurePremiacaoHabilitada && mensalData.vendedor_id) {
+      try {
+        const premiacaoRows = await context.query(
+          `
+          SELECT MARGEM_MAIS_FRETE
+          FROM VW_APURACAO_PREMIACAO_VENDEDOR
+          WHERE VENDEDOR_ID = :vendedor_id
+            AND MES_REFERENCIA = TO_CHAR(SYSDATE, 'MM/YYYY')
+          FETCH FIRST 1 ROW ONLY
+          `,
+          { vendedor_id: mensalData.vendedor_id }
+        )
+        premiacaoData = premiacaoRows[0] ? normalizeRow(premiacaoRows[0]) : {}
+      } catch (error) {
+        console.error("Erro ao buscar margem+frete da premiacao para o dashboard do vendedor:", error)
+      }
+    }
+
     res.json({
       nome: mensalData.nome_vendedor ?? usuarioFallback?.nome ?? `Vendedor ${sk_vendedor}`,
       receita: mensalData.receita_mes ?? 0,
@@ -190,6 +214,7 @@ router.get("/vendedor/:sk_vendedor", requireAuth, async (req, res) => {
         numero(mensalData.clientes_mes) > 0
           ? numero(mensalData.receita_mes) / numero(mensalData.clientes_mes)
           : 0,
+      margem: numero(premiacaoData.margem_mais_frete),
       dataReferencia: diarioData.data_referencia ?? null,
       vendasHoje: diarioData.receita_dia ?? 0,
       clientesDia: diarioData.clientes_dia ?? 0,
