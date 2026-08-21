@@ -79,7 +79,9 @@ export interface Vendedor {
   status_dia?: string
   ranking_dia?: number | string
 
+  margem?: number | string
   margem_total?: number | string
+  margem_mais_frete?: number | string
 }
 export interface VendedorDia {
   sk_empresa: number
@@ -166,7 +168,10 @@ export function processVendedor(v: Vendedor, viewMode: ViewMode): VendedorProces
 
     receita,
     meta: viewMode === "diario" ? metaDia : metaMes,
-    margem: Number(v.margem_total ?? 0),
+    // "margem" e o campo ja calculado pelo backend (VW_APURACAO_PREMIACAO_VENDEDOR.MARGEM_MAIS_FRETE,
+    // mesma coluna "Margem + Frete" da tela de premiacao) - margem_total/margem_mais_frete ficam
+    // como fallback para compatibilidade com respostas antigas.
+    margem: Number(v.margem ?? v.margem_mais_frete ?? v.margem_total ?? 0),
 
     percentual,
     ranking,
