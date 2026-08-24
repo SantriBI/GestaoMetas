@@ -47,6 +47,7 @@ function getAlertStyle(tipo: RadarAlertaTipo): AlertStyle {
 
 type RadarVendasProps = {
   empresaId?: string | number | null
+  empresaAcesso?: string | null
 }
 
 const GRUPOS_VAZIOS: RadarVendasResponse = { equipe: [], clientes: [], categorias: [] }
@@ -61,10 +62,13 @@ const GRUPO_LABELS: Record<RadarGrupoKey, string> = {
 
 const GRUPO_ORDEM: RadarGrupoKey[] = ["equipe", "clientes", "categorias"]
 
-async function fetchRadarVendas(empresaId?: string | number | null): Promise<RadarVendasResponse> {
+async function fetchRadarVendas(empresaId?: string | number | null, empresaAcesso?: string | null): Promise<RadarVendasResponse> {
   const params = new URLSearchParams()
   if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
     params.set("empresa_id", String(empresaId))
+  }
+  if (empresaAcesso !== null && empresaAcesso !== undefined && String(empresaAcesso).trim()) {
+    params.set("empresa_acesso", String(empresaAcesso))
   }
 
   const query = params.toString()
@@ -138,7 +142,7 @@ function RadarAlertList({ alertas }: { alertas: RadarAlerta[] }) {
   )
 }
 
-export function RadarVendas({ empresaId }: RadarVendasProps) {
+export function RadarVendas({ empresaId, empresaAcesso }: RadarVendasProps) {
   const [grupos, setGrupos] = useState<RadarVendasResponse>(GRUPOS_VAZIOS)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -151,7 +155,7 @@ export function RadarVendas({ empresaId }: RadarVendasProps) {
       setError(null)
 
       try {
-        const dados = await fetchRadarVendas(empresaId)
+        const dados = await fetchRadarVendas(empresaId, empresaAcesso)
         if (ativo) {
           setGrupos(dados)
         }
@@ -171,7 +175,7 @@ export function RadarVendas({ empresaId }: RadarVendasProps) {
     return () => {
       ativo = false
     }
-  }, [empresaId])
+  }, [empresaId, empresaAcesso])
 
   const secoes = GRUPO_ORDEM
     .map((chave) => ({ chave, label: GRUPO_LABELS[chave], alertas: grupos[chave] }))

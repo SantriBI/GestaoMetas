@@ -1,8 +1,11 @@
 # Relatorio completo do projeto
 
-Data da analise: 2026-07-02  
+Data da analise original: 2026-07-02  
+Data da ultima atualizacao: 2026-08-10  
 Escopo: leitura estatica do repositorio `GestaoMetas`, sem alteracao de codigo.  
 Observacao: valores reais de `.env` nao foram expostos; foram coletados apenas nomes de variaveis.
+
+Nota de atualizacao (2026-08-10): entre a analise original e esta atualizacao o repositorio recebeu ~30 commits (ver `git log`), incluindo varios itens que a versao anterior deste relatorio apontava como risco critico. Os principais avancos: `requireAuth` foi aplicado em `feed`, `desafios`, `ativacaoClientes`, `objetivoVendedor`, `areaAtaque`, `investigarCliente` e `alertasRanking`; os controllers passaram a derivar identidade (`usuario_id`, `empresa_id`, `role`) de `req.auth` em vez de body/query; foi adicionado rate limit no login (`express-rate-limit`); e foram criados tres modulos novos (filtro/liberacao de lojas para gerente, CRM Kanban do vendedor, Gerente de Sistemas) alem da migracao do modulo de feedback para MySQL central. Os riscos ainda abertos (build TS permissivo, ausencia de testes, senhas iniciais padrao) seguem descritos abaixo. As secoes foram atualizadas para refletir o estado atual; onde algo mudou desde a analise original, isso esta indicado explicitamente.
 
 ## 1. Resumo executivo
 
@@ -10,37 +13,48 @@ O projeto e uma plataforma web de inteligencia comercial chamada SIP / Gestao de
 
 O problema principal resolvido e dar visibilidade operacional e gerencial sobre performance comercial: quem esta batendo meta, onde existe oportunidade, quais clientes devem ser atacados, quais campanhas estao rodando e como manter o time engajado.
 
-Estagio aparente: **MVP/beta avancado**. Ha muitos modulos funcionais, Docker, autenticacao propria, multi-organizacao, Oracle/MySQL e UI extensa. Ainda nao parece producao madura porque faltam testes automatizados, ha rotas importantes sem `requireAuth`, ha arquivos muito grandes, `ignoreBuildErrors: true` no Next e varias regras sensiveis dependem de dados enviados pelo cliente.
+Estagio aparente: **MVP/beta avancado, com hardening de seguranca em andamento**. Ha muitos modulos funcionais, Docker, autenticacao propria, multi-organizacao, Oracle/MySQL e UI extensa. Desde a analise original, a maior parte das rotas de negocio passou a exigir `requireAuth` e a derivar identidade/escopo do token (`req.auth`) em vez de aceitar `usuario_id`/`empresa_id`/`role` do cliente, e o login ganhou rate limit. Ainda nao e producao madura porque faltam testes automatizados, ha arquivos muito grandes e `ignoreBuildErrors: true` continua ativo no Next.
 
 Principais pontos fortes:
 
 | Ponto | Evidencia |
 |---|---|
 | Separacao clara entre frontend e backend | `Front/` com Next.js e `Back/` com Express |
-| Dominio de negocio rico | rotas para ranking, vendedor, area de ataque, feed, desafios, ativacao e industria |
+| Dominio de negocio rico | rotas para ranking, vendedor, area de ataque, feed, desafios, ativacao, kanban, industria |
 | Autenticacao com cookie HTTP-only | `Back/src/auth/token.js` |
+| Escopo de negocio derivado do token, nunca do cliente | `Back/src/services/requestScope.js` (`getScopedEmpresaId`, `getScopedLojaScope`), usado por rotas/controllers de feed, desafios, ativacao, ranking, vendedor, kanban |
 | Multi-tenant MySQL e Oracle por organizacao | `Back/src/db/mysql-tenants.js`, `Back/src/db/oracle-tenants.js` |
+| Escopo multi-loja para gerentes, revalidado no servidor | `Back/src/services/lojaAcessoService.js`, `Back/src/services/gerenteLojasService.js` |
 | Criptografia de segredos de organizacao | `Back/src/security/secrets.js` |
+| Rate limit no login | `Back/src/routes/auth.js` (`express-rate-limit`, 10 tentativas/15min) |
 | Docker para frontend/backend/MySQL | `docker-compose.yml`, `Front/Dockerfile`, `Back/Dockerfile` |
 
 Maiores riscos tecnicos:
 
 | Risco | Severidade | Evidencia |
 |---|---:|---|
-| Rotas de negocio sem autenticacao forte | Alta | `Back/src/routes/feed.js`, `Back/src/routes/desafios.js`, `Back/src/routes/ativacaoClientes.js`, `Back/src/routes/objetivoVendedor.js`, `Back/src/routes/investigarCliente.js`, `Back/src/routes/areaAtaque.js`, `Back/src/routes/alertasRanking.js` |
-| Escopo de usuario aceito via query/body | Alta | `Back/src/controllers/feedController.js`, `Back/src/controllers/ativacaoClientesController.js`, `Back/src/controllers/desafiosController.js` |
 | Build TypeScript ignora erros | Alta | `Front/next.config.mjs` |
-| Ausencia de suite de testes | Alta | `package.json` nao define `test`; apenas `Back/test-oracle.js` |
-| Arquivos grandes e acoplados | Media | `Front/app/vendedor/page.tsx`, `Back/src/services/desafios/desafiosService.js` |
+| Ausencia de suite de testes | Alta | `package.json` nao define `test`; apenas `Back/oracle:smoke` (`Back/test-oracle.js`) |
 | Senhas iniciais padrao | Media/Alta | `Back/src/db/mysql-tenants.js`, `Back/src/routes/superadmin.js`, `Front/app/admin/page.tsx` |
+| Papel `GERENTE_SISTEMAS` reescopa `empresa_id` por requisicao entre organizacoes | Media | `Back/src/middleware/auth.js`, `Back/src/services/gerenteSistemasService.js` — poder amplo, mitigado por allowlist e auditoria, mas vale confirmar que toda rota downstream respeita o reescopo |
+| Kanban do vendedor sem checagem explicita de role/posse no nivel de rota | Media | `Back/src/routes/vendedorKanban.js` (so `requireAuth`; validacao de posse do `sk_vendedor` fica a cargo da camada de servico) |
+| Arquivos grandes e acoplados | Media | `Front/app/vendedor/page.tsx`, `Back/src/services/desafios/desafiosService.js` |
+
+Riscos da analise original ja resolvidos (ver nota de atualizacao):
+
+| Risco (jul/2026) | Situacao (ago/2026) |
+|---|---|
+| Rotas de negocio sem autenticacao forte | `requireAuth` aplicado em feed, desafios, ativacao, objetivo vendedor, area de ataque, investigar cliente, alertas |
+| Escopo de usuario aceito via query/body | Controllers agora usam `req.auth` (`getActorFromRequest` em `feedController.js` e equivalentes) |
+| Sem rate limit no login | `loginRateLimiter` em `Back/src/routes/auth.js` |
 
 Proximos passos mais importantes:
 
-1. Exigir `requireAuth` e escopo pelo token em todas as rotas de negocio.
-2. Remover `typescript.ignoreBuildErrors`.
-3. Criar testes minimos de autenticacao/autorizacao e smoke tests de rotas criticas.
-4. Revisar senhas iniciais e fluxo de primeira troca obrigatoria.
-5. Separar services e paginas grandes por casos de uso.
+1. Remover `typescript.ignoreBuildErrors`.
+2. Criar testes minimos de autenticacao/autorizacao e smoke tests de rotas criticas (incluindo posse de `sk_vendedor` no Kanban e reescopo do `GERENTE_SISTEMAS`).
+3. Revisar senhas iniciais e fluxo de primeira troca obrigatoria.
+4. Separar services e paginas grandes por casos de uso.
+5. Confirmar que todas as rotas que recebem `empresa_id` reescopado pelo `GERENTE_SISTEMAS` validam o acesso corretamente.
 
 ## 2. Visao geral do projeto
 
@@ -50,26 +64,32 @@ Publico-alvo provavel:
 
 | Perfil | Objetivo no sistema |
 |---|---|
-| `SUPERADMIN` | cadastrar organizacoes, credenciais Oracle, tenants MySQL e gerentes |
+| `SUPERADMIN` | cadastrar organizacoes, credenciais Oracle, tenants MySQL e gerentes; ver feedbacks de usuarios |
 | `ADMIN` | administrar organizacoes e usuarios em escopo administrativo |
-| `GERENTE` | acompanhar time, ranking, desafios, feed, usuarios e ativacao |
-| `VENDEDOR` | acompanhar propria meta, carteira, desafios, oportunidades e meta de vida |
+| `GERENTE` | acompanhar time, ranking, desafios, feed, usuarios e ativacao; pode ter lojas extras liberadas alem do vinculo padrao |
+| `GERENTE_SISTEMAS` | *(novo desde jul/2026)* papel de suporte/operacao sem vinculo fixo a uma organizacao; acessa organizacoes liberadas e "entra" como GERENTE ou VENDEDOR para troubleshooting |
+| `VENDEDOR` | acompanhar propria meta, carteira, desafios, oportunidades, meta de vida e pipeline de clientes (Kanban) |
 | `INDUSTRIA` | acompanhar desempenho de marca/campanha |
 
 Principais funcionalidades encontradas:
 
-- Login/logout e troca de senha.
-- Dashboard do gerente.
+- Login/logout e troca de senha (com rate limit).
+- Dashboard do gerente, com Grand Prix (podio diario/mensal, comparativo com periodo anterior, download/compartilhamento via WhatsApp).
 - Dashboard do vendedor.
-- Ranking mensal e diario.
+- Ranking mensal e diario, com comparativo percentual vs. mes/ano anterior.
 - Area de ataque por RFV.
 - Investigacao de cliente por CPF/CNPJ/nome.
-- Radar de vendas.
+- Radar de vendas (secoes por equipe/clientes/categorias).
 - Assistente de vendas com OpenAI.
 - Central de ativacao de clientes com templates e WhatsApp.
 - Feed interno com posts, curtidas, comentarios, destaque e mensagens privadas.
 - Desafios/bonus/campanhas comerciais.
 - Meta de vida e perfil do vendedor.
+- CRM Kanban do vendedor: funil de clientes (a contatar/em contato/orcamento enviado/convertido) sincronizado automaticamente com orcamentos/pedidos, mais anotacoes manuais.
+- Filtro/selecao de loja e liberacao de lojas extras para gerentes multi-loja.
+- Gerente de Sistemas: acesso cross-organizacao para suporte.
+- Envio de feedback pelo usuario (revisavel pelo SUPERADMIN).
+- Administracao de instancias de WhatsApp (`whatsapp-admin`).
 - Gestao de usuarios.
 - Gestao de organizacoes e tenants.
 - Portal da industria.
@@ -78,11 +98,11 @@ Principais funcionalidades encontradas:
 Jornada principal:
 
 1. Usuario acessa `/login`.
-2. Backend autentica em MySQL central ou tenant.
+2. Backend autentica em MySQL central ou tenant (limitado por rate limit).
 3. Front salva dados basicos em `sessionStorage`; backend seta cookie HTTP-only.
-4. Usuario e redirecionado conforme role: `/admin`, `/admin/organizacoes`, `/dashboard`, `/vendedor` ou `/industria`.
+4. Usuario e redirecionado conforme role: `/admin`, `/admin/organizacoes`, `/dashboard`, `/vendedor`, `/industria` ou `/gerente-sistemas`.
 5. Front consome `/api/*`; `Front/next.config.mjs` reescreve para o backend.
-6. Backend consulta Oracle legado/global ou Oracle da organizacao, e MySQL central/tenant para auth e administracao.
+6. Backend consulta Oracle legado/global ou Oracle da organizacao, e MySQL central/tenant para auth e administracao; identidade e escopo de cada requisicao sao derivados de `req.auth` (token verificado), nao de parametros enviados pelo cliente.
 
 ## 3. Stack utilizada
 
@@ -97,12 +117,15 @@ Jornada principal:
 | Oracle `oracledb` | `Back/src/db/oracle*.js` | DW/operacional principal | Pool legado e conexoes por tenant | Forte dependencia externa; migrations Oracle manuais |
 | MySQL `mysql2` | `Back/src/db/mysql*.js` | auth central/tenant | Multi-tenant e schema auto-criado | Credenciais e grants precisam hardening |
 | bcrypt | `Back/src/routes/auth.js`, `superadmin.js` | Hash de senha | Uso correto para comparacao/hash | Minimo de senha baixo em alguns fluxos |
-| Cookie parser | `Back/index.js` | Leitura de cookie auth | Integrado ao token proprio | Nem todas as rotas usam auth |
+| Cookie parser | `Back/index.js` | Leitura de cookie auth | Integrado ao token proprio | A maioria das rotas de negocio ja usa `requireAuth` |
+| express-rate-limit | `Back/src/routes/auth.js` | Rate limit do login | 10 tentativas/15min, `skipSuccessfulRequests` | Sem rate limit em outras rotas sensiveis (ex.: `/feedback`) |
+| p-limit | `Back/package.json` (uso em sincronizacao/kanban) | Controle de concorrencia | Usado em jobs/sincronizacao em lote | - |
 | OpenAI API via fetch | `Back/src/routes/assistenteVendas.js` | Assistente de vendas | Fallback sem chave | Sem cliente oficial; depende de env |
 | ExcelJS | `Back/src/services/ativacaoClientesService.js` | Gerar planilhas | Usado na ativacao | Pode gerar arquivos grandes em memoria |
+| html2canvas-pro | `Front/package.json`, `Front/components/dashboard/share-ranking-modal.tsx` | Captura de imagem do ranking | Gera imagem do Grand Prix para download/compartilhar via WhatsApp | Renderizacao client-side pode variar entre navegadores |
 | Docker | `docker-compose.yml`, Dockerfiles | Deploy/local | Front, Back e MySQL | Compose depende de `Back/.env.docker` |
 | Prefect/Python | `Back/jobs` | Jobs de diagnostico | Isolado | Sem integracao clara no compose |
-| Testes | `Back/test-oracle.js` | Smoke Oracle | Pontual | Nao ha suite automatizada |
+| Testes | `Back/test-oracle.js` (`npm run oracle:smoke`) | Smoke Oracle | Pontual | Nao ha suite automatizada |
 
 ## 4. Estrutura de pastas
 
@@ -119,6 +142,7 @@ GestaoMetas/
 │  │  ├─ security/
 │  │  └─ services/
 │  ├─ jobs/
+│  ├─ scripts/
 │  └─ sql/
 ├─ Front/
 │  ├─ app/
@@ -133,16 +157,17 @@ GestaoMetas/
 
 | Pasta | Responsabilidade | Principais arquivos | Clareza |
 |---|---|---|---|
-| `Back/src/routes` | Endpoints Express | `auth.js`, `rankingVendedores.js`, `superadmin.js`, `desafios.js` | Clara, mas protecao inconsistente |
-| `Back/src/controllers` | Adaptacao HTTP para services | `feedController.js`, `desafiosController.js` | Clara onde existe; varias rotas ainda fazem regra diretamente |
-| `Back/src/services` | Regras de negocio e queries | `ativacaoClientesService.js`, `objetivoVendedorService.js`, `desafiosService.js` | Forte, mas alguns services muito grandes |
-| `Back/src/db` | Oracle/MySQL/conexao/tenants | `oracle.js`, `oracle-tenants.js`, `mysql-tenants.js` | Boa separacao |
-| `Back/sql` | DDL Oracle/MySQL | `ddl_gestao_metas.sql`, schemas MySQL | Util, mas sem migrations versionadas |
+| `Back/src/routes` | Endpoints Express | `auth.js`, `rankingVendedores.js`, `superadmin.js`, `desafios.js`, `vendedorKanban.js`, `gerenteSistemas.js`, `lojaAcesso.js`, `feedback.js` | Clara; `requireAuth` agora aplicado na maior parte das rotas de negocio |
+| `Back/src/controllers` | Adaptacao HTTP para services | `feedController.js`, `desafiosController.js`, `vendedorKanbanController.js`, `feedbackController.js` | Clara onde existe; identidade agora vem de `req.auth` na maioria dos controllers |
+| `Back/src/services` | Regras de negocio e queries | `ativacaoClientesService.js`, `objetivoVendedorService.js`, `desafiosService.js`, `requestScope.js`, `lojaAcessoService.js`, `gerenteLojasService.js`, `gerenteSistemasService.js`, `kanban/*` | Forte, mas alguns services muito grandes |
+| `Back/src/db` | Oracle/MySQL/conexao/tenants | `oracle.js`, `oracle-tenants.js`, `mysql-tenants.js` | Boa separacao; `mysql-tenants.js` agora tambem cria `gerente_lojas_liberadas` |
+| `Back/sql` | DDL Oracle/MySQL | `ddl_gestao_metas.sql`, `crm_kanban.sql`, `mysql_schema_central.sql` | Util, mas sem migrations versionadas |
 | `Back/jobs` | Prefect jobs | `prefect_flows.py`, `run_prefect.py` | Isolado e compreensivel |
-| `Front/app` | Rotas App Router | `dashboard/page.tsx`, `vendedor/page.tsx`, `admin/page.tsx` | Rotas claras, arquivos grandes |
+| `Back/scripts` | Scripts utilitarios pontuais | `sincronizarKanbanTodosVendedores.js` (backfill/cron do Kanban) | Isolado; nao integrado ao compose/scheduler |
+| `Front/app` | Rotas App Router | `dashboard/page.tsx`, `vendedor/page.tsx`, `admin/page.tsx`, `vendedor/kanban/page.tsx`, `gerente-sistemas/page.tsx` | Rotas claras, arquivos grandes |
 | `Front/components` | UI e modulos | `dashboard`, `feed`, `challenges`, `ativacao-clientes` | Boa organizacao por dominio |
-| `Front/hooks` | Estado/consumo API | `useFeed.ts`, `useChallenges.ts` | Boa ideia; alguns hooks carregam escopo sensivel do cliente |
-| `Front/lib` | Tipos e clientes | `user-session.ts`, `challenges.ts`, `activation-service.ts` | Centraliza utilitarios |
+| `Front/hooks` | Estado/consumo API | `useFeed.ts`, `useChallenges.ts` | Boa ideia; escopo de loja agora e revalidado no backend, nao apenas confiado do cliente |
+| `Front/lib` | Tipos e clientes | `user-session.ts`, `challenges.ts`, `activation-service.ts`, `status.ts` | Centraliza utilitarios |
 
 ## 5. Arquitetura geral
 
@@ -229,28 +254,34 @@ Fluxo de banco:
 Onde ficam regras de negocio:
 
 - Ranking/vendedor/area/radar: parte em routes.
-- Feed, desafios, ativacao, objetivo: majoritariamente em services.
+- Feed, desafios, ativacao, objetivo, kanban: majoritariamente em services.
+- Escopo (empresa/loja) centralizado em `Back/src/services/requestScope.js` e `lojaAcessoService.js`, consumido por routes/controllers/services.
 - Auth/usuarios/superadmin: routes e services de auth.
 
 ## 7. Funcionalidades implementadas
 
 | Funcionalidade | Objetivo | Arquivos | Status aparente | Riscos/melhorias |
 |---|---|---|---|---|
-| Login/logout | Autenticar usuarios | `Back/src/routes/auth.js`, `Back/src/auth/token.js`, `Front/app/login/page.tsx` | Parcial/boa base | Fortalecer senha, rate limit, auditoria |
+| Login/logout | Autenticar usuarios | `Back/src/routes/auth.js`, `Back/src/auth/token.js`, `Front/app/login/page.tsx` | Completo | Rate limit ja aplicado; falta auditoria de tentativas |
 | Troca de senha | Usuario troca senha | `auth.js`, `usuarios.js`, `Front/app/perfil/page.tsx` | Parcial | Dois endpoints parecidos; padronizar |
 | Superadmin organizacoes | Cadastrar org, Oracle, tenant | `Back/src/routes/superadmin.js`, `Back/src/db/mysql-tenants.js` | Completo/frágil | Senhas padrao, operacoes destrutivas, logs |
 | Admin organizacoes | CRUD via controller | `Back/src/routes/organizacoes.js`, `organizacoesService.js` | Parcial | Duas abordagens paralelas a superadmin |
-| Ranking | Ranking mensal/diario | `rankingVendedores.js`, `Front/app/dashboard/page.tsx` | Completo | Depende de views Oracle |
-| Dashboard vendedor | Metas, oportunidades | `vendedor.js`, `Front/app/vendedor/page.tsx` | Completo/frágil | Pagina grande; escopo via URL |
-| Area de ataque | Priorizar carteira RFV | `areaAtaque.js`, `Front/app/area-ataque/page.tsx` | Parcial | Rota sem auth |
-| Investigar cliente | Busca cliente detalhada | `investigarCliente.js`, `Front/app/investigar-cliente/page.tsx` | Parcial | Exposicao de CPF/CNPJ sem auth |
-| Radar vendas | Tendencias | `radarVendas.js`, `RadarVendas.tsx` | Parcial | Protegido por auth, mas consultas pesadas |
+| Ranking | Ranking mensal/diario, comparativo com periodo anterior, Grand Prix com download/compartilhamento | `rankingVendedores.js`, `Front/app/dashboard/page.tsx`, `share-ranking-modal.tsx` | Completo | Depende de views Oracle |
+| Dashboard vendedor | Metas, oportunidades | `vendedor.js`, `Front/app/vendedor/page.tsx` | Completo | Pagina grande; escopo agora revalidado no backend (`requestScope.js`) |
+| Area de ataque | Priorizar carteira RFV | `areaAtaque.js`, `Front/app/area-ataque/page.tsx` | Completo | `requireAuth` aplicado; agrega todas as lojas do usuario por padrao |
+| Investigar cliente | Busca cliente detalhada | `investigarCliente.js`, `Front/app/investigar-cliente/page.tsx` | Completo | `requireAuth` aplicado |
+| Radar vendas | Tendencias, agora organizadas por secao (equipe/clientes/categorias) | `radarVendas.js`, `RadarVendas.tsx` | Completo | Protegido por auth, mas consultas pesadas |
 | Assistente vendas | Sugestoes via regras/OpenAI | `assistenteVendas.js` | Parcial | OpenAI direto; tratar custos/limites |
-| Ativacao clientes | Segmentos, preview, Excel/WhatsApp | `ativacaoClientes*`, `Front/app/ativacao-clientes/page.tsx` | Completo/frágil | Sem auth no backend; escopo client-side |
-| Feed | Posts/curtidas/comentarios | `feed*`, `Front/app/feed/page.tsx` | Completo/frágil | Identidade via query/body |
-| Desafios | Campanhas/desafios/bonus | `desafios*`, `Front/app/desafios/page.tsx` | Completo/frágil | Sem auth no backend |
-| Meta de vida | Objetivos pessoais do vendedor | `objetivoVendedor*`, `LifeGoalWizard.tsx` | Parcial | Sem auth no backend |
-| Industria | Login e dashboard por marca | `industria.js`, `Front/app/industria/page.tsx` | Parcial | Dashboard por marca sem token |
+| Ativacao clientes | Segmentos, preview, Excel/WhatsApp | `ativacaoClientes*`, `Front/app/ativacao-clientes/page.tsx` | Completo | `requireAuth` aplicado; identidade via `req.auth` |
+| Feed | Posts/curtidas/comentarios | `feed*`, `Front/app/feed/page.tsx` | Completo | `requireAuth` aplicado; identidade via `req.auth` (`getActorFromRequest`) |
+| Desafios | Campanhas/desafios/bonus | `desafios*`, `Front/app/desafios/page.tsx` | Completo | `requireAuth` aplicado |
+| Meta de vida | Objetivos pessoais do vendedor | `objetivoVendedor*`, `LifeGoalWizard.tsx` | Completo | `requireAuth` aplicado |
+| CRM Kanban do vendedor | Funil de clientes por vendedor, sincronizado de orcamentos/pedidos + anotacoes manuais | `Back/src/routes/vendedorKanban.js`, `Back/src/services/kanban/*`, `Front/app/vendedor/kanban/page.tsx` | Completo/novo | Sem `requireRole`/checagem explicita de posse do `sk_vendedor` na rota; sincronizacao so dispara ao abrir a tela (mitigado por `scripts/sincronizarKanbanTodosVendedores.js`) |
+| Lojas liberadas para gerente / filtro de loja | Permite gerente multi-loja acessar lojas alem do vinculo padrao, com selecao explicita nas telas de Ranking/Painel do Vendedor | `Back/src/services/lojaAcessoService.js`, `gerenteLojasService.js`, `requestScope.js`, `Front/app/admin/page.tsx` | Completo/novo | Escopo sempre revalidado contra Oracle/MySQL no servidor; liberacao manual so existe no MySQL de tenant, nao no central |
+| Gerente de Sistemas | Suporte cross-organizacao: entra como GERENTE/VENDEDOR em orgs liberadas | `Back/src/routes/gerenteSistemas.js`, `gerenteSistemasService.js`, `Front/app/gerente-sistemas/page.tsx` | Completo/novo | Papel reescopa `empresa_id` por requisicao; acesso auditado, mas poder amplo |
+| Feedback de usuario | Usuario envia feedback livre; SUPERADMIN revisa | `Back/src/routes/feedback.js`, `feedbackController.js` | Completo/novo | Sem rate limit; texto limitado a 2000 chars |
+| Admin de WhatsApp | Gerenciar instancias de WhatsApp por vendedor (status/QR code) | `Back/src/routes/whatsappAdmin.js`, `whatsappAdminController.js` | Completo | `requireRole("GERENTE","ADMIN","SUPERADMIN")` |
+| Industria | Login e dashboard por marca | `industria.js`, `Front/app/industria/page.tsx` | Completo | Nao usa `requireAuth`, mas valida token/role `INDUSTRIA` manualmente (`getIndustryClaims`); marca vem do token, nao do cliente |
 | Upload foto | Avatar usuario | `usuarios.js`, `Front/app/perfil/page.tsx` | Parcial | Valida MIME/tamanho, mas nao assinatura real |
 | Jobs diagnostico | Validar orgs/views | `Back/jobs` | Parcial | Nao integrado ao deploy principal |
 
@@ -266,55 +297,66 @@ Onde ficam regras de negocio:
 | `/alterar-senha` | Troca senha temporaria | `/api/alterar-senha` | Depende de cookie ja setado |
 | `/dashboard` | Gerente | `/api/ranking-vendedores`, radar, alertas | Checagem de role so client-side antes das APIs |
 | `/vendedor` | Vendedor | `/api/vendedor/:id`, oportunidades, desafios | Arquivo muito grande |
-| `/area-ataque` | Carteira priorizada | `/api/area-ataque/:id`, assistente | Backend da area sem auth |
-| `/investigar-cliente` | Busca cliente | `/api/investigar-cliente` | Backend sem auth |
-| `/ativacao-clientes` | Campanhas WhatsApp | `/api/ativacao-clientes/*` | Backend sem auth |
-| `/feed` | Feed interno | `/api/feed/*` | Backend usa identidade enviada pelo cliente |
-| `/desafios` | Gerente cria desafios | `/api/desafios/*` | Backend sem auth |
-| `/vendedor/desafios` | Vendedor ve desafios | `/api/vendedor/:sk/desafios` | Backend sem auth |
-| `/vendedor/minha-meta-de-vida` | Meta pessoal | `/api/objetivo-vendedor/*` | Backend sem auth |
-| `/perfil` | Perfil/foto/senha | `/api/usuarios/*` | Mais protegido que outros modulos |
+| `/vendedor/kanban` | Pipeline de clientes do vendedor | `/api/vendedor/:sk/kanban*` | Novo desde jul/2026; sem checagem explicita de posse na rota |
+| `/area-ataque` | Carteira priorizada | `/api/area-ataque/:id`, assistente | Backend protegido por `requireAuth` |
+| `/investigar-cliente` | Busca cliente | `/api/investigar-cliente` | Backend protegido por `requireAuth` |
+| `/ativacao-clientes` | Campanhas WhatsApp | `/api/ativacao-clientes/*` | Backend protegido por `requireAuth` |
+| `/feed` | Feed interno | `/api/feed/*` | Backend protegido; identidade via `req.auth` |
+| `/desafios` | Gerente cria desafios | `/api/desafios/*` | Backend protegido por `requireAuth` |
+| `/vendedor/desafios` | Vendedor ve desafios | `/api/vendedor/:sk/desafios` | Backend protegido por `requireAuth` |
+| `/vendedor/minha-meta-de-vida` | Meta pessoal | `/api/objetivo-vendedor/*` | Backend protegido por `requireAuth` |
+| `/perfil` | Perfil/foto/senha | `/api/usuarios/*` | Protegido |
 | `/usuarios` | Gestao de usuarios | `/api/usuarios/gerenciamento` | Protegido por auth |
-| `/admin` | Superadmin | `/api/superadmin/*` | Backend protegido por role |
+| `/admin` | Superadmin, inclui gestao de lojas liberadas de gerentes | `/api/superadmin/*`, `/api/superadmin/gerentes/:id/lojas` | Backend protegido por role |
 | `/admin/organizacoes` | Admin orgs | `/api/organizacoes/*` | Backend protegido por ADMIN/SUPERADMIN |
-| `/industria` | Portal industria | `/api/login-industria`, `/api/industria/dashboard` | Dashboard por marca sem auth |
+| `/gerente-sistemas` | Suporte cross-org: entrar como GERENTE/VENDEDOR de outra organizacao | `/api/gerente-sistemas/*` | Novo desde jul/2026; `requireRole("GERENTE_SISTEMAS")`, acesso auditado |
+| `/industria` | Portal industria | `/api/login-industria`, `/api/industria/dashboard` | Validacao propria de token/role no dashboard |
 
 ### Endpoints backend
 
 | Grupo | Rotas principais | Protecao aparente |
 |---|---|---|
-| Auth | `/login`, `/logout`, `/alterar-senha`, `/resetar-senhas-temporarias` | Parcial; reset protegido |
+| Auth | `/login` (com rate limit), `/logout`, `/alterar-senha`, `/resetar-senhas-temporarias` | Parcial; reset protegido |
 | Superadmin | `/superadmin/*` | `router.use(requireAuth)` + role manual |
 | Organizacoes | `/organizacoes/*` | `requireAuth` + `requireRole("ADMIN","SUPERADMIN")` |
 | Usuarios | `/usuarios/perfil`, `/usuarios/gerenciamento`, upload, senha | Protegido, exceto foto publica e CPF bloqueado |
-| Ranking | `/ranking-vendedores` | `requireAuth` |
+| Ranking | `/ranking-vendedores`, `/ranking-vendedores/comparativo` | `requireAuth` |
 | Vendedor | `/vendedor/:sk`, `/vendedor-panorama/:sk`, oportunidades | `requireAuth` |
 | Radar | `/radar-vendas` | `requireAuth` |
 | Assistente | `/assistente-vendas` | `requireAuth` |
-| Area ataque | `/area-ataque/:vendedor_id` | Sem `requireAuth` |
-| Alertas | `/alertas-ranking` | Sem `requireAuth` |
-| Investigar cliente | `/investigar-cliente` | Sem `requireAuth` |
-| Feed | `/feed/*` | Sem `requireAuth`; usa query/body |
-| Desafios | `/desafios/*`, `/vendedor/:sk/desafios*` | Sem `requireAuth` |
-| Ativacao | `/ativacao-clientes/*`, `/templates-mensagens*` | Sem `requireAuth` |
-| Objetivo/perfil vendedor | `/objetivo-vendedor*`, `/perfil-vendedor*` | Sem `requireAuth` aparente nas rotas |
-| Industria | `/login-industria`, `/industria/dashboard` | Login separado; dashboard sem token |
+| Area ataque | `/area-ataque/:vendedor_id` | `requireAuth` |
+| Alertas | `/alertas-ranking` | `requireAuth` |
+| Investigar cliente | `/investigar-cliente` | `requireAuth` |
+| Feed | `/feed/*` | `requireAuth`; identidade via `req.auth` |
+| Desafios | `/desafios/*`, `/vendedor/:sk/desafios*` | `requireAuth` |
+| Ativacao | `/ativacao-clientes/*`, `/templates-mensagens*` | `requireAuth` |
+| Objetivo/perfil vendedor | `/objetivo-vendedor*`, `/perfil-vendedor*` | `requireAuth` |
+| Kanban | `/vendedor/:sk/kanban*`, `/vendedor/:sk/clientes/busca` | `requireAuth` (sem `requireRole`/checagem explicita de posse do `sk_vendedor` na rota) |
+| Loja/acesso | `/minhas-lojas` | `requireAuth` |
+| Gerente de Sistemas | `/gerente-sistemas/*` | `requireAuth` + `requireRole("GERENTE_SISTEMAS")`, com auditoria |
+| Feedback | `POST /feedback` (`requireAuth`), `GET /superadmin/feedbacks` (`requireRole("SUPERADMIN")`) | Protegido; sem rate limit no envio |
+| WhatsApp admin | `/whatsapp-admin/*` | `requireAuth` + `requireRole("GERENTE","ADMIN","SUPERADMIN")` |
+| Industria | `/login-industria`, `/industria/dashboard` | Login proprio; dashboard valida token/role via `getIndustryClaims` (nao usa `requireAuth`, mas nao aceita marca do cliente) |
 
 ## 9. APIs, controllers, services e handlers
 
 | Item | Arquivo | Entrada | Saida | Validacoes/tratamento | Riscos |
 |---|---|---|---|---|---|
 | Auth token | `Back/src/auth/token.js` | usuario | token/cookie | exp, role, assinatura, secret min 32 | Implementacao propria; sem lib JWT madura |
-| `requireAuth` | `Back/src/middleware/auth.js` | cookie/bearer | `req.auth` | reconsulta usuario e token_version | Bom, mas nao aplicado globalmente |
-| Login | `Back/src/routes/auth.js` | login/senha | user publico + cookie | bcrypt, ativo | Sem rate limit |
+| `requireAuth` | `Back/src/middleware/auth.js` | cookie/bearer | `req.auth` | reconsulta usuario e token_version; reescopa `empresa_id` para `GERENTE_SISTEMAS` | Aplicado na maior parte das rotas de negocio |
+| Login | `Back/src/routes/auth.js` | login/senha | user publico + cookie | bcrypt, ativo, rate limit (10/15min) | - |
+| Escopo de requisicao | `Back/src/services/requestScope.js` | `req.auth`, `empresa_id`/`empresa_acesso` opcionais | `{applies, lojaIds, error}` | Nunca confia em `empresa_acesso` do cliente; sempre revalida contra `FATO_FUNCIONARIOS_ACESSOS`/`gerente_lojas_liberadas` | Ponto central; bug aqui afeta todas as rotas que o usam |
+| Kanban | `Back/src/routes/vendedorKanban.js`, `vendedorKanbanController.js`, `services/kanban/*` | `sk_vendedor`, cartao/interacao | board/cartoes | `requireAuth` apenas | Confirmar que vendedor so acessa o proprio `sk_vendedor` |
+| Gerente de Sistemas | `Back/src/routes/gerenteSistemas.js`, `gerenteSistemasService.js` | `empresa_id` alvo | orgs/vendedores/entrada | `requireRole("GERENTE_SISTEMAS")`, allowlist por org, `auditAction` no `/entrar` | Reescopo de `empresa_id` por requisicao concentra poder |
+| Feedback | `Back/src/routes/feedback.js`, `feedbackController.js` | texto livre (max 2000) | registro em MySQL central | `requireAuth`/`requireRole("SUPERADMIN")` para leitura | Sem rate limit no envio |
 | Superadmin | `Back/src/routes/superadmin.js` | CRUD orgs/gerentes | JSON | role `SUPERADMIN` | Arquivo grande; senha vendedor padrao |
 | Ranking | `Back/src/routes/rankingVendedores.js` | modo, empresa_id | ranking | auth e escopo | Query sem paginacao |
 | Vendedor | `Back/src/routes/vendedor.js` | sk_vendedor | painel/oportunidades | auth | Verificar se vendedor nao acessa outro sk |
-| Feed | `Back/src/controllers/feedController.js`, `feedService.js` | usuario_id/nome/tipo/empresa | posts/comentarios | valida formato | Identidade nao vem do token |
-| Ativacao | `ativacaoClientesController.js`, service | role/sk/empresa/id via request | segmentos, preview, Excel | valida negocio | Escopo client-side |
-| Desafios | `desafiosController.js`, service | payload desafio/sk | desafios/progresso | valida negocio | Sem auth/role |
-| Meta de vida | `objetivoVendedorController.js`, service | vendedor_id/payload | objetivo/perfil | valida negocio | Sem auth |
-| Industria | `Back/src/routes/industria.js` | codigo/senha ou marca | sessao industria/dashboard | bcrypt no login | dashboard sem cookie/token |
+| Feed | `Back/src/controllers/feedController.js`, `feedService.js` | payload de post/comentario | posts/comentarios | identidade via `getActorFromRequest(req)` (`req.auth`) | - |
+| Ativacao | `ativacaoClientesController.js`, service | payload de segmento/campanha | segmentos, preview, Excel | identidade/escopo via `req.auth` + `requestScope.js` | - |
+| Desafios | `desafiosController.js`, service | payload desafio/sk | desafios/progresso | `requireAuth`; identidade via `req.auth` | - |
+| Meta de vida | `objetivoVendedorController.js`, service | vendedor_id/payload | objetivo/perfil | `requireAuth` | - |
+| Industria | `Back/src/routes/industria.js` | codigo/senha ou marca | sessao industria/dashboard | bcrypt no login; dashboard valida token/role `INDUSTRIA` via `getIndustryClaims` | Nao usa o middleware `requireAuth` padrao (validacao propria equivalente) |
 | Jobs Prefect | `Back/jobs/*.py` | CLI/env | diagnosticos | retries Prefect | Depende de env e MySQL |
 
 ## 10. Banco de dados e persistencia
@@ -339,18 +381,24 @@ Entidades principais:
 
 | Entidade | Banco | Finalidade | Campos principais | Relacionamentos | Riscos/melhoria |
 |---|---|---|---|---|---|
-| `usuarios_auth` | MySQL central/tenant | Auth usuarios | login, senha_hash, role, empresa_id, sk_vendedor, token_version | organizacao/tenant | Padronizar migration, senha inicial |
+| `usuarios_auth` | MySQL central/tenant | Auth usuarios | login, senha_hash, role (agora inclui `GERENTE_SISTEMAS`), empresa_id, sk_vendedor, token_version | organizacao/tenant | Padronizar migration, senha inicial |
 | `organizacoes_auth` | MySQL central | Empresas/tenants | nome, codigo, oracle_user, oracle_password, db_name | tenants MySQL/Oracle | Credenciais criptografadas; hardening de grants |
 | `organizacoes_diagnosticos` | MySQL | Jobs de validacao | status, payload_json | organizacao | OK; limitar payload sensivel |
-| `FEED_POSTS` | Oracle | Feed | usuario_id, mensagem, visibilidade | comentarios/curtidas | Falta auth forte |
+| `gerente_lojas_liberadas` *(novo)* | MySQL tenant | Lojas extras liberadas para um gerente alem do vinculo padrao | id_acesso, id_usuario, empresa_acesso, nome_resumido, criado_em | `usuarios_auth` (tenant) | So existe no MySQL de tenant, nao no central; DDL inline em `mysql-tenants.js`, nao em `Back/sql` |
+| `gerente_sistema_organizacoes` *(novo)* | MySQL central | Organizacoes liberadas para um `GERENTE_SISTEMAS` | id_acesso, id_usuario, empresa_id, ativo | `usuarios_auth` central, `organizacoes_auth` | Allowlist de acesso cross-tenant; concentra poder se mal configurada |
+| `feedback_usuarios` *(novo)* | MySQL central | Feedback enviado por usuarios | id_feedback, id_usuario, empresa_id, sk_vendedor, tipo_usuario, feedback (texto), criado_em | usuarios (por id/empresa) | Sem rate limit no envio |
+| `FEED_POSTS` | Oracle | Feed | usuario_id, mensagem, visibilidade | comentarios/curtidas | - |
 | `FEED_COMENTARIOS` | Oracle | Comentarios | post_id, usuario_id, comentario | feed_posts | OK estrutural |
 | `FEED_CURTIDAS` | Oracle | Curtidas | post_id, usuario_id | feed_posts | OK estrutural |
-| `DESAFIOS_COMERCIAIS` | Oracle | Desafios/campanhas | titulo, status, periodo, aceite | metas/vendedores/progresso | Sem auth no endpoint |
+| `DESAFIOS_COMERCIAIS` | Oracle | Desafios/campanhas | titulo, status, periodo, aceite | metas/vendedores/progresso | - |
 | `DESAFIOS_COMERCIAIS_METAS` | Oracle | Metas de desafio | tipo_meta, meta_valor, config_json | desafio | Validar JSON |
 | `DESAFIOS_COMERCIAIS_VENDEDORES` | Oracle | Participantes | id_desafio, sk_vendedor, status | desafio | Controle de acesso por sk |
-| `OBJETIVOS_VENDEDOR` | Oracle | Meta de vida | sk_vendedor, valor, data_limite | vendedor | Sem auth no endpoint |
+| `OBJETIVOS_VENDEDOR` | Oracle | Meta de vida | sk_vendedor, valor, data_limite | vendedor | - |
 | `PERFIL_VENDEDOR` | Oracle | Perfil pessoal | renda, preferencias, salario | vendedor | Dados pessoais |
-| `CAMPANHAS_ATIVACAO` | Oracle | Campanhas | segmento, mensagem, usuario | clientes/eventos/links | Sem auth no endpoint |
+| `CAMPANHAS_ATIVACAO` | Oracle | Campanhas | segmento, mensagem, usuario | clientes/eventos/links | - |
+| `CRM_KANBAN_CARD` *(novo)* | Oracle | Cartao do funil de vendas por cliente/vendedor | id, empresa_id, sk_vendedor, sk_cliente, coluna_atual, origem_status, ordem, arquivado | interacoes, cliente, vendedor | Unico por vendedor+cliente; `Back/sql/crm_kanban.sql` |
+| `CRM_KANBAN_INTERACAO` *(novo)* | Oracle | Historico de interacoes/mudancas de coluna do cartao | id, card_id, tipo, conteudo, coluna_origem/destino, autor, data | `CRM_KANBAN_CARD` | - |
+| `GM_TB_FORNECEDORES_LOGIN` | Oracle | Login/marca da industria | id, codigo, senha_hash, marca, ativo | dashboard industria | - |
 | Views ranking/RFV | Oracle | Dados analiticos | vendas/meta/ranking | fatos/dimensoes | Dependencia forte de DW |
 
 Dados sensiveis:
@@ -363,27 +411,29 @@ Dados sensiveis:
 
 ## 11. Autenticacao e autorizacao
 
-Como login funciona: `POST /api/login` busca usuarios no MySQL central ou tenants, compara bcrypt, gera token assinado e seta cookie HTTP-only.
+Como login funciona: `POST /api/login` busca usuarios no MySQL central ou tenants, compara bcrypt, gera token assinado e seta cookie HTTP-only; limitado a 10 tentativas/15min por `express-rate-limit`.
 
 Sessao/token: token proprio HS256 com `exp`, `role`, `empresa_id`, `sk_vendedor` e `token_version`. Cookie usa `httpOnly`, `sameSite` configuravel e `secure` em producao.
 
-Usuario identificado: em rotas protegidas, `req.auth`; no frontend, `sessionStorage`. Em rotas nao protegidas, alguns controllers aceitam `usuario_id`, `empresa_id`, `role` no request.
+Usuario identificado: em rotas protegidas, `req.auth` (repopulado a cada requisicao com reconsulta do usuario e `token_version`). Escopo de negocio (empresa/loja) e resolvido a partir de `req.auth` por `Back/src/services/requestScope.js`, que nunca confia em `empresa_id`/`empresa_acesso` vindos de query/body — sempre revalida contra `FATO_FUNCIONARIOS_ACESSOS` (Oracle) ou `gerente_lojas_liberadas` (MySQL tenant). Identidade de ator (quem criou um post, comentario, etc.) tambem vem de `req.auth` nos controllers (`getActorFromRequest`), nao mais de parametros do cliente.
 
-Rotas protegidas: auth sensivel, superadmin, organizacoes, usuarios, ranking, vendedor, radar e assistente.
+Papel especial `GERENTE_SISTEMAS`: unico caso em que `req.auth.empresa_id` pode ser reescopado por requisicao (via `assertSystemManagerOrganizationAccess` em `Back/src/middleware/auth.js`), permitindo a um usuario de suporte atuar em qualquer organizacao da sua allowlist (`gerente_sistema_organizacoes`). O acesso e auditado no `/gerente-sistemas/entrar`, mas a auditoria so vai para `console.log` (`Back/src/audit.js`), sem persistencia.
 
-Rotas fragilmente protegidas/sem protecao observada: feed, desafios, ativacao, objetivo/perfil vendedor, investigar cliente, area de ataque, alertas e dashboard industria.
+Rotas protegidas por `requireAuth`: praticamente todas as rotas de negocio — auth sensivel, superadmin, organizacoes, usuarios, ranking, vendedor, radar, assistente, feed, desafios, ativacao, objetivo/perfil vendedor, investigar cliente, area de ataque, alertas, kanban, loja-acesso, gerente-sistemas, feedback, whatsapp-admin.
 
-Classificacao de seguranca desta parte: **baixa**.
+Excecao conhecida: `Back/src/routes/industria.js` nao usa o middleware `requireAuth` — faz validacao propria de token/role `INDUSTRIA` (`getIndustryClaims`) e resolve a `marca` a partir do token, nao do cliente. Funcionalmente equivalente, mas fora do padrao comum, o que dificulta auditar a cobertura de auth so por `grep requireAuth`.
 
-Justificativa tecnica: ha boas bases no token/cookie e revalidacao de usuario, mas a aplicacao nao aplica esse padrao de forma uniforme. Modulos com dados comerciais, pessoais ou capacidade de escrita aceitam parametros de identidade/escopo enviados pelo cliente. Isso permite risco de acesso indevido e impersonacao se a API estiver acessivel fora do browser controlado.
+Classificacao de seguranca desta parte: **media** (evoluiu de "baixa" na analise original).
 
-Melhorias obrigatorias:
+Justificativa tecnica: a maior lacuna identificada em jul/2026 — rotas de negocio sem auth e identidade aceita do cliente — foi corrigida na maior parte do codigo. O que resta: (1) o Kanban do vendedor tem `requireAuth` mas nenhuma checagem explicita de posse do `sk_vendedor` visivel na rota; (2) o papel `GERENTE_SISTEMAS` concentra poder cross-tenant por design, e vale confirmar que toda rota downstream (nao so o middleware) respeita o `empresa_id` reescopado; (3) a rota de industria foge do padrao `requireAuth`, o que exige atencao extra em revisoes futuras; (4) nao ha rate limit fora do login (ex.: `/feedback`, buscas de cliente).
 
-1. Aplicar `requireAuth` por padrao em `/api` e liberar explicitamente apenas login/health.
-2. Derivar `empresa_id`, `id_usuario`, `role` e `sk_vendedor` de `req.auth`.
-3. Adicionar `requireRole` por modulo.
-4. Validar acesso do vendedor ao proprio `sk_vendedor`.
-5. Adicionar rate limit no login e nas buscas sensiveis.
+Melhorias recomendadas (atualizado):
+
+1. Adicionar checagem explicita de posse do `sk_vendedor` nas rotas de Kanban.
+2. Auditar (com testes) se todas as rotas acessadas por `GERENTE_SISTEMAS` respeitam o `empresa_id` reescopado.
+3. Persistir a trilha de auditoria (`Back/src/audit.js`) em vez de apenas `console.log`.
+4. Padronizar `industria.js` para usar `requireAuth`/`requireRole` como as demais rotas, mesmo que a logica atual ja seja segura.
+5. Adicionar rate limit em outras rotas sensiveis (feedback, busca de cliente).
 
 ## 12. Variaveis de ambiente
 
@@ -433,18 +483,19 @@ Melhorias obrigatorias:
 
 | Risco | Severidade | Evidencia no codigo | Impacto | Correcao recomendada | Prioridade |
 |---|---|---|---|---|---|
-| Rotas sem `requireAuth` para dados comerciais/clientes | Critica | `investigarCliente.js`, `areaAtaque.js`, `alertasRanking.js` | Vazamento de dados comerciais/CPF/CNPJ | Aplicar auth e escopo por token | P0 |
-| Escrita sem auth forte em feed/desafios/ativacao/meta | Critica | `feed.js`, `desafios.js`, `ativacaoClientes.js`, `objetivoVendedor.js` | Impersonacao, alteracao indevida | Middleware + role/scope server-side | P0 |
-| Identidade enviada pelo cliente | Alta | `getActorFromRequest`, `getScopeFromRequest` | Usuario pode se passar por outro | Ignorar identidade do body/query | P0 |
-| Dashboard industria por `marca` sem sessao | Alta | `Back/src/routes/industria.js` | Qualquer marca pode ser consultada se rota exposta | Emitir token/cookie industria e validar marca | P0 |
-| Sem rate limit no login | Alta | `Back/src/routes/auth.js` | Brute force | Rate limit e lockout progressivo | P1 |
 | Senhas iniciais padrao | Alta | `admin123`, `sip123` em codigo/UI | Acesso previsivel se nao alterado | Gerar senha unica, forcar troca | P1 |
 | `ignoreBuildErrors: true` | Alta | `Front/next.config.mjs` | Deploy com erros de tipo | Remover e corrigir TS | P1 |
+| Kanban sem checagem explicita de posse do `sk_vendedor` na rota | Media | `Back/src/routes/vendedorKanban.js` (so `requireAuth`) | Vendedor poderia tentar acessar `sk_vendedor` de outro se a validacao de service falhar | Adicionar checagem explicita na rota, nao so na camada de service | P1 |
+| `GERENTE_SISTEMAS` reescopa `empresa_id` por requisicao | Media | `Back/src/middleware/auth.js`, `gerenteSistemasService.js` | Papel de suporte com acesso cross-tenant; erro de allowlist expoe outra organizacao | Testes de autorizacao dedicados; revisar periodicamente `gerente_sistema_organizacoes` | P1 |
+| Auditoria nao persistida | Media | `Back/src/audit.js` so faz `console.log`, inclusive para `GERENTE_SISTEMAS` entrando em outra org | Sem trilha investigavel depois que os logs rotacionam | Persistir auditoria (tabela dedicada) | P1 |
+| Rota de industria fora do padrao `requireAuth` | Baixa/Media | `Back/src/routes/industria.js` (validacao propria via `getIndustryClaims`) | Nao e uma falha hoje (marca vem do token), mas dificulta auditoria de cobertura de auth | Padronizar para `requireAuth`/`requireRole` | P2 |
+| Sem rate limit fora do login | Media | `Back/src/routes/feedback.js`, buscas de cliente | Spam/abuso em endpoints autenticados | Rate limit adicional | P2 |
 | Upload valida MIME declarado, nao assinatura | Media | `Back/src/routes/usuarios.js` | Arquivo malformado salvo | Validar magic bytes/processar imagem | P2 |
 | Logs com detalhes tecnicos | Media | varios `console.error/warn/log` | Exposicao de detalhes em prod | Logger estruturado e redacao | P2 |
 | CORS configuravel mas simples | Media | `Back/index.js` | Misconfig em prod | Validar origins e evitar wildcard | P2 |
 | Sem CSP/security headers | Media | nao observado helmet | XSS/clickjacking | Adicionar Helmet/CSP | P2 |
-| Sem auditoria ampla | Media | `Back/src/audit.js` apenas console | Falta trilha de auditoria | Persistir auditoria | P2 |
+
+Riscos criticos da analise original (jul/2026) hoje mitigados — ver secao 11: rotas sem `requireAuth` em modulos de negocio, identidade/escopo aceitos do cliente, e ausencia de rate limit no login.
 
 ## 14. Qualidade de codigo
 
@@ -578,8 +629,10 @@ Nao foram encontrados:
 
 Riscos nao cobertos:
 
-- Login/autorizacao por role.
-- Impersonacao por `usuario_id`/`empresa_id` enviados pelo cliente.
+- Login/autorizacao por role (inclusive regressao: nada impede que `requireAuth` seja removido de novo por engano numa rota).
+- Kanban: vendedor acessando `sk_vendedor` de outro.
+- `GERENTE_SISTEMAS`: acesso a organizacao fora da allowlist.
+- `requestScope.js`/`getScopedLojaScope`: gerente acessando loja fora do escopo liberado.
 - Queries Oracle criticas.
 - Criacao/edicao de desafios.
 - Feed privado.
@@ -590,31 +643,32 @@ Estrategia minima:
 
 | Tipo | Prioridade | O que testar primeiro |
 |---|---|---|
-| Unitario | P1 | `auth/token.js`, escopo de request, normalizadores |
+| Unitario | P1 | `auth/token.js`, `requestScope.js` (`getScopedEmpresaId`, `getScopedLojaScope`), normalizadores |
 | Integracao | P0 | rotas protegidas retornam 401/403 sem cookie |
-| Integracao | P0 | vendedor nao acessa outro vendedor/empresa |
-| Integracao | P1 | login, trocar senha, token_version |
+| Integracao | P0 | vendedor nao acessa outro vendedor/empresa nem outro board de Kanban |
+| Integracao | P0 | `GERENTE_SISTEMAS` nao acessa organizacao fora de `gerente_sistema_organizacoes` |
+| Integracao | P1 | login (incl. rate limit), trocar senha, token_version |
+| Integracao | P1 | gerente com `gerente_lojas_liberadas` so ve as lojas liberadas + a padrao |
 | E2E | P2 | login -> dashboard gerente/vendedor |
-| Seguranca | P0 | fuzz simples em `empresa_id`, `sk_vendedor`, `usuario_id` |
+| Seguranca | P1 | fuzz simples em `empresa_id`, `sk_vendedor`, `empresa_acesso` |
 
 ## 18. Problemas encontrados
 
+Nota: os itens criticos da analise original (rotas sensiveis sem auth, escopo confiado ao cliente, rate limit no login) foram corrigidos e estao listados na tabela "resolvidos" no fim desta secao.
+
 ### Criticos
 
-| Problema | Arquivo/local | Impacto | Causa provavel | Solucao |
-|---|---|---|---|---|
-| Rotas sensiveis sem auth | `feed.js`, `desafios.js`, `ativacaoClientes.js`, `objetivoVendedor.js`, `investigarCliente.js`, `areaAtaque.js` | Vazamento/alteracao indevida | Evolucao rapida de MVP | Aplicar auth e role/scope |
-| Escopo confiado ao cliente | `feedController.js`, `ativacaoClientesController.js` | Impersonacao | Front usa `sessionStorage` como fonte | Usar `req.auth` |
-| Dashboard industria sem token | `industria.js` | Dados por marca expostos | Login separado sem sessao persistida | Token/cookie industria |
+Nenhum problema critico aberto identificado nesta atualizacao (2026-08-10).
 
 ### Altos
 
 | Problema | Arquivo/local | Impacto | Causa provavel | Solucao |
 |---|---|---|---|---|
 | TypeScript build ignora erros | `Front/next.config.mjs` | Deploy inseguro | Iteracao rapida | Remover flag |
-| Ausencia de testes | repo | Regressao silenciosa | MVP | Criar suite minima |
+| Ausencia de testes | repo | Regressao silenciosa (inclusive dos fixes de auth ja aplicados) | MVP | Criar suite minima |
 | Senhas padrao | `mysql-tenants.js`, `superadmin.js` | Credenciais previsiveis | Bootstrap simples | Senhas aleatorias e troca obrigatoria |
-| Sem rate limit | `auth.js` | brute force | Falta middleware | Rate limiter |
+| Kanban sem checagem explicita de posse do `sk_vendedor` na rota | `vendedorKanban.js` | Possivel acesso a board de outro vendedor se a service falhar | Escopo delegado inteiramente a camada de service | Checagem explicita na rota |
+| Auditoria nao persistida (inclusive entradas de `GERENTE_SISTEMAS`) | `Back/src/audit.js` | Sem trilha investigavel apos rotacao de log | `console.log` como implementacao inicial | Persistir em tabela |
 
 ### Medios
 
@@ -633,17 +687,28 @@ Estrategia minima:
 | Landing consome ranking autenticado | `Front/app/page.tsx` | Erro visual | Reuso de hook | Usar dados mock/publicos |
 | Locks npm e pnpm no Front | `Front/package-lock.json`, `Front/pnpm-lock.yaml` | Ambiguidade | Troca de gerenciador | Escolher um |
 
+### Resolvidos desde a analise original (jul/2026 -> ago/2026)
+
+| Problema (jul/2026) | Solucao aplicada | Evidencia |
+|---|---|---|
+| Rotas sensiveis sem auth | `requireAuth` aplicado em `feed.js`, `desafios.js`, `ativacaoClientes.js`, `objetivoVendedor.js`, `investigarCliente.js`, `areaAtaque.js`, `alertasRanking.js` | `router.use(requireAuth)` / `requireAuth` inline em cada arquivo |
+| Escopo confiado ao cliente | Controllers passaram a derivar identidade/escopo de `req.auth` | `getActorFromRequest` em `feedController.js`; `requestScope.js` |
+| Sem rate limit no login | `loginRateLimiter` (10/15min) | `Back/src/routes/auth.js` |
+| Dashboard industria por `marca` sem sessao | `getIndustryClaims` valida token/role `INDUSTRIA` e resolve `marca` do token, nao do cliente (introduzido no commit `2dd6758`) | `Back/src/routes/industria.js` |
+
 ## 19. Melhorias recomendadas
 
 ### Fase 1 - Seguranca e estabilidade
 
+Feito desde jul/2026: aplicar `requireAuth` nos routers sensiveis, criar escopo server-side unico (`requestScope.js`), proteger o dashboard da industria por token, e adicionar rate limit no login. Ver tabela "Resolvidos" na secao 18.
+
 | Melhoria | Prioridade | Impacto | Esforco | Arquivos provaveis | Cuidado |
 |---|---:|---|---|---|---|
-| Aplicar auth nos routers sensiveis | P0 | Muito alto | Medio | `Back/src/routes/*.js` | Nao quebrar login/health |
-| Criar escopo server-side unico | P0 | Muito alto | Medio | `requestScope.js`, controllers | Migrar modulo por modulo |
-| Proteger industria com token | P0 | Alto | Medio | `industria.js`, `Front/app/industria` | Definir sessao para role INDUSTRIA |
-| Rate limit login | P1 | Alto | Baixo | `Back/index.js`, `auth.js` | Compatibilidade proxy |
 | Remover senhas padrao | P1 | Alto | Baixo/medio | `mysql-tenants.js`, `superadmin.js` | Bootstrap documentado |
+| Checagem explicita de posse do `sk_vendedor` no Kanban | P1 | Alto | Baixo | `Back/src/routes/vendedorKanban.js` | Nao quebrar fluxo do gerente visualizando vendedor do time |
+| Testes de autorizacao para `GERENTE_SISTEMAS` | P1 | Alto | Medio | `gerenteSistemasService.js`, `middleware/auth.js` | Cobrir troca de `empresa_id` por requisicao |
+| Persistir auditoria | P1 | Medio | Baixo/medio | `Back/src/audit.js` | Definir retencao e tabela |
+| Rate limit em rotas alem do login | P2 | Medio | Baixo | `feedback.js`, buscas de cliente | Nao afetar uso legitimo em rajada |
 
 ### Fase 2 - Organizacao e manutencao
 
@@ -673,25 +738,25 @@ Estrategia minima:
 
 ## 20. Roadmap tecnico de 30 dias
 
+Nota (2026-08-10): a maior parte da Semana 1 e parte da Semana 2 do roadmap original ja foi executada (auth aplicado, escopo server-side, rate limit no login, dashboard industria protegido). O roadmap abaixo foi ajustado para o que continua pendente.
+
 ### Semana 1
 
-- Mapear todas as rotas sem auth.
-- Aplicar `requireAuth` em feed, desafios, ativacao, objetivo, area, investigar e alertas.
-- Criar helper de escopo server-side.
-- Adicionar testes de 401/403 para rotas sensiveis.
-- Bloquear dashboard industria sem sessao.
+- Adicionar checagem explicita de posse do `sk_vendedor` nas rotas de Kanban.
+- Criar testes de integracao/autorizacao para `GERENTE_SISTEMAS` (reescopo de `empresa_id`).
+- Adicionar testes de 401/403 para as rotas ja protegidas (evitar regressao).
+- Persistir a auditoria (`Back/src/audit.js`) em vez de `console.log`.
 
 ### Semana 2
 
-- Remover uso de `usuario_id`, `role`, `empresa_id` vindos do cliente.
-- Validar vendedor/gerente/admin por role real.
-- Adicionar rate limit no login.
 - Trocar senhas iniciais por senha aleatoria/temporaria.
-- Remover `ignoreBuildErrors` e corrigir erros principais.
+- Remover `ignoreBuildErrors` e corrigir erros principais de TypeScript.
+- Adicionar rate limit em rotas alem do login (ex.: `/feedback`).
+- Padronizar `industria.js` para usar `requireAuth`/`requireRole`.
 
 ### Semana 3
 
-- Criar testes de integracao para login, ranking, feed e desafios.
+- Criar testes de integracao para login, ranking, feed, desafios e Kanban.
 - Dividir `Front/app/vendedor/page.tsx`.
 - Dividir `desafiosService.js` em leitura, escrita, progresso e catalogo.
 - Criar logger estruturado.
@@ -699,15 +764,14 @@ Estrategia minima:
 ### Semana 4
 
 - Criar pipeline CI lint/build/test.
-- Introduzir migrations versionadas.
-- Revisar Docker/compose para jobs.
+- Introduzir migrations versionadas (incluir `gerente_lojas_liberadas`, hoje so em `mysql-tenants.js`).
+- Revisar Docker/compose para jobs e para `scripts/sincronizarKanbanTodosVendedores.js`.
 - Adicionar observabilidade minima.
 - Revisar UX de erros e recuperar senha.
 
 ## 21. Perguntas pendentes
 
 - A API ficara exposta publicamente ou apenas em rede interna?
-- `INDUSTRIA` deve ter sessao/cookie igual aos demais roles?
 - Quais rotas podem ser publicas de verdade alem de `/login` e `/health`?
 - Oracle legado ainda e necessario quando existem tenants?
 - `organizacoesService.js` com `ORGANIZACOES_ENCRYPT_SECRET` e legado ou ainda usado?
@@ -715,46 +779,48 @@ Estrategia minima:
 - Existe pipeline de deploy fora do repositorio?
 - Existe ambiente de homologacao com dados mascarados?
 - Quem pode criar/editar desafios: apenas gerente, admin ou superadmin?
-- Vendedor pode ver dados de outro vendedor em algum fluxo?
 - Como deve funcionar recuperacao de senha?
 - Qual politica de retencao para feed, logs e diagnosticos?
+- `GERENTE_SISTEMAS` deve ter algum limite de tempo de sessao/escopo mais curto do que os demais roles, dado o acesso cross-tenant?
+- A sincronizacao do Kanban (`scripts/sincronizarKanbanTodosVendedores.js`) deve rodar em cron/scheduler proprio, ou continuar dependendo da abertura da tela?
+- `gerente_lojas_liberadas` deve migrar para o MySQL central, para suportar tambem gerentes de fonte "central"?
 
 ## 22. Conclusao tecnica
 
-Nivel atual: MVP/beta avancado com produto rico e base tecnica funcional, mas ainda com lacunas de seguranca e qualidade para producao.
+Nivel atual: MVP/beta avancado com produto rico e base tecnica funcional. Desde a analise original, o backend passou por uma rodada consistente de hardening de autorizacao; a maior lacuna de seguranca daquela analise (rotas de negocio sem `requireAuth` e escopo aceito do cliente) foi corrigida. Ainda nao e producao madura por falta de testes automatizados, build TypeScript permissivo e alguns pontos novos que merecem cobertura (Kanban, `GERENTE_SISTEMAS`).
 
 Maiores bloqueadores:
 
-- Autorizacao inconsistente.
-- Falta de testes.
-- Build permissivo.
+- Falta de testes (inclusive para travar os fixes de autorizacao ja aplicados).
+- Build permissivo (`ignoreBuildErrors`).
+- Cobertura de autorizacao ainda incompleta nos modulos mais novos (Kanban, Gerente de Sistemas).
 - Forte dependencia de Oracle sem contratos testados.
 
-Maior risco: acesso indevido ou alteracao de dados por rotas que aceitam escopo/identidade do cliente sem validar token no backend.
+Maior risco atual: regressao silenciosa dos fixes de autorizacao ja aplicados, por falta de testes automatizados que os protejam; e o poder cross-tenant do papel `GERENTE_SISTEMAS`, que concentra risco se a allowlist (`gerente_sistema_organizacoes`) for mal configurada.
 
-Melhoria de maior valor imediato: padronizar autenticacao/autorizacao no backend e derivar escopo de `req.auth`.
+Melhoria de maior valor imediato: criar testes de integracao/autorizacao (401/403, posse de recurso, escopo por token) para travar o que ja foi corrigido e cobrir os modulos novos.
 
-Recomendacao final: antes de evoluir produto, fazer uma sprint focada em seguranca, testes minimos e build confiavel. O produto tem bastante superficie util, mas a API precisa endurecer para que a riqueza funcional nao vire risco operacional.
+Recomendacao final: a sprint de seguranca que a analise original recomendava ja avancou de forma significativa. O proximo ciclo deve focar em testes automatizados (para nao perder o que foi corrigido), fechar os pontos novos (Kanban, Gerente de Sistemas, auditoria persistida) e remover o `ignoreBuildErrors`.
 
 ## 23. Resumo para enviar ao ChatGPT
 
 Stack detectada:
 
-- Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS 4, Radix/shadcn, Recharts, Sonner, lucide-react.
-- Backend: Node.js, Express 5, bcrypt, cookie-parser, cors, oracledb, mysql2, exceljs.
-- Banco: Oracle como base comercial/DW; MySQL central e tenants para autenticacao/organizacoes.
+- Frontend: Next.js 16, React 19, TypeScript, Tailwind CSS 4, Radix/shadcn, Recharts, Sonner, lucide-react, html2canvas-pro.
+- Backend: Node.js, Express 5, bcrypt, cookie-parser, cors, oracledb, mysql2, exceljs, express-rate-limit, p-limit.
+- Banco: Oracle como base comercial/DW (inclui novas tabelas `CRM_KANBAN_CARD`/`CRM_KANBAN_INTERACAO`); MySQL central e tenants para autenticacao/organizacoes (novas tabelas `gerente_sistema_organizacoes`, `feedback_usuarios`, `gerente_lojas_liberadas`).
 - Jobs: Python + Prefect.
 - Deploy: Dockerfiles e docker-compose.
 
-Objetivo do projeto: sistema SIP/Gestao de Metas para acompanhar metas, ranking, vendedores, carteira RFV, ativacao de clientes, feed interno, desafios/campanhas, usuarios, organizacoes e portal de industria.
+Objetivo do projeto: sistema SIP/Gestao de Metas para acompanhar metas, ranking, vendedores, carteira RFV, ativacao de clientes, feed interno, desafios/campanhas, pipeline de clientes (Kanban), usuarios, organizacoes, suporte cross-organizacao (Gerente de Sistemas) e portal de industria.
 
-Arquitetura resumida: monorepo informal com `Front/` Next.js e `Back/` Express. Front chama `/api/*`, Next reescreve para backend. Backend consulta Oracle legado/tenant e MySQL central/tenant. Jobs Python validam organizacoes.
+Arquitetura resumida: monorepo informal com `Front/` Next.js e `Back/` Express. Front chama `/api/*`, Next reescreve para backend. Backend consulta Oracle legado/tenant e MySQL central/tenant. Escopo de negocio (empresa/loja) e sempre revalidado no backend a partir do token (`req.auth`), nunca confiado do cliente. Jobs Python validam organizacoes.
 
 Principais funcionalidades:
 
-- Login/logout/troca senha.
+- Login/logout/troca senha (com rate limit).
 - Dashboards gerente/vendedor.
-- Ranking mensal/diario.
+- Ranking mensal/diario com comparativo vs. periodo anterior e compartilhamento (Grand Prix).
 - Area de ataque.
 - Investigacao cliente.
 - Radar e assistente OpenAI.
@@ -762,42 +828,48 @@ Principais funcionalidades:
 - Feed interno.
 - Desafios/bonus.
 - Meta de vida.
+- CRM Kanban do vendedor.
+- Filtro/liberacao de lojas para gerente multi-loja.
+- Gerente de Sistemas (suporte cross-organizacao).
+- Feedback de usuario.
 - Superadmin/admin.
 - Industria.
 
-Principais problemas:
+Principais problemas (situacao atual, ago/2026):
 
-- Varias rotas sensiveis sem `requireAuth`.
-- Escopo/identidade aceitos via body/query.
-- Dashboard industria sem token.
 - `ignoreBuildErrors: true`.
 - Sem testes automatizados reais.
 - Arquivos muito grandes.
 - Senhas iniciais padrao.
+- Kanban sem checagem explicita de posse do `sk_vendedor` na rota.
+- Auditoria (`Back/src/audit.js`) nao persistida.
 
-Riscos de seguranca:
+Resolvido desde jul/2026 (nao repetir como problema): rotas sensiveis sem `requireAuth`, escopo/identidade aceitos via body/query, dashboard industria sem validacao de token, ausencia de rate limit no login.
 
-- Impersonacao de usuario.
-- Vazamento de CPF/CNPJ/dados comerciais.
-- Alteracao indevida de feed/desafios/campanhas/metas.
-- Brute force sem rate limit.
+Riscos de seguranca residuais:
+
+- Regressao dos fixes de autorizacao por falta de testes.
+- Poder cross-tenant do papel `GERENTE_SISTEMAS` mal configurado.
 - Build com erros de tipo em producao.
+- Spam/abuso em rotas autenticadas sem rate limit (ex.: feedback).
 
 Proximos passos recomendados:
 
-1. Aplicar auth e role em todos os routers sensiveis.
-2. Usar `req.auth` como unica fonte de escopo.
-3. Proteger industria com sessao.
-4. Adicionar testes de autorizacao.
-5. Remover `ignoreBuildErrors`.
-6. Revisar senhas padrao e bootstrap.
-7. Dividir arquivos grandes.
+1. Criar testes de autorizacao para travar os fixes ja aplicados (feed/desafios/ativacao/etc.) e cobrir Kanban e `GERENTE_SISTEMAS`.
+2. Adicionar checagem explicita de posse do `sk_vendedor` no Kanban.
+3. Persistir auditoria.
+4. Remover `ignoreBuildErrors`.
+5. Revisar senhas padrao e bootstrap.
+6. Dividir arquivos grandes.
 
 Arquivos mais importantes para analise:
 
 - `Back/index.js`
 - `Back/src/auth/token.js`
 - `Back/src/middleware/auth.js`
+- `Back/src/services/requestScope.js`
+- `Back/src/services/lojaAcessoService.js`
+- `Back/src/services/gerenteSistemasService.js`
 - `Back/src/routes/auth.js`
 - `Back/src/routes/superadmin.js`
 - `Back/src/routes/feed.js`
@@ -806,16 +878,22 @@ Arquivos mais importantes para analise:
 - `Back/src/controllers/desafiosController.js`
 - `Back/src/routes/ativacaoClientes.js`
 - `Back/src/controllers/ativacaoClientesController.js`
+- `Back/src/routes/vendedorKanban.js`
+- `Back/src/services/kanban/kanbanCardService.js`
+- `Back/src/routes/gerenteSistemas.js`
 - `Back/src/routes/industria.js`
 - `Back/src/db/oracle.js`
 - `Back/src/db/oracle-tenants.js`
 - `Back/src/db/mysql-tenants.js`
 - `Back/src/security/secrets.js`
 - `Back/sql/ddl_gestao_metas.sql`
+- `Back/sql/crm_kanban.sql`
 - `Front/next.config.mjs`
 - `Front/lib/user-session.ts`
 - `Front/app/login/page.tsx`
 - `Front/app/dashboard/page.tsx`
 - `Front/app/vendedor/page.tsx`
+- `Front/app/vendedor/kanban/page.tsx`
 - `Front/app/admin/page.tsx`
+- `Front/app/gerente-sistemas/page.tsx`
 - `Front/app/industria/page.tsx`

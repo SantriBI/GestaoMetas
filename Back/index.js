@@ -24,6 +24,9 @@ import whatsappAdminRoutes from './src/routes/whatsappAdmin.js';
 import feedbackRoutes from './src/routes/feedback.js';
 import gerenteSistemasRoutes from './src/routes/gerenteSistemas.js';
 import vendedorKanbanRoutes from './src/routes/vendedorKanban.js';
+import lojaAcessoRoutes from './src/routes/lojaAcesso.js';
+import parametrosPremiacaoRoutes from './src/routes/parametrosPremiacao.js';
+import premiacaoVendedorRoutes from './src/routes/premiacaoVendedor.js';
 
 
 
@@ -70,6 +73,9 @@ app.use('/api', feedbackRoutes);
 app.use('/api', gerenteSistemasRoutes);
 app.use('/api', organizacoesRoutes);
 app.use('/api', vendedorKanbanRoutes);
+app.use('/api', lojaAcessoRoutes);
+app.use('/api', parametrosPremiacaoRoutes);
+app.use('/api', premiacaoVendedorRoutes);
 
 const PORT = Number(process.env.PORT || 3001);
 

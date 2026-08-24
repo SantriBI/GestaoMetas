@@ -18,11 +18,18 @@ import {
   migrateGlobalVendedoresToTenant,
   describeTenantProvisioningError,
 } from "../db/mysql-tenants.js"
+import { invalidateOraclePool } from "../db/oracle-tenants.js"
 import { findEmployeeNameByCpf, resolveAuthUserDisplayName } from "../services/authUsersService.js"
 import {
   listSystemManagerOrganizations,
   replaceSystemManagerOrganizations,
 } from "../services/gerenteSistemasService.js"
+import { getLojasForRole } from "../services/lojaAcessoService.js"
+import {
+  listDimEmpresas,
+  getLojasManuaisPorUsuario,
+  replaceLojasManuais,
+} from "../services/gerenteLojasService.js"
 
 const router = express.Router()
 
@@ -61,6 +68,11 @@ function normalizeCPF(v) {
 function normalizeOrganizationIds(value) {
   const source = Array.isArray(value) ? value : []
   return [...new Set(source.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0))]
+}
+
+function normalizeLojaCodes(value) {
+  const source = Array.isArray(value) ? value : []
+  return [...new Set(source.map((item) => String(item ?? "").trim()).filter(Boolean))]
 }
 
 function normalizeConnectString(raw) {
@@ -741,9 +753,17 @@ router.patch("/superadmin/organizacoes/:id", async (req, res) => {
     const connectString = normalizeConnectString(oracleConnectString)
     const current = existing[0]
 
+    // DEBUG TEMPORARIO: investigando por que a senha da AC COELHO nao decripta depois de salva.
+    console.log(
+      `[DEBUG PATCH org ${id}] oracleUser=${oracleUser} connectString=${connectString} ` +
+      `oraclePasswordRecebida=${oraclePassword ? "sim" : "nao"} ` +
+      `oraclePasswordLength=${oraclePassword ? String(oraclePassword).length : 0}`
+    )
+
     // Valida conexao com a senha (nova ou existente decriptada)
     const passwordToTest = oraclePassword ? oraclePassword : await getOraclePasswordForOrg(current)
     const testeConn = await testOracleConnection(oracleUser, passwordToTest, connectString)
+    console.log(`[DEBUG PATCH org ${id}] testeConn:`, testeConn)
     if (!testeConn.ok) {
       return res.status(422).json({ error: `Falha na conexao Oracle: ${testeConn.error}` })
     }
@@ -761,11 +781,17 @@ router.patch("/superadmin/organizacoes/:id", async (req, res) => {
     })
 
     const encPwd = oraclePassword ? encryptSecret(oraclePassword) : current.oracle_password
+    console.log(`[DEBUG PATCH org ${id}] encPwd gravado=${encPwd}`)
 
-    await centralPool.query(
+    const [updateResult] = await centralPool.query(
       "UPDATE organizacoes_auth SET nome = ?, codigo = ?, ativo = ?, oracle_user = ?, oracle_password = ?, oracle_connect_string = ? WHERE id_organizacao = ?",
       [nome, codigo, ativo ?? current.ativo, oracleUser, encPwd, connectString, id]
     )
+    console.log(`[DEBUG PATCH org ${id}] updateResult.affectedRows=${updateResult?.affectedRows}`)
+
+    // Credenciais podem ter mudado (senha, usuario ou connect string) - derruba o pool em
+    // cache para essa org, senao consultas seguintes continuam usando a conexao antiga.
+    await invalidateOraclePool(Number(id))
 
     auditAction(req, "UPDATE_ORG", `org:${id}:${nome}`)
     return res.json({
@@ -807,6 +833,7 @@ router.delete("/superadmin/organizacoes/:id", async (req, res) => {
       ? await dropTenantDatabaseByEmpresaId(id).catch(() => null)
       : null
     await centralPool.query("DELETE FROM organizacoes_auth WHERE id_organizacao = ?", [id])
+    await invalidateOraclePool(Number(id))
 
     auditAction(req, "DELETE_ORG", `org:${id}`)
     return res.json({
@@ -919,9 +946,38 @@ router.post("/superadmin/funcionario-lookup", async (req, res) => {
 
   try {
     const { org, funcionario } = await resolveFuncionarioByCpf(cpfNorm, empresaId)
-    return res.json(formatFuncionarioPreview(funcionario, org, cpfNorm))
+    const preview = formatFuncionarioPreview(funcionario, org, cpfNorm)
+
+    const lojasPadrao = await getLojasForRole({ empresaId: org.id_organizacao, cpf: cpfNorm, role: "GERENTE" }).catch(
+      () => []
+    )
+
+    return res.json({
+      ...preview,
+      lojasPadrao: lojasPadrao.map(({ empresaAcesso, nomeResumido }) => ({ empresaAcesso, nomeResumido })),
+    })
   } catch (error) {
     return handleError(res, error, "Erro ao buscar funcionario no Oracle.")
+  }
+})
+
+// GET /superadmin/lojas?empresa_id=X
+// Lista todas as lojas (DIM_EMPRESAS) da organizacao, para popular os checkboxes de liberacao
+// manual no cadastro/edicao de gerente.
+router.get("/superadmin/lojas", async (req, res) => {
+  if (!guard(req, res)) return
+  const empresaId = req.query.empresa_id
+
+  if (!empresaId) return res.status(400).json({ error: "empresa_id e obrigatorio" })
+
+  try {
+    const org = await getActiveOrgById(empresaId)
+    if (!org) return res.status(404).json({ error: "Organizacao nao encontrada ou inativa" })
+
+    const data = await listDimEmpresas(empresaId)
+    return res.json({ data })
+  } catch (error) {
+    return handleError(res, error, "Erro ao listar lojas da organizacao.")
   }
 })
 
@@ -931,9 +987,11 @@ router.post("/superadmin/gerentes", async (req, res) => {
   const { cpf, senha, empresaId: requestedEmpresaId, nome } = req.body
   const cpfNorm = normalizeCPF(cpf)
   const nomeManual = String(nome ?? "").trim()
+  const lojasLiberadas = normalizeLojaCodes(req.body?.lojasLiberadas)
 
   if (cpfNorm.length !== 11) return res.status(400).json({ error: "CPF deve ter 11 digitos" })
   if (!senha || String(senha).length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres" })
+  if (!lojasLiberadas.length) return res.status(400).json({ error: "Selecione pelo menos uma loja/empresa para o gerente." })
 
   try {
     let org = null
@@ -987,15 +1045,17 @@ router.post("/superadmin/gerentes", async (req, res) => {
         "UPDATE usuarios_auth SET role = 'GERENTE', senha_hash = ?, nome = COALESCE(?, nome), nome_completo = COALESCE(?, nome_completo), ativo = 'S', senha_temporaria = 'N' WHERE id_usuario = ?",
         [hash, nomeGerente, nomeGerente, dup[0].id_usuario]
       )
+      await replaceLojasManuais({ empresaId, idUsuario: dup[0].id_usuario, lojas: lojasLiberadas })
       auditAction(req, "PROMOTE_GERENTE", `cpf:${cpfNorm} empresa:${empresaId}`)
       return res.json({ message: "Usuario promovido a GERENTE com sucesso.", role: "GERENTE", empresa_id: empresaId, database_destino: dbName })
     }
 
-    await queryTenantByEmpresaId(
+    const insertResult = await queryTenantByEmpresaId(
       empresaId,
       "INSERT INTO usuarios_auth (login, senha_hash, role, empresa_id, cpf, nome, nome_completo, ativo, senha_temporaria) VALUES (?, ?, 'GERENTE', ?, ?, ?, ?, 'S', 'N')",
       [cpfNorm, hash, empresaId, cpfNorm, nomeGerente ?? cpfNorm, nomeGerente ?? cpfNorm]
     )
+    await replaceLojasManuais({ empresaId, idUsuario: insertResult.insertId, lojas: lojasLiberadas })
 
     auditAction(req, "CREATE_GERENTE", `cpf:${cpfNorm} empresa:${empresaId}`)
     return res.status(201).json({ message: "Gerente cadastrado com sucesso.", role: "GERENTE", empresa_id: empresaId, database_destino: dbName })
@@ -1011,8 +1071,13 @@ router.patch("/superadmin/gerentes/:id", async (req, res) => {
   const empresaId = req.query.empresa_id
   const source = req.query.source === "central" ? "central" : "tenant"
   const { empresaId: novaEmpresaId, novaSenha } = req.body
+  const lojasLiberadasRaw = req.body?.lojasLiberadas
+  const lojasLiberadas = lojasLiberadasRaw === undefined ? null : normalizeLojaCodes(lojasLiberadasRaw)
 
   if (!empresaId && source !== "central") return res.status(400).json({ error: "empresa_id obrigatorio como query param" })
+  if (lojasLiberadas !== null && !lojasLiberadas.length) {
+    return res.status(400).json({ error: "Selecione pelo menos uma loja/empresa para o gerente." })
+  }
 
   try {
     const gerenteRows = source === "central"
@@ -1039,7 +1104,7 @@ router.patch("/superadmin/gerentes/:id", async (req, res) => {
       if (dupDest.length) return res.status(409).json({ error: "Ja existe um usuario com esse login na organizacao de destino" })
 
       const hash = novaSenha ? await bcrypt.hash(novaSenha, 10) : gerente.senha_hash
-      await queryTenantByEmpresaId(
+      const insertResult = await queryTenantByEmpresaId(
         novaEmpresaId,
         "INSERT INTO usuarios_auth (login, senha_hash, role, empresa_id, cpf, nome, nome_completo, ativo, senha_temporaria) VALUES (?, ?, 'GERENTE', ?, ?, ?, ?, 'S', 'N')",
         [gerente.login, hash, novaEmpresaId, gerente.cpf, gerente.nome, gerente.nome_completo]
@@ -1048,6 +1113,12 @@ router.patch("/superadmin/gerentes/:id", async (req, res) => {
         await centralPool.query("DELETE FROM usuarios_auth WHERE id_usuario = ?", [id])
       } else {
         await queryTenantByEmpresaId(empresaId, "DELETE FROM usuarios_auth WHERE id_usuario = ?", [id])
+      }
+      // As lojas liberadas sao especificas da organizacao (codigos EMPRESA_ID nao sao portaveis
+      // entre tenants Oracle distintos) - ao mover de org, so persistem as que vierem no body,
+      // aplicadas ao novo id_usuario na organizacao de destino.
+      if (lojasLiberadas) {
+        await replaceLojasManuais({ empresaId: novaEmpresaId, idUsuario: insertResult.insertId, lojas: lojasLiberadas })
       }
       auditAction(req, "MOVE_GERENTE", `id:${id} de:${origemEmpresaId} para:${novaEmpresaId}`)
       return res.json({ message: "Gerente movido para nova organizacao." })
@@ -1069,10 +1140,44 @@ router.patch("/superadmin/gerentes/:id", async (req, res) => {
       }
     }
 
+    // gerente_lojas_liberadas so existe no MySQL do tenant - gerentes legados em "central" nao
+    // tem suporte a liberacao manual de lojas por enquanto.
+    if (lojasLiberadas && source !== "central") {
+      await replaceLojasManuais({ empresaId, idUsuario: id, lojas: lojasLiberadas })
+    }
+
     auditAction(req, "UPDATE_GERENTE", `id:${id} empresa:${origemEmpresaId} source:${source}`)
     return res.json({ message: "Gerente atualizado com sucesso." })
   } catch (error) {
     return handleError(res, error, "Erro ao atualizar gerente.")
+  }
+})
+
+// GET /superadmin/gerentes/:id/lojas?empresa_id=X&cpf=Y
+// Devolve as lojas padrao (Oracle, GERENTE='S' para o CPF) e as liberadas manualmente
+// (gerente_lojas_liberadas) para popular os checkboxes no formulario de edicao.
+router.get("/superadmin/gerentes/:id/lojas", async (req, res) => {
+  if (!guard(req, res)) return
+  const { id } = req.params
+  const empresaId = req.query.empresa_id
+  const cpf = normalizeCPF(req.query.cpf)
+
+  if (!empresaId) return res.status(400).json({ error: "empresa_id e obrigatorio" })
+
+  try {
+    const [lojasPadrao, lojasManuais] = await Promise.all([
+      cpf.length === 11
+        ? getLojasForRole({ empresaId, cpf, role: "GERENTE" }).catch(() => [])
+        : Promise.resolve([]),
+      getLojasManuaisPorUsuario(empresaId, id),
+    ])
+
+    return res.json({
+      lojasPadrao: lojasPadrao.map(({ empresaAcesso, nomeResumido }) => ({ empresaAcesso, nomeResumido })),
+      lojasManuais,
+    })
+  } catch (error) {
+    return handleError(res, error, "Erro ao buscar lojas do gerente.")
   }
 })
 

@@ -23,6 +23,8 @@ import {
   MessageCircle,
   Swords,
   Search,
+  Trophy,
+  ArrowRight,
   X,
 } from "lucide-react"
 import { formatCurrency } from "@/lib/types"
@@ -43,8 +45,11 @@ import {
   type SellerChallengeAlertItem,
 } from "@/lib/challenges"
 import { fetchSellerLifeGoal, type LifeGoalResponse } from "@/lib/life-goal"
+import { fetchMinhaPremiacao, type MinhaPremiacao } from "@/lib/premiacao-vendedor"
 import { buildMotivationMessage } from "@/lib/motivation"
 import { AuthUser, setStoredUser } from "@/lib/user-session"
+import { fetchMinhasLojas, type LojaAcesso } from "@/lib/loja-acesso"
+import SeletorLoja from "@/components/SeletorLoja"
 import { useTheme } from "next-themes"
 
 interface VendedorData {
@@ -70,6 +75,7 @@ interface VendedorData {
   ticketMedioDia?: number
   clientesMes?: number
   ticketMedioMes?: number
+  margem?: number
   metaHerdada?: number
   meta_herdada?: number
   META_HERDADA?: number
@@ -120,6 +126,7 @@ function createFallbackVendedor(user?: AuthUser | null): VendedorData {
     ticketMedioDia: 0,
     clientesMes: 0,
     ticketMedioMes: 0,
+    margem: 0,
     metaHerdada: 0,
   }
 }
@@ -188,10 +195,16 @@ function isDashboardCampaignAvailable(challenge: DashboardCampaignBannerItem) {
   return challenge.exigeAceite !== false && (!participantStatus || ["DISPONIVEL", "CONVIDADO"].includes(participantStatus))
 }
 
-function buildEmpresaQuery(empresaId?: string | number | null) {
+function buildEmpresaQuery(
+  empresaId?: string | number | null,
+  empresaAcesso?: string | number | null
+) {
   const params = new URLSearchParams()
   if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
     params.set("empresa_id", String(empresaId))
+  }
+  if (empresaAcesso !== null && empresaAcesso !== undefined && String(empresaAcesso).trim()) {
+    params.set("empresa_acesso", String(empresaAcesso))
   }
 
   const query = params.toString()
@@ -215,9 +228,13 @@ export default function VendedorDashboard() {
   const [ordenacaoDirecao, setOrdenacaoDirecao] = useState<"desc" | "asc">("desc")
   const [empresaId, setEmpresaId] = useState<string | number | null>(null)
   const [skVendedor, setSkVendedor] = useState<string | number | null>(null)
+  const [lojas, setLojas] = useState<LojaAcesso[]>([])
+  const [empresaAcesso, setEmpresaAcesso] = useState<string | null>(null)
+  const [lojasResolvidas, setLojasResolvidas] = useState(false)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [lifeGoal, setLifeGoal] = useState<LifeGoalResponse | null>(null)
   const [isLoadingLifeGoal, setIsLoadingLifeGoal] = useState(false)
+  const [premiacao, setPremiacao] = useState<MinhaPremiacao | null>(null)
   const [isLifeGoalNoticeDismissed, setIsLifeGoalNoticeDismissed] = useState(false)
   const [isMotivationClosed, setIsMotivationClosed] = useState(false)
   const [dismissedCampaignBannerIds, setDismissedCampaignBannerIds] = useState<Set<string>>(() => new Set())
@@ -331,49 +348,74 @@ export default function VendedorDashboard() {
     setSkVendedor(user.sk_vendedor ?? null)
     setVendedor(createFallbackVendedor(normalizedUser))
 
-    async function fetchVendedor() {
-      if (!user.sk_vendedor) {
-        setVendedor(createFallbackVendedor(normalizedUser))
-        setVendedorLoadError("Seu cadastro de vendedor ainda nao esta vinculado para carregar o dashboard completo.")
-        return
+    async function carregarLojas() {
+      try {
+        const { lojas: lojasDoUsuario, empresaAcessoPadrao } = await fetchMinhasLojas()
+        setLojas(lojasDoUsuario)
+        // Sem mapeamento (0 lojas): nao exibe seletor, comportamento atual.
+        // 1 loja: seletor aparece so pra indicar qual loja e (sem opcao de trocar).
+        // Multi-loja: comeca pela loja onde o vendedor tem ranking/meta (empresaAcessoPadrao);
+        // se nao for possivel resolver, cai para a primeira da lista. O usuario pode trocar no seletor.
+        if (lojasDoUsuario.length === 0) {
+          setEmpresaAcesso(null)
+        } else if (lojasDoUsuario.length === 1) {
+          setEmpresaAcesso(lojasDoUsuario[0].empresaAcesso)
+        } else {
+          setEmpresaAcesso(empresaAcessoPadrao ?? lojasDoUsuario[0].empresaAcesso)
+        }
+      } finally {
+        // So dispara o fetch de vendedor/oportunidades depois disso: para usuarios multi-loja
+        // o backend exige empresa_acesso, entao buscar antes de resolver a loja padrao sempre
+        // falhava com 400 nessa primeira tentativa.
+        setLojasResolvidas(true)
       }
+    }
 
+    carregarLojas()
+  }, [router])
+
+  useEffect(() => {
+    if (!lojasResolvidas) return
+
+    if (!skVendedor) {
+      setIsLoadingOportunidades(false)
+      return
+    }
+
+    const currentSkVendedor = skVendedor
+
+    async function fetchVendedor() {
       try {
         const response = await fetch(
-          `/api/vendedor/${user.sk_vendedor}${buildEmpresaQuery(currentEmpresaId)}`,
+          `/api/vendedor/${currentSkVendedor}${buildEmpresaQuery(empresaId, empresaAcesso)}`,
           { cache: "no-store", credentials: "include" }
         )
 
         if (!response.ok) {
           const payload = await response.json().catch(() => null)
-          setVendedor(createFallbackVendedor(normalizedUser))
+          setVendedor((current) => current ?? createFallbackVendedor(authUser))
           setVendedorLoadError(payload?.error ?? "Nao foi possivel carregar todos os dados do vendedor agora.")
           return
         }
 
         const data = await response.json()
         setVendedor({
-          ...createFallbackVendedor(normalizedUser),
+          ...createFallbackVendedor(authUser),
           ...data,
-          nome: String(data?.nome ?? normalizedUser.nome ?? "Vendedor").trim() || "Vendedor",
+          nome: String(data?.nome ?? authUser?.nome ?? "Vendedor").trim() || "Vendedor",
         })
         setVendedorLoadError(null)
       } catch (err) {
-        setVendedor(createFallbackVendedor(normalizedUser))
+        setVendedor((current) => current ?? createFallbackVendedor(authUser))
         setVendedorLoadError(err instanceof Error ? err.message : "Nao foi possivel carregar os dados do vendedor.")
       }
     }
 
-    async function fetchOportunidades(skVendedorParam: string | number | null) {
-      if (!skVendedorParam) {
-        setIsLoadingOportunidades(false)
-        return
-      }
-
+    async function fetchOportunidades() {
       try {
         setIsLoadingOportunidades(true)
         const res = await fetch(
-          `/api/vendedor/${skVendedorParam}/oportunidades${buildEmpresaQuery(currentEmpresaId)}`,
+          `/api/vendedor/${currentSkVendedor}/oportunidades${buildEmpresaQuery(empresaId, empresaAcesso)}`,
           { cache: "no-store", credentials: "include" }
         )
         if (!res.ok) {
@@ -389,16 +431,10 @@ export default function VendedorDashboard() {
       }
     }
 
-    async function fetchLifeGoal(skVendedorParam: string | number | null) {
-      if (!skVendedorParam) {
-        setLifeGoal(null)
-        setIsLoadingLifeGoal(false)
-        return
-      }
-
+    async function fetchLifeGoal() {
       try {
         setIsLoadingLifeGoal(true)
-        const data = await fetchSellerLifeGoal(skVendedorParam)
+        const data = await fetchSellerLifeGoal(currentSkVendedor, empresaAcesso)
         setLifeGoal(data)
       } catch (err) {
         console.warn("Meta de Vida indisponivel no dashboard:", err)
@@ -408,10 +444,23 @@ export default function VendedorDashboard() {
       }
     }
 
+    async function fetchPremiacao() {
+      if (!authUser?.featurePremiacaoHabilitada) return
+
+      try {
+        const data = await fetchMinhaPremiacao()
+        setPremiacao(data)
+      } catch (err) {
+        console.warn("Premiacao indisponivel no dashboard:", err)
+        setPremiacao(null)
+      }
+    }
+
     fetchVendedor()
-    fetchOportunidades(user.sk_vendedor ?? null)
-    fetchLifeGoal(user.sk_vendedor ?? null)
-  }, [router])
+    fetchOportunidades()
+    fetchLifeGoal()
+    fetchPremiacao()
+  }, [lojasResolvidas, skVendedor, empresaId, empresaAcesso, authUser])
 
   useEffect(() => {
     if (!vendedor || hasPlayedConfettiRef.current || vendedor.posicao < 1 || vendedor.posicao > 3) {
@@ -1167,8 +1216,16 @@ export default function VendedorDashboard() {
           <div className="relative space-y-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] ${isDark ? "border-emerald-400/18 bg-emerald-500/8 text-emerald-100/80" : "border-emerald-200/60 bg-emerald-50 text-emerald-700"}`}>
-                  Painel do vendedor
+                <div className={`flex flex-col gap-2.5 rounded-2xl border px-3.5 py-2.5 sm:flex-row sm:items-center sm:gap-3 sm:py-2 ${isDark ? "border-emerald-400/15 bg-white/[0.03]" : "border-emerald-200/60 bg-white/70"}`}>
+                  <div className={`flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] ${isDark ? "text-emerald-200" : "text-emerald-700"}`}>
+                    Painel do vendedor
+                  </div>
+                  <SeletorLoja
+                    lojas={lojas}
+                    value={empresaAcesso ?? ""}
+                    onValueChange={setEmpresaAcesso}
+                    className="h-8 w-full text-xs sm:ml-auto sm:w-48"
+                  />
                 </div>
                 <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:gap-5">
                   <h1 className={`text-3xl font-extrabold tracking-tight ${isDark ? "" : "text-slate-900"}`}>
@@ -1190,6 +1247,29 @@ export default function VendedorDashboard() {
                       </p>
                     </div>
                   </div>
+
+                  {authUser?.featurePremiacaoHabilitada ? (
+                    <button
+                      type="button"
+                      onClick={() => router.push("/vendedor/minha-premiacao")}
+                      className={`group inline-flex items-center gap-3 rounded-2xl border px-4 py-2 text-left transition-all duration-300 hover:-translate-y-0.5 active:scale-[0.98] ${isDark ? "border-amber-300/25 bg-[linear-gradient(135deg,rgba(120,53,15,0.35),rgba(245,158,11,0.14))] hover:border-amber-300/40 hover:shadow-[0_14px_32px_rgba(245,158,11,0.22)]" : "border-amber-200/70 bg-[linear-gradient(135deg,#fffbeb,#fef3c7)] hover:border-amber-300 hover:shadow-[0_10px_24px_rgba(245,158,11,0.18)]"}`}
+                    >
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 shadow-[0_8px_18px_rgba(245,158,11,0.3)]">
+                        <Trophy className="h-5 w-5 text-white" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-[10px] font-semibold uppercase tracking-[0.22em] ${isDark ? "text-amber-200/75" : "text-amber-600"}`}>
+                          Premiação
+                        </p>
+                        <p className={`truncate text-base font-black ${isDark ? "text-white" : "text-slate-900"}`}>
+                          {premiacao?.elegivel
+                            ? formatCurrency(premiacao.valorPremiacaoFinal)
+                            : "Ver minha premiação"}
+                        </p>
+                      </div>
+                      <ArrowRight className={`h-4 w-4 shrink-0 transition-transform duration-300 group-hover:translate-x-1 ${isDark ? "text-amber-200" : "text-amber-600"}`} />
+                    </button>
+                  ) : null}
                 </div>
                 <div className={`mt-3 flex items-start gap-3 text-sm ${isDark ? "text-emerald-100/85" : "text-emerald-700"}`}>
                   <div className="mt-0.5">{getPositionIcon()}</div>
@@ -1295,6 +1375,20 @@ export default function VendedorDashboard() {
                     <p className="text-xs text-muted-foreground">Ticket médio do Mês</p>
                     <p className="text-lg font-bold text-foreground">
                       {formatCurrency(vendedor.ticketMedioMes ?? 0)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="hidden h-8 w-px bg-white/10 sm:block" />
+
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15">
+                    <TrendingUp className="h-5 w-5 text-emerald-300" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Margem</p>
+                    <p className="text-lg font-bold text-foreground">
+                      {formatCurrency(vendedor.margem ?? 0)}
                     </p>
                   </div>
                 </div>

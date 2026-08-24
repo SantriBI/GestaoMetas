@@ -28,6 +28,7 @@ interface VendedorPanoramaModalProps {
   vendedorId: number | null
   nomeVendedor?: string | null
   empresaId?: string | number | null
+  empresaAcesso?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -646,6 +647,7 @@ export function VendedorPanoramaModal({
   vendedorId,
   nomeVendedor,
   empresaId,
+  empresaAcesso,
   open,
   onOpenChange,
 }: VendedorPanoramaModalProps) {
@@ -687,6 +689,9 @@ export function VendedorPanoramaModal({
         if (empresaId !== null && empresaId !== undefined && String(empresaId).trim()) {
           params.set("empresa_id", String(empresaId))
         }
+        if (empresaAcesso !== null && empresaAcesso !== undefined && String(empresaAcesso).trim()) {
+          params.set("empresa_acesso", String(empresaAcesso))
+        }
         const query = params.toString()
         const response = await fetch(`/api/vendedor-panorama/${vendedorId}${query ? `?${query}` : ""}`, {
           cache: "no-store",
@@ -725,7 +730,7 @@ export function VendedorPanoramaModal({
       ativo = false
       controller.abort()
     }
-  }, [open, vendedorId, empresaId])
+  }, [open, vendedorId, empresaId, empresaAcesso])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

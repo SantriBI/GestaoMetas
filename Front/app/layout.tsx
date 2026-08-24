@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { NotificationProvider } from "@/components/notifications/NotificationContext"
 import { NotificationToast } from "@/components/notifications/NotificationToast"
 import { ThemeProvider } from "@/components/theme-provider"
+import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister"
 import './globals.css'
 
 const spaceGrotesk = Space_Grotesk({ 
@@ -52,6 +53,7 @@ export default function RootLayout({
             <NotificationToast />
             <Toaster position="top-right" richColors />
             <Analytics />
+            <ServiceWorkerRegister />
           </NotificationProvider>
         </ThemeProvider>
       </body>

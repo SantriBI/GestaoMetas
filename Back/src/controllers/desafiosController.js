@@ -19,7 +19,7 @@ import {
   updateChallenge,
 } from "../services/desafios/desafiosService.js"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
-import { getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId, getScopedLojaScope } from "../services/requestScope.js"
 import { findAuthUserBySkVendedor } from "../services/authUsersService.js"
 
 function getErrorStatus(message) {
@@ -39,15 +39,24 @@ function handleError(res, error, fallbackMessage) {
   })
 }
 
-function getChallengeContext(req, res) {
+async function getChallengeContext(req, res) {
   const empresaId = getScopedEmpresaId(req)
   if (!empresaId) {
     res.status(403).json({ error: "Empresa do usuario nao encontrada." })
     return null
   }
 
+  // Desafios agregam todas as lojas do vendedor - so o Painel/Jornada e o Ranking exigem
+  // selecao de loja.
+  const lojaScope = await getScopedLojaScope(req, { required: false })
+  if (lojaScope.error) {
+    res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    return null
+  }
+
   return {
     empresaId,
+    lojaScope,
     query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
   }
 }
@@ -93,7 +102,7 @@ async function getSellerFromRequest(req, res, sourceSkVendedor = null, empresaId
 
 export async function getDesafios(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await listChallenges(context)
     return res.json(data)
@@ -104,7 +113,7 @@ export async function getDesafios(req, res) {
 
 export async function getDesafioMetadata(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await listChallengeMetadata(context)
     return res.json(data)
@@ -115,7 +124,7 @@ export async function getDesafioMetadata(req, res) {
 
 export async function getDesafioProdutosCatalogo(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await searchChallengeProducts(req.query.q ?? "", context)
     return res.json(data)
@@ -126,7 +135,7 @@ export async function getDesafioProdutosCatalogo(req, res) {
 
 export async function getDesafioMarcasCatalogo(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await searchChallengeBrands(req.query.q ?? "", context)
     return res.json(data)
@@ -137,7 +146,7 @@ export async function getDesafioMarcasCatalogo(req, res) {
 
 export async function getDesafioSetup(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await getChallengeModuleSetup(context)
     return res.json(data)
@@ -148,7 +157,7 @@ export async function getDesafioSetup(req, res) {
 
 export async function postDesafioImpactPreview(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await previewChallengeImpact(req.body, context)
     return res.json(data)
@@ -159,7 +168,7 @@ export async function postDesafioImpactPreview(req, res) {
 
 export async function postDesafio(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await createChallenge(req.body, context)
     return res.status(201).json(data)
@@ -170,7 +179,7 @@ export async function postDesafio(req, res) {
 
 export async function getDesafioById(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await getChallengeById(req.params.id, context)
     return res.json(data)
@@ -181,7 +190,7 @@ export async function getDesafioById(req, res) {
 
 export async function putDesafio(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await updateChallenge(req.params.id, req.body, context)
     return res.json(data)
@@ -192,7 +201,7 @@ export async function putDesafio(req, res) {
 
 export async function deleteDesafio(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await closeChallenge(req.params.id, req.query.status ?? "ENCERRADO_MANUAL", context)
     return res.json(data)
@@ -203,7 +212,7 @@ export async function deleteDesafio(req, res) {
 
 export async function getDesafioParticipantes(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const data = await getChallengeParticipants(req.params.id, context)
     return res.json(data)
@@ -214,7 +223,7 @@ export async function getDesafioParticipantes(req, res) {
 
 export async function postAceitarDesafio(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const skVendedor = await getSellerFromRequest(req, res, null, context.empresaId)
     if (!skVendedor) return
@@ -227,7 +236,7 @@ export async function postAceitarDesafio(req, res) {
 
 export async function postRecusarDesafio(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const skVendedor = await getSellerFromRequest(req, res, null, context.empresaId)
     if (!skVendedor) return
@@ -240,7 +249,7 @@ export async function postRecusarDesafio(req, res) {
 
 export async function getDesafioProgresso(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const role = getAuthRole(req)
     const sellerFilter = role === "VENDEDOR"
@@ -256,7 +265,7 @@ export async function getDesafioProgresso(req, res) {
 
 export async function getVendedorDesafios(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
@@ -269,7 +278,7 @@ export async function getVendedorDesafios(req, res) {
 
 export async function getVendedorDesafiosAtivos(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
@@ -282,7 +291,7 @@ export async function getVendedorDesafiosAtivos(req, res) {
 
 export async function getVendedorDesafiosDisponiveis(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
@@ -295,7 +304,7 @@ export async function getVendedorDesafiosDisponiveis(req, res) {
 
 export async function getVendedorDesafiosNovos(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
@@ -308,7 +317,7 @@ export async function getVendedorDesafiosNovos(req, res) {
 
 export async function getVendedorDesafioDetalhe(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const skVendedor = await getSellerFromRequest(req, res, req.params.sk_vendedor, context.empresaId)
     if (!skVendedor) return
@@ -321,7 +330,7 @@ export async function getVendedorDesafioDetalhe(req, res) {
 
 export async function postVisualizarDesafio(req, res) {
   try {
-    const context = getChallengeContext(req, res)
+    const context = await getChallengeContext(req, res)
     if (!context) return
     const skVendedor = await getSellerFromRequest(req, res, null, context.empresaId)
     if (!skVendedor) return

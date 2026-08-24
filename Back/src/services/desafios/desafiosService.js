@@ -6,6 +6,7 @@ import {
   buildSellerInCondition,
   getAllowedSellerCodesByEmpresaId,
 } from "../tenantSellerScope.js"
+import { buildLojaInCondition } from "../lojaScopeService.js"
 
 const TABLE_REQUIREMENTS = [
   {
@@ -617,10 +618,19 @@ async function insertChallengeMeta(idDesafio, meta, index) {
   )
 }
 
+// Restringe o pool de vendedores-alvo as lojas que o GERENTE autenticado gerencia (getDesafiosDbContext().lojaScope,
+// propagado pelo controller via getScopedLojaScope). Sem essa restricao, um gerente com acesso a apenas uma loja
+// poderia criar/editar desafios mirando vendedores de lojas que nao gerencia.
+function getTargetSellerLojaScope() {
+  return getDesafiosDbContext().lojaScope ?? null
+}
+
 async function resolveTargetSellers(payload) {
   const contextEmpresaId = getContextEmpresaId()
   const { rankingView, rankingDayView } = await getRankingViewNames()
   const allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(contextEmpresaId)
+  const lojaScope = getTargetSellerLojaScope()
+  const lojaCondition = buildLojaInCondition("sk_empresa", lojaScope, "desafio_target_loja")
   const explicitSellers = Array.isArray(payload.sellerIds)
     ? payload.sellerIds.map(Number).filter(Number.isFinite)
     : []
@@ -629,8 +639,11 @@ async function resolveTargetSellers(payload) {
     const explicitAllowed = allowedSellerCodes
       ? explicitSellers.filter((sellerId) => allowedSellerCodes.has(String(sellerId)))
       : explicitSellers
-    const where = [explicitAllowed.length ? `sk_vendedor IN (${explicitAllowed.join(",")})` : "1 = 0"]
-    const binds = {}
+    const where = [
+      explicitAllowed.length ? `sk_vendedor IN (${explicitAllowed.join(",")})` : "1 = 0",
+      lojaCondition.clause,
+    ]
+    const binds = { ...lojaCondition.binds }
 
     const rows = await query(
       `
@@ -653,8 +666,8 @@ async function resolveTargetSellers(payload) {
     }))
   }
 
-  const binds = {}
-  const where = []
+  const binds = { ...lojaCondition.binds }
+  const where = [lojaCondition.clause]
   const sellerScope = buildSellerInCondition("base.sk_vendedor", allowedSellerCodes, "target_seller")
   if (allowedSellerCodes) {
     where.push(sellerScope.clause)
@@ -671,7 +684,7 @@ async function resolveTargetSellers(payload) {
       SELECT sk_vendedor, nome_vendedor, sk_empresa
       FROM ${rankingDayView}
     ) base
-    ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+    WHERE ${where.join(" AND ")}
     ORDER BY base.nome_vendedor
     `,
     binds

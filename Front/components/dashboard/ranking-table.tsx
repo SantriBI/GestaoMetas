@@ -15,6 +15,7 @@ interface RankingTableProps {
   vendedores: VendedorProcessado[]
   viewMode: "mensal" | "diario"
   empresaId?: string | number | null
+  empresaAcesso?: string | null
   periodo?: "atual" | "anterior"
   periodoLoading?: boolean
   periodoError?: string | null
@@ -53,6 +54,7 @@ export function RankingTable({
   vendedores,
   viewMode,
   empresaId,
+  empresaAcesso,
   periodo = "atual",
   periodoLoading = false,
   periodoError = null,
@@ -201,6 +203,14 @@ export function RankingTable({
                           )}
                         </div>
                       </div>
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                          Margem
+                        </div>
+                        <div className="mt-1 font-medium text-foreground">
+                          {formatCurrency(vendedor.margem)}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="mt-4">
@@ -271,6 +281,10 @@ export function RankingTable({
 
                 <th className="w-[145px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Receita
+                </th>
+
+                <th className="w-[145px] px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Margem
                 </th>
 
                 {viewMode === "mensal" ? (
@@ -350,6 +364,10 @@ export function RankingTable({
                       </span>
                     </td>
 
+                    <td className="overflow-hidden whitespace-nowrap px-3 py-4 text-foreground">
+                      {formatCurrency(vendedor.margem)}
+                    </td>
+
                     <td className="overflow-hidden whitespace-nowrap px-3 py-4">
                       {viewMode === "diario" ? (
                         saldoDia !== null && saldoDia >= 0 ? (
@@ -407,6 +425,7 @@ export function RankingTable({
         vendedorId={vendedorSelecionado}
         nomeVendedor={nomeVendedorSelecionado}
         empresaId={empresaId}
+        empresaAcesso={empresaAcesso}
         open={panoramaAberto}
         onOpenChange={setPanoramaAberto}
       />

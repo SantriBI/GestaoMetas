@@ -10,14 +10,24 @@ import {
   obterPreviewCampanha,
   obterResumoCampanha,
 } from "../services/ativacaoClientesService.js"
+import { getScopedLojaScope } from "../services/requestScope.js"
 
-function getScopeFromRequest(req) {
+async function getScopeFromRequest(req, res) {
+  // Ativacao de Clientes agrega todas as lojas do vendedor - so o Painel/Jornada e o Ranking
+  // exigem selecao de loja.
+  const lojaScope = await getScopedLojaScope(req, { required: false })
+  if (lojaScope.error) {
+    res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    return null
+  }
+
   return {
     role: req.auth?.role,
     sk_vendedor: req.auth?.sk_vendedor ?? null,
     empresa_id: req.auth?.empresa_id ?? null,
     id_usuario: req.auth?.id_usuario ?? null,
     nome_usuario: req.auth?.nome ?? req.auth?.nome_completo ?? req.auth?.login ?? null,
+    lojaScope,
   }
 }
 
@@ -32,10 +42,12 @@ export async function getSegmentos(_req, res) {
 
 export async function getResumo(req, res) {
   try {
+    const scope = await getScopeFromRequest(req, res)
+    if (!scope) return
     const payload = {
       segmento: req.query.segmento,
       messageBase: req.query.mensagem_base ?? null,
-      ...getScopeFromRequest(req),
+      ...scope,
     }
     res.json({ data: await obterResumoCampanha(payload) })
   } catch (error) {
@@ -46,13 +58,15 @@ export async function getResumo(req, res) {
 
 export async function getPreview(req, res) {
   try {
+    const scope = await getScopeFromRequest(req, res)
+    if (!scope) return
     const payload = {
       segmento: req.query.segmento,
       messageBase: req.query.mensagem_base ?? null,
       search: req.query.search ?? "",
       sortBy: req.query.sort_by ?? "valor_potencial",
       sortDir: req.query.sort_dir ?? "desc",
-      ...getScopeFromRequest(req),
+      ...scope,
     }
     res.json({ data: await obterPreviewCampanha(payload) })
   } catch (error) {
@@ -63,7 +77,9 @@ export async function getPreview(req, res) {
 
 export async function postCampanha(req, res) {
   try {
-    const payload = { ...req.body, ...getScopeFromRequest(req) }
+    const scope = await getScopeFromRequest(req, res)
+    if (!scope) return
+    const payload = { ...req.body, ...scope }
     const result = await criarCampanha(payload)
 
     console.log("Campanha criada:", result.campanha.id)
@@ -100,8 +116,10 @@ export async function postCampanha(req, res) {
 
 export async function postEnviarCampanha(req, res) {
   try {
+    const scope = await getScopeFromRequest(req, res)
+    if (!scope) return
     const campanhaId = Number(req.params.id)
-    res.json(await enviarCampanha(campanhaId, { ...req.body, ...getScopeFromRequest(req) }))
+    res.json(await enviarCampanha(campanhaId, { ...req.body, ...scope }))
   } catch (error) {
     console.error("Erro ao enviar campanha de ativação:", error)
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro ao enviar campanha." })
@@ -110,7 +128,9 @@ export async function postEnviarCampanha(req, res) {
 
 export async function getTemplates(req, res) {
   try {
-    res.json({ data: await listarTemplates(getScopeFromRequest(req)) })
+    const scope = await getScopeFromRequest(req, res)
+    if (!scope) return
+    res.json({ data: await listarTemplates(scope) })
   } catch (error) {
     console.error("Erro ao listar templates:", error)
     res.status(500).json({ error: "Erro ao listar templates." })
@@ -119,7 +139,9 @@ export async function getTemplates(req, res) {
 
 export async function postTemplate(req, res) {
   try {
-    res.status(201).json(await criarTemplate({ ...req.body, ...getScopeFromRequest(req) }))
+    const scope = await getScopeFromRequest(req, res)
+    if (!scope) return
+    res.status(201).json(await criarTemplate({ ...req.body, ...scope }))
   } catch (error) {
     console.error("Erro ao criar template:", error)
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro ao criar template." })
@@ -128,8 +150,10 @@ export async function postTemplate(req, res) {
 
 export async function putTemplate(req, res) {
   try {
+    const scope = await getScopeFromRequest(req, res)
+    if (!scope) return
     const id = Number(req.params.id)
-    res.json(await atualizarTemplate(id, { ...req.body, ...getScopeFromRequest(req) }))
+    res.json(await atualizarTemplate(id, { ...req.body, ...scope }))
   } catch (error) {
     console.error("Erro ao atualizar template:", error)
     res.status(400).json({ error: error instanceof Error ? error.message : "Erro ao atualizar template." })

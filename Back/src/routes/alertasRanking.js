@@ -1,12 +1,13 @@
 import express from "express"
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { requireAuth } from "../middleware/auth.js"
-import { getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId, getScopedLojaScope } from "../services/requestScope.js"
 import {
   buildSellerInCondition,
   getAllowedSellerCodesByEmpresaId,
   isSellerAllowed,
 } from "../services/tenantSellerScope.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "../services/lojaScopeService.js"
 
 const router = express.Router()
 
@@ -43,6 +44,7 @@ function formatPercentBR(value) {
 
 async function getQueryContext(empresaId) {
   return {
+    empresaId,
     query: (sql, binds = {}, options = {}) => queryOracleByEmpresaId(empresaId, sql, binds, options),
     rankingDayHistView: "VW_RANKING_VENDEDORES_DIA_HIST",
   }
@@ -50,7 +52,9 @@ async function getQueryContext(empresaId) {
 
 async function loadHistorico(context) {
   const sellerScope = buildSellerInCondition("SK_VENDEDOR", context.allowedSellerCodes, "hist_seller")
-  const bindsBase = sellerScope.binds
+  const lojaColumn = await resolveLojaColumnName(context.empresaId, context.rankingDayHistView)
+  const lojaCondition = buildLojaInCondition(lojaColumn, context.lojaScope, "hist_loja")
+  const bindsBase = { ...sellerScope.binds, ...lojaCondition.binds }
 
   const refs = await context.query(
     `
@@ -59,6 +63,7 @@ async function loadHistorico(context) {
         SELECT DISTINCT DATA_REF
         FROM ${context.rankingDayHistView}
         WHERE ${sellerScope.clause}
+          AND ${lojaCondition.clause}
       ORDER BY DATA_REF DESC
     )
     WHERE ROWNUM <= 2
@@ -85,6 +90,7 @@ async function loadHistorico(context) {
     FROM ${context.rankingDayHistView}
     WHERE DATA_REF = :dataHoje
       AND ${sellerScope.clause}
+      AND ${lojaCondition.clause}
     `,
     { ...bindsBase, dataHoje }
   )
@@ -102,6 +108,7 @@ async function loadHistorico(context) {
         FROM ${context.rankingDayHistView}
         WHERE DATA_REF = :dataOntem
           AND ${sellerScope.clause}
+          AND ${lojaCondition.clause}
         `,
         { ...bindsBase, dataOntem }
       )
@@ -127,8 +134,14 @@ router.get("/alertas-ranking", requireAuth, async (req, res) => {
       return res.status(403).json({ error: "Acesso permitido apenas aos alertas do vendedor autenticado." })
     }
 
+    const lojaScope = await getScopedLojaScope(req)
+    if (lojaScope.error) {
+      return res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    }
+
     const context = await getQueryContext(empresaId)
     context.allowedSellerCodes = await getAllowedSellerCodesByEmpresaId(empresaId)
+    context.lojaScope = lojaScope
     if (skVendedor && !isSellerAllowed(context.allowedSellerCodes, skVendedor)) {
       return res.status(403).json({ error: "Vendedor fora da organizacao autenticada." })
     }

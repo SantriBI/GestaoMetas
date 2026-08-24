@@ -5,6 +5,7 @@ import {
   buildOrcamentosClienteCTE,
   isRfvVendedorDisponivel,
 } from "./kanbanQueries.js"
+import { buildLojaInCondition, resolveLojaColumnName } from "../lojaScopeService.js"
 
 export const COLUNAS_KANBAN = ["A_CONTATAR", "EM_CONTATO", "ORCAMENTO_ENVIADO", "CONVERTIDO", "NAO_CONVERTIDO"]
 const COLUNAS_ABERTAS = ["A_CONTATAR", "EM_CONTATO", "ORCAMENTO_ENVIADO"]
@@ -468,9 +469,11 @@ export async function listCardsArquivados({ dbQuery, empresaId, skVendedor, offs
   return rows.map((row) => finalizarCard(montarCard(row)))
 }
 
-export async function getCardDetail({ dbQuery, empresaId, cardId, skVendedor }) {
+export async function getCardDetail({ dbQuery, empresaId, cardId, skVendedor, lojaScope = null }) {
   const card = await buscarCard(dbQuery, { cardId, skVendedor })
   const rfvDisponivel = await isRfvVendedorDisponivel(dbQuery, empresaId)
+  const vendasLojaColumn = await resolveLojaColumnName(empresaId, "FATO_VENDAS_LUCRATIVIDADE")
+  const vendasLojaCondition = buildLojaInCondition(vendasLojaColumn, lojaScope, "kanban_detalhe_venda_loja")
 
   const [clienteRows, rfvRows, vendasRows, orcamentoRows, interacoesRows] = await Promise.all([
     dbQuery(
@@ -478,6 +481,7 @@ export async function getCardDetail({ dbQuery, empresaId, cardId, skVendedor }) 
        FROM DM_VENDAS.DIM_CLIENTE WHERE sk_cliente = :sk_cliente`,
       { sk_cliente: card.sk_cliente }
     ),
+    // FATO_RFV_VENDEDOR nao tem coluna de loja - sem filtro de loja aqui.
     rfvDisponivel
       ? dbQuery(
           `SELECT classificacao, recencia, frequencia, valor, telefone, ultima_compra
@@ -493,11 +497,12 @@ export async function getCardDetail({ dbQuery, empresaId, cardId, skVendedor }) 
         SUM(CASE WHEN tipo = 'DEV' THEN NVL(valor_liquido_item, 0) * -1 ELSE NVL(valor_liquido_item, 0) END) AS valor
       FROM DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE
       WHERE sk_cliente = :sk_cliente AND sk_vendedor = :sk_vendedor
+        AND ${vendasLojaCondition.clause}
       GROUP BY orcamento_id, sk_dt_fechamento
       ORDER BY sk_dt_fechamento DESC
       FETCH FIRST 10 ROWS ONLY
       `,
-      { sk_cliente: card.sk_cliente, sk_vendedor: skVendedor }
+      { sk_cliente: card.sk_cliente, sk_vendedor: skVendedor, ...vendasLojaCondition.binds }
     ),
     dbQuery(
       `

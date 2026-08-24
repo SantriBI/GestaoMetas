@@ -1,4 +1,4 @@
-import { getScopedEmpresaId } from "../services/requestScope.js"
+import { getScopedEmpresaId, getScopedLojaScope } from "../services/requestScope.js"
 import { getAllowedSellerCodesByEmpresaId, isSellerAllowed } from "../services/tenantSellerScope.js"
 import {
   KanbanError,
@@ -66,9 +66,18 @@ async function resolverEscopo(req, res) {
     return null
   }
 
+  // Kanban do vendedor agrega todas as lojas do vendedor - so o Painel/Jornada e o Ranking
+  // exigem selecao de loja.
+  const lojaScope = await getScopedLojaScope(req, { required: false })
+  if (lojaScope.error) {
+    res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    return null
+  }
+
   return {
     empresaId,
     skVendedor,
+    lojaScope,
     dbQuery: getScopedQuery(empresaId),
   }
 }
@@ -78,7 +87,7 @@ export async function getBoard(req, res) {
     const escopo = await resolverEscopo(req, res)
     if (!escopo) return
 
-    await sincronizarKanban({ dbQuery: escopo.dbQuery, empresaId: escopo.empresaId, skVendedor: escopo.skVendedor })
+    await sincronizarKanban({ dbQuery: escopo.dbQuery, empresaId: escopo.empresaId, skVendedor: escopo.skVendedor, lojaScope: escopo.lojaScope })
 
     const board = await listCards({
       dbQuery: escopo.dbQuery,
@@ -150,6 +159,7 @@ export async function getClientesBusca(req, res) {
       empresaId: escopo.empresaId,
       skVendedor: escopo.skVendedor,
       termo: req.query.q,
+      lojaScope: escopo.lojaScope,
     })
 
     res.json({ data: clientes })
@@ -188,6 +198,7 @@ export async function getCardDetalhe(req, res) {
       empresaId: escopo.empresaId,
       cardId: req.params.cardId,
       skVendedor: escopo.skVendedor,
+      lojaScope: escopo.lojaScope,
     })
 
     res.json({ data: detalhe })
