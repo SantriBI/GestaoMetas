@@ -202,8 +202,13 @@ export default function MinhaMetaDeVidaPage() {
   useEffect(() => {
     const user = getStoredUser()
 
-    if (!user || user.role !== "VENDEDOR") {
+    if (!user || (user.role !== "VENDEDOR" && user.role !== "GERENTE_SISTEMAS")) {
       router.push("/login")
+      return
+    }
+
+    if (user.role === "GERENTE_SISTEMAS" && (!user.empresa_id || !user.sk_vendedor)) {
+      router.push("/gerente-sistemas")
       return
     }
 

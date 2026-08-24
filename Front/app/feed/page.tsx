@@ -43,8 +43,13 @@ export default function FeedPage() {
       return
     }
 
-    if (storedUser.role !== "VENDEDOR" && storedUser.role !== "GERENTE") {
+    if (storedUser.role !== "VENDEDOR" && storedUser.role !== "GERENTE" && storedUser.role !== "GERENTE_SISTEMAS") {
       router.push("/login")
+      return
+    }
+
+    if (storedUser.role === "GERENTE_SISTEMAS" && !storedUser.empresa_id) {
+      router.push("/gerente-sistemas")
       return
     }
 

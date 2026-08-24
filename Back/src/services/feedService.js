@@ -72,7 +72,7 @@ function normalizeActor(actor) {
     throw new FeedError("Nome do usuario e obrigatorio.", 400)
   }
 
-  if (tipoUsuario !== "VENDEDOR" && tipoUsuario !== "GERENTE") {
+  if (tipoUsuario !== "VENDEDOR" && tipoUsuario !== "GERENTE" && tipoUsuario !== "GERENTE_SISTEMAS") {
     throw new FeedError("Tipo de usuario invalido.", 400)
   }
 
@@ -144,7 +144,7 @@ function mapRecipient(row) {
 function mapPost(row, actor) {
   const post = normalizeRow(row)
   const isAuthor = toNumber(post.usuario_id) === actor.usuarioId
-  const isGerente = actor.tipoUsuario === "GERENTE"
+  const isGerente = actor.tipoUsuario === "GERENTE" || actor.tipoUsuario === "GERENTE_SISTEMAS"
   const visibilidade = normalizeVisibilityValue(post.visibilidade, post.destinatario_usuario_id)
   const isPrivado = visibilidade === FEED_VISIBILITY_PRIVATE
 
@@ -519,7 +519,7 @@ export async function deleteFeedPost(postIdInput, input) {
   }
 
   const isAuthor = toNumber(post.usuario_id) === actor.usuarioId
-  if (!isAuthor && actor.tipoUsuario !== "GERENTE") {
+  if (!isAuthor && actor.tipoUsuario !== "GERENTE" && actor.tipoUsuario !== "GERENTE_SISTEMAS") {
     throw new FeedError("Voce nao tem permissao para excluir este post.", 403)
   }
 
@@ -696,7 +696,7 @@ export async function toggleFeedHighlight(postIdInput, input) {
   const postId = toNumber(postIdInput, NaN)
   const { postsTable } = getFeedTableNames()
 
-  if (actor.tipoUsuario !== "GERENTE") {
+  if (actor.tipoUsuario !== "GERENTE" && actor.tipoUsuario !== "GERENTE_SISTEMAS") {
     throw new FeedError("Apenas gerentes podem destacar posts.", 403)
   }
 

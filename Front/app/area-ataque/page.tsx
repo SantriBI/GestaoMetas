@@ -183,8 +183,13 @@ export default function AreaAtaquePage() {
       return
     }
 
-    if (user.role !== "VENDEDOR") {
+    if (user.role !== "VENDEDOR" && user.role !== "GERENTE_SISTEMAS") {
       router.push("/login")
+      return
+    }
+
+    if (user.role === "GERENTE_SISTEMAS" && (!user.empresa_id || !user.sk_vendedor)) {
+      router.push("/gerente-sistemas")
       return
     }
 
