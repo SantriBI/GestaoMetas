@@ -265,6 +265,10 @@ copy .env.example .env
 npm start
 ```
 
+O arquivo `Back/.env` e ignorado pelo Git de proposito. Depois de copiar o exemplo,
+preencha nele os valores reais de `MYSQL_*`, `APP_ENCRYPTION_KEY`, `AUTH_TOKEN_SECRET`
+e, se necessario, `ORACLE_CLIENT_LIB_DIR`.
+
 Backend padrao em:
 
 ```bash
@@ -339,9 +343,13 @@ Arquivos de apoio:
 Fluxo sugerido:
 
 ```bash
-copy .env.docker.example .env
+copy Back\.env.docker.example Back\.env.docker
 docker compose up --build
 ```
+
+No Docker Compose, o arquivo com segredos tambem fica fora do Git: `Back/.env.docker`.
+O Compose ainda pode usar um `.env` na raiz apenas para portas (`FRONTEND_HOST_PORT`,
+`BACKEND_HOST_PORT`, `MYSQL_HOST_PORT` etc.).
 
 #### Como trocar as portas
 

@@ -174,11 +174,13 @@ export async function ensureCentralSchema() {
       login_usuario  VARCHAR(200),
       tipo_usuario   VARCHAR(20) NOT NULL,
       feedback       TEXT NOT NULL,
+      status         VARCHAR(20) NOT NULL DEFAULT 'novo',
       criado_em      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (id_feedback),
       KEY idx_feedback_criado_em (criado_em),
       KEY idx_feedback_empresa_criado (empresa_id, criado_em),
-      KEY idx_feedback_tipo_criado (tipo_usuario, criado_em)
+      KEY idx_feedback_tipo_criado (tipo_usuario, criado_em),
+      KEY idx_feedback_status_criado (status, criado_em)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
   `)
 

@@ -81,7 +81,7 @@ ensureCentralSchema()
   })
   .catch((err) => {
     console.error(
-      `Falha ao inicializar schema central MySQL (${describeMysqlTarget({ admin: true })}):`,
+      `Falha ao inicializar schema central MySQL (${describeMysqlTarget()}):`,
       formatDbError(err)
     );
     // Inicia mesmo assim para nao derrubar Oracle se MySQL estiver fora

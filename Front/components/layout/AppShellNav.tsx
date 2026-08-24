@@ -14,6 +14,7 @@ import {
   AuthUser,
   clearStoredUser,
   getDashboardRoute,
+  getEffectiveRole,
   getUserAvatarSrc,
   getUserInitials,
 } from "@/lib/user-session"
@@ -26,7 +27,8 @@ interface AppShellNavProps {
 export function AppShellNav({ user }: AppShellNavProps) {
   const pathname = usePathname()
   const router = useRouter()
-  const dashboardHref = getDashboardRoute(user?.role)
+  const effectiveRole = getEffectiveRole(user)
+  const dashboardHref = getDashboardRoute(effectiveRole)
   const [feedActivityCount, setFeedActivityCount] = useState(0)
 
   const palette = {
@@ -45,7 +47,7 @@ export function AppShellNav({ user }: AppShellNavProps) {
   useEffect(() => {
     if (!user) return
 
-    const canUseFeed = user.role === "VENDEDOR" || user.role === "GERENTE"
+    const canUseFeed = effectiveRole === "VENDEDOR" || effectiveRole === "GERENTE"
     const empresaId = Number(user.empresa_id ?? user.sk_empresa ?? 0)
 
     if (!canUseFeed || !Number.isFinite(empresaId) || empresaId <= 0) {
@@ -146,7 +148,7 @@ export function AppShellNav({ user }: AppShellNavProps) {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:justify-end">
-          {user?.role === "VENDEDOR" ? <NotificationBell /> : null}
+          {effectiveRole === "VENDEDOR" ? <NotificationBell /> : null}
 
           <button
             type="button"
@@ -165,11 +167,11 @@ export function AppShellNav({ user }: AppShellNavProps) {
                 {user?.nome ?? "Usuario"}
               </span>
               <span className={cn("block text-xs", palette.role)}>
-                {user?.role === "VENDEDOR"
+                {effectiveRole === "VENDEDOR"
                   ? "Vendedor"
-                  : user?.role === "ADMIN"
+                  : effectiveRole === "ADMIN"
                     ? "Administrador"
-                    : user?.role === "GERENTE_SISTEMAS"
+                    : effectiveRole === "GERENTE_SISTEMAS"
                       ? "Gerente de Sistemas"
                       : "Gerente"}
               </span>

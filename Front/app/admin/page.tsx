@@ -97,7 +97,27 @@ interface FeedbackUsuario {
   login_usuario: string | null
   tipo_usuario: string | null
   feedback: string
+  status: string
   criado_em: string
+}
+
+const FEEDBACK_STATUSES = ["novo", "lido", "resolvido"] as const
+const FEEDBACK_STATUS_LABELS: Record<string, string> = { novo: "Novo", lido: "Lido", resolvido: "Resolvido" }
+const FEEDBACK_TIPOS_USUARIO = ["SUPERADMIN", "ADMIN", "GERENTE", "GERENTE_SISTEMAS", "VENDEDOR", "PAINEL", "INDUSTRIA"]
+const FEEDBACK_PAGE_SIZE = 20
+
+function FeedbackStatusBadge({ status }: { status: string }) {
+  const cls =
+    status === "resolvido"
+      ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
+      : status === "lido"
+      ? "border-amber-500/25 bg-amber-500/10 text-amber-200"
+      : "border-blue-500/25 bg-blue-500/10 text-blue-200"
+  return (
+    <span className={cn("rounded-full border px-2 py-0.5 text-xs font-semibold", cls)}>
+      {FEEDBACK_STATUS_LABELS[status] ?? status}
+    </span>
+  )
 }
 
 type Tab = "organizacoes" | "gerentes" | "gerentes_sistemas" | "usuarios" | "feedbacks"
@@ -335,27 +355,62 @@ export default function AdminPage() {
   // Feedback filters
   const [feedbackEmpresaId, setFeedbackEmpresaId] = useState("")
   const [feedbackTipoUsuario, setFeedbackTipoUsuario] = useState("")
+  const [feedbackStatusFiltro, setFeedbackStatusFiltro] = useState("")
+  const [feedbackBusca, setFeedbackBusca] = useState("")
+  const [feedbackBuscaDebounced, setFeedbackBuscaDebounced] = useState("")
+  const [feedbackPage, setFeedbackPage] = useState(1)
+  const [feedbackTotal, setFeedbackTotal] = useState(0)
+  const [feedbackHoje, setFeedbackHoje] = useState(0)
+  const [feedbackComOrganizacao, setFeedbackComOrganizacao] = useState(0)
+  const [feedbackTotalPages, setFeedbackTotalPages] = useState(1)
+  const [feedbackLoading, setFeedbackLoading] = useState(false)
+  const [updatingFeedbackId, setUpdatingFeedbackId] = useState<number | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     setGlobalError(null)
     try {
-      const [orgsData, gerentesData, gerentesSistemasData, feedbacksData] = await Promise.all([
+      const [orgsData, gerentesData, gerentesSistemasData] = await Promise.all([
         apiFetch<Org[]>("/api/superadmin/organizacoes"),
         apiFetch<Gerente[]>("/api/superadmin/gerentes"),
         apiFetch<{ data: GerenteSistema[] }>("/api/superadmin/gerentes-sistemas"),
-        apiFetch<{ data: FeedbackUsuario[] }>("/api/superadmin/feedbacks?limit=500"),
       ])
       setOrgs(orgsData)
       setGerentes(gerentesData)
       setGerentesSistemas(gerentesSistemasData.data ?? [])
-      setFeedbacks(feedbacksData.data ?? [])
     } catch (err) {
       setGlobalError((err as Error).message)
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const fetchFeedbacks = useCallback(async () => {
+    setFeedbackLoading(true)
+    try {
+      const params = new URLSearchParams()
+      params.set("page", String(feedbackPage))
+      params.set("limit", String(FEEDBACK_PAGE_SIZE))
+      if (feedbackEmpresaId) params.set("empresa_id", feedbackEmpresaId)
+      if (feedbackTipoUsuario) params.set("tipo_usuario", feedbackTipoUsuario)
+      if (feedbackStatusFiltro) params.set("status", feedbackStatusFiltro)
+      if (feedbackBuscaDebounced) params.set("busca", feedbackBuscaDebounced)
+
+      const data = await apiFetch<{
+        data: FeedbackUsuario[]; total: number; hoje: number; comOrganizacao: number; totalPages: number
+      }>(`/api/superadmin/feedbacks?${params.toString()}`)
+
+      setFeedbacks(data.data ?? [])
+      setFeedbackTotal(data.total ?? 0)
+      setFeedbackHoje(data.hoje ?? 0)
+      setFeedbackComOrganizacao(data.comOrganizacao ?? 0)
+      setFeedbackTotalPages(data.totalPages ?? 1)
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setFeedbackLoading(false)
+    }
+  }, [feedbackPage, feedbackEmpresaId, feedbackTipoUsuario, feedbackStatusFiltro, feedbackBuscaDebounced])
 
   useEffect(() => {
     const user = getStoredUser()
@@ -365,6 +420,36 @@ export default function AdminPage() {
     }
     void fetchData()
   }, [router, fetchData])
+
+  useEffect(() => {
+    if (tab !== "feedbacks") return
+    void fetchFeedbacks()
+  }, [tab, fetchFeedbacks])
+
+  useEffect(() => {
+    const t = setTimeout(() => setFeedbackBuscaDebounced(feedbackBusca.trim()), 300)
+    return () => clearTimeout(t)
+  }, [feedbackBusca])
+
+  useEffect(() => {
+    setFeedbackPage(1)
+  }, [feedbackEmpresaId, feedbackTipoUsuario, feedbackStatusFiltro, feedbackBuscaDebounced])
+
+  async function handleUpdateFeedbackStatus(id: number, status: string) {
+    setUpdatingFeedbackId(id)
+    try {
+      await apiFetch(`/api/superadmin/feedbacks/${id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      })
+      setFeedbacks((prev) => prev.map((f) => (f.id_feedback === id ? { ...f, status } : f)))
+      toast.success("Status do feedback atualizado.")
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setUpdatingFeedbackId(null)
+    }
+  }
 
   async function handleLogout() {
     await fetch("/api/logout", { method: "POST", credentials: "include" }).catch(() => {})
@@ -640,23 +725,6 @@ export default function AdminPage() {
   }, gerentesPorOrg)
 
   const activeOrgs = orgs.filter((o) => o.ativo === "S")
-  const filteredFeedbacks = feedbacks.filter((item) => {
-    const matchesEmpresa = feedbackEmpresaId
-      ? String(item.empresa_id ?? "") === feedbackEmpresaId
-      : true
-    const matchesTipo = feedbackTipoUsuario
-      ? String(item.tipo_usuario ?? "").toUpperCase() === feedbackTipoUsuario
-      : true
-
-    return matchesEmpresa && matchesTipo
-  })
-
-  const feedbacksHoje = feedbacks.filter((item) => {
-    const date = new Date(item.criado_em)
-    return !Number.isNaN(date.getTime()) && date.toDateString() === new Date().toDateString()
-  }).length
-  const feedbacksComOrganizacao = feedbacks.filter((item) => item.empresa_id != null).length
-  const feedbackTipos = Array.from(new Set(feedbacks.map((item) => String(item.tipo_usuario ?? "").toUpperCase()).filter(Boolean))).sort()
 
   function formatDateTime(raw: string) {
     const date = new Date(raw)
@@ -1230,29 +1298,41 @@ export default function AdminPage() {
                 <h2 className="text-lg font-semibold">Feedbacks</h2>
                 <p className="mt-1 text-sm text-muted-foreground">Mensagens recebidas por organizacao, usuario e horario.</p>
               </div>
-              <button onClick={fetchData} disabled={loading} className={btnSecondary}>
-                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              <button onClick={fetchFeedbacks} disabled={feedbackLoading} className={btnSecondary}>
+                {feedbackLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 Atualizar
               </button>
             </div>
 
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] p-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total recebido</p>
-                <p className="mt-2 text-2xl font-bold">{feedbacks.length}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total (filtro atual)</p>
+                <p className="mt-2 text-2xl font-bold">{feedbackTotal}</p>
               </div>
               <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] p-4">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hoje</p>
-                <p className="mt-2 text-2xl font-bold">{feedbacksHoje}</p>
+                <p className="mt-2 text-2xl font-bold">{feedbackHoje}</p>
               </div>
               <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] p-4">
                 <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Com organizacao</p>
-                <p className="mt-2 text-2xl font-bold">{feedbacksComOrganizacao}</p>
+                <p className="mt-2 text-2xl font-bold">{feedbackComOrganizacao}</p>
               </div>
             </div>
 
             <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] p-4">
-              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-end">
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_180px_150px_auto] md:items-end">
+                <Field label="Buscar">
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="text"
+                      className={cn(inputCls, "pl-9")}
+                      placeholder="Texto, nome ou login..."
+                      value={feedbackBusca}
+                      onChange={(e) => setFeedbackBusca(e.target.value)}
+                    />
+                  </div>
+                </Field>
                 <Field label="Organizacao">
                   <select className={inputCls} value={feedbackEmpresaId} onChange={(e) => setFeedbackEmpresaId(e.target.value)}>
                     <option value="">Todas as organizacoes</option>
@@ -1264,14 +1344,27 @@ export default function AdminPage() {
                 <Field label="Perfil">
                   <select className={inputCls} value={feedbackTipoUsuario} onChange={(e) => setFeedbackTipoUsuario(e.target.value)}>
                     <option value="">Todos os perfis</option>
-                    {feedbackTipos.map((tipo) => (
+                    {FEEDBACK_TIPOS_USUARIO.map((tipo) => (
                       <option key={tipo} value={tipo}>{tipo}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Status">
+                  <select className={inputCls} value={feedbackStatusFiltro} onChange={(e) => setFeedbackStatusFiltro(e.target.value)}>
+                    <option value="">Todos</option>
+                    {FEEDBACK_STATUSES.map((status) => (
+                      <option key={status} value={status}>{FEEDBACK_STATUS_LABELS[status]}</option>
                     ))}
                   </select>
                 </Field>
                 <button
                   type="button"
-                  onClick={() => { setFeedbackEmpresaId(""); setFeedbackTipoUsuario("") }}
+                  onClick={() => {
+                    setFeedbackEmpresaId("")
+                    setFeedbackTipoUsuario("")
+                    setFeedbackStatusFiltro("")
+                    setFeedbackBusca("")
+                  }}
                   className={btnSecondary}
                 >
                   <X className="h-4 w-4" />
@@ -1280,16 +1373,16 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {loading ? (
+            {feedbackLoading ? (
               <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-            ) : filteredFeedbacks.length === 0 ? (
+            ) : feedbacks.length === 0 ? (
               <div className="rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))] py-16 text-center text-muted-foreground">
                 Nenhum feedback encontrado.
               </div>
             ) : (
               <div className="overflow-hidden rounded-2xl border border-[#1c2940] bg-[linear-gradient(180deg,rgba(15,20,31,0.96),rgba(10,14,22,0.98))]">
                 <div className="space-y-3 p-4 md:hidden">
-                  {filteredFeedbacks.map((item) => (
+                  {feedbacks.map((item) => (
                     <div key={`${item.id_feedback}-card`} className="rounded-xl border border-[#1c2940] p-4">
                       <div className="flex items-start justify-between gap-3">
                         <p className="font-medium">{item.organizacao_nome ?? "Sem organizacao"}</p>
@@ -1304,23 +1397,36 @@ export default function AdminPage() {
                         {item.sk_vendedor != null ? ` - SK: ${item.sk_vendedor}` : ""}
                       </p>
                       <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{item.feedback}</p>
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <FeedbackStatusBadge status={item.status} />
+                        <select
+                          className={cn(inputCls, "w-auto py-1 text-xs")}
+                          value={item.status}
+                          disabled={updatingFeedbackId === item.id_feedback}
+                          onChange={(e) => handleUpdateFeedbackStatus(item.id_feedback, e.target.value)}
+                        >
+                          {FEEDBACK_STATUSES.map((status) => (
+                            <option key={status} value={status}>{FEEDBACK_STATUS_LABELS[status]}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   ))}
-                  <p className="text-center text-xs text-muted-foreground">{filteredFeedbacks.length} feedback(s) exibido(s)</p>
+                  <p className="text-center text-xs text-muted-foreground">{feedbackTotal} feedback(s) no total</p>
                 </div>
 
                 <div className="hidden md:block">
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[980px] text-sm">
+                    <table className="w-full min-w-[1080px] text-sm">
                       <thead>
                         <tr className="border-b border-[#1c2940]">
-                          {["Data e hora", "Organizacao", "Quem enviou", "Perfil", "Mensagem"].map((h) => (
+                          {["Data e hora", "Organizacao", "Quem enviou", "Perfil", "Mensagem", "Status"].map((h) => (
                             <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#1c2940]/60">
-                        {filteredFeedbacks.map((item) => (
+                        {feedbacks.map((item) => (
                           <tr key={item.id_feedback} className="align-top hover:bg-white/[0.02]">
                             <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDateTime(item.criado_em)}</td>
                             <td className="px-4 py-3">
@@ -1340,15 +1446,45 @@ export default function AdminPage() {
                               </span>
                             </td>
                             <td className="px-4 py-3 text-foreground/90">
-                              <p className="max-w-[520px] whitespace-pre-wrap leading-relaxed">{item.feedback}</p>
+                              <p className="max-w-[420px] whitespace-pre-wrap leading-relaxed">{item.feedback}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <select
+                                className={cn(inputCls, "w-auto py-1 text-xs")}
+                                value={item.status}
+                                disabled={updatingFeedbackId === item.id_feedback}
+                                onChange={(e) => handleUpdateFeedbackStatus(item.id_feedback, e.target.value)}
+                              >
+                                {FEEDBACK_STATUSES.map((status) => (
+                                  <option key={status} value={status}>{FEEDBACK_STATUS_LABELS[status]}</option>
+                                ))}
+                              </select>
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                  <div className="border-t border-[#1c2940] px-4 py-3 text-xs text-muted-foreground">
-                    {filteredFeedbacks.length} feedback(s) exibido(s)
+                  <div className="flex flex-col gap-3 border-t border-[#1c2940] px-4 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                    <span>{feedbackTotal} feedback(s) no total - pagina {feedbackPage} de {feedbackTotalPages}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={feedbackPage <= 1 || feedbackLoading}
+                        onClick={() => setFeedbackPage((p) => Math.max(p - 1, 1))}
+                        className={btnSecondary}
+                      >
+                        Anterior
+                      </button>
+                      <button
+                        type="button"
+                        disabled={feedbackPage >= feedbackTotalPages || feedbackLoading}
+                        onClick={() => setFeedbackPage((p) => Math.min(p + 1, feedbackTotalPages))}
+                        className={btnSecondary}
+                      >
+                        Proxima
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

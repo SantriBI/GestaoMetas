@@ -64,6 +64,14 @@ export function onStoredUserChange(callback: () => void) {
   return () => window.removeEventListener(USER_UPDATED_EVENT, handler)
 }
 
+export function getEffectiveRole(user?: Pick<AuthUser, "role" | "gerente_sistemas_view"> | null): UserRole | null {
+  if (!user) return null
+  if (user.role === "GERENTE_SISTEMAS" && user.gerente_sistemas_view) {
+    return user.gerente_sistemas_view
+  }
+  return user.role
+}
+
 export function getDashboardRoute(role?: string | null) {
   if (role === "SUPERADMIN") return "/admin"
   if (role === "ADMIN") return "/admin/organizacoes"

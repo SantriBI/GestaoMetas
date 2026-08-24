@@ -9,7 +9,7 @@ import {
   UserRound,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
-import { AuthUser, getDashboardRoute } from "@/lib/user-session"
+import { AuthUser, getDashboardRoute, getEffectiveRole } from "@/lib/user-session"
 
 export interface NavItem {
   href: string
@@ -20,17 +20,9 @@ export interface NavItem {
 }
 
 export function getNavItems(user: AuthUser | null): NavItem[] {
-  const dashboardHref = getDashboardRoute(user?.role)
-  const lifeGoalHref = "/vendedor/minha-meta-de-vida"
-
   const isAdmin = user?.role === "ADMIN"
   const isSystemManager = user?.role === "GERENTE_SISTEMAS"
-  const systemManagerDashboardHref =
-    user?.gerente_sistemas_view === "VENDEDOR"
-      ? "/vendedor"
-      : user?.gerente_sistemas_view === "GERENTE"
-        ? "/dashboard"
-        : "/gerente-sistemas"
+  const effectiveRole = getEffectiveRole(user)
 
   if (isAdmin) {
     return [
@@ -39,26 +31,33 @@ export function getNavItems(user: AuthUser | null): NavItem[] {
     ]
   }
 
-  if (isSystemManager) {
+  // Gerente de sistemas ainda nao escolheu organizacao/visao: so o seletor faz sentido.
+  if (isSystemManager && !effectiveRole) {
     return [
       { href: "/gerente-sistemas", label: "Selecionar", icon: Building2 },
-      { href: systemManagerDashboardHref, label: "Dashboard", icon: LayoutDashboard },
-      ...(user?.gerente_sistemas_view === "GERENTE"
-        ? [{ href: "/usuarios", label: "Usuarios", icon: UserCog }]
-        : []),
       { href: "/perfil", label: "Perfil", icon: UserRound },
     ]
   }
 
-  return [
+  const dashboardHref = getDashboardRoute(effectiveRole)
+  const lifeGoalHref = "/vendedor/minha-meta-de-vida"
+
+  const items: NavItem[] = [
     { href: dashboardHref, label: "Home", icon: Home, mobileHidden: true },
     { href: dashboardHref, label: "Dashboard", icon: LayoutDashboard },
-    ...(user?.role === "VENDEDOR" ? [{ href: "/vendedor/kanban", label: "Kanban", icon: Kanban }] : []),
-    ...(user?.role === "VENDEDOR" ? [{ href: lifeGoalHref, label: "Meta de Vida", icon: PiggyBank }] : []),
+    ...(effectiveRole === "VENDEDOR" ? [{ href: "/vendedor/kanban", label: "Kanban", icon: Kanban }] : []),
+    ...(effectiveRole === "VENDEDOR" ? [{ href: lifeGoalHref, label: "Meta de Vida", icon: PiggyBank }] : []),
     { href: "/feed", label: "Feed", icon: MessageSquareMore },
-    ...(user?.role === "GERENTE" ? [{ href: "/usuarios", label: "Usuarios", icon: UserCog }] : []),
-    { href: "/perfil", label: "Perfil", icon: UserRound },
+    ...(effectiveRole === "GERENTE" ? [{ href: "/usuarios", label: "Usuarios", icon: UserCog }] : []),
   ]
+
+  if (isSystemManager) {
+    items.push({ href: "/gerente-sistemas", label: "Selecionar", icon: Building2 })
+  }
+
+  items.push({ href: "/perfil", label: "Perfil", icon: UserRound })
+
+  return items
 }
 
 export function isNavItemActive(item: NavItem, pathname: string): boolean {
@@ -83,7 +82,8 @@ export function isNavItemActive(item: NavItem, pathname: string): boolean {
         !pathname.startsWith("/vendedor/kanban") &&
         !pathname.startsWith("/vendedor/minha-meta-de-vida") &&
         !pathname.startsWith("/feed") &&
-        !pathname.startsWith("/usuarios")
+        !pathname.startsWith("/usuarios") &&
+        !pathname.startsWith("/gerente-sistemas")
       )
     default:
       return false
