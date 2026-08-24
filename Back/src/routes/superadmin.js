@@ -753,17 +753,9 @@ router.patch("/superadmin/organizacoes/:id", async (req, res) => {
     const connectString = normalizeConnectString(oracleConnectString)
     const current = existing[0]
 
-    // DEBUG TEMPORARIO: investigando por que a senha da AC COELHO nao decripta depois de salva.
-    console.log(
-      `[DEBUG PATCH org ${id}] oracleUser=${oracleUser} connectString=${connectString} ` +
-      `oraclePasswordRecebida=${oraclePassword ? "sim" : "nao"} ` +
-      `oraclePasswordLength=${oraclePassword ? String(oraclePassword).length : 0}`
-    )
-
     // Valida conexao com a senha (nova ou existente decriptada)
     const passwordToTest = oraclePassword ? oraclePassword : await getOraclePasswordForOrg(current)
     const testeConn = await testOracleConnection(oracleUser, passwordToTest, connectString)
-    console.log(`[DEBUG PATCH org ${id}] testeConn:`, testeConn)
     if (!testeConn.ok) {
       return res.status(422).json({ error: `Falha na conexao Oracle: ${testeConn.error}` })
     }
@@ -781,13 +773,11 @@ router.patch("/superadmin/organizacoes/:id", async (req, res) => {
     })
 
     const encPwd = oraclePassword ? encryptSecret(oraclePassword) : current.oracle_password
-    console.log(`[DEBUG PATCH org ${id}] encPwd gravado=${encPwd}`)
 
-    const [updateResult] = await centralPool.query(
+    await centralPool.query(
       "UPDATE organizacoes_auth SET nome = ?, codigo = ?, ativo = ?, oracle_user = ?, oracle_password = ?, oracle_connect_string = ? WHERE id_organizacao = ?",
       [nome, codigo, ativo ?? current.ativo, oracleUser, encPwd, connectString, id]
     )
-    console.log(`[DEBUG PATCH org ${id}] updateResult.affectedRows=${updateResult?.affectedRows}`)
 
     // Credenciais podem ter mudado (senha, usuario ou connect string) - derruba o pool em
     // cache para essa org, senao consultas seguintes continuam usando a conexao antiga.
