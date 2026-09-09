@@ -47,7 +47,7 @@ import {
 import { fetchSellerLifeGoal, type LifeGoalResponse } from "@/lib/life-goal"
 import { fetchMinhaPremiacao, type MinhaPremiacao } from "@/lib/premiacao-vendedor"
 import { buildMotivationMessage } from "@/lib/motivation"
-import { AuthUser, setStoredUser } from "@/lib/user-session"
+import { AuthUser, setStoredUser, updateStoredUser } from "@/lib/user-session"
 import { fetchMinhasLojas, type LojaAcesso } from "@/lib/loja-acesso"
 import SeletorLoja from "@/components/SeletorLoja"
 import { useTheme } from "next-themes"
@@ -347,6 +347,31 @@ export default function VendedorDashboard() {
     setEmpresaId(currentEmpresaId)
     setSkVendedor(user.sk_vendedor ?? null)
     setVendedor(createFallbackVendedor(normalizedUser))
+
+    // O sk_vendedor gravado no sessionStorage e o do momento do login: se o ERP recriar o
+    // vendedor (novo SK_VENDEDOR para a mesma pessoa) enquanto a sessao segue aberta, esse valor
+    // fica desatualizado e o backend passa a rejeitar a chamada (403, sk_vendedor da URL != o
+    // sk_vendedor atual do usuario no banco). Revalida contra o perfil ao vivo pra autocorrigir
+    // sem exigir logout/login.
+    async function revalidarSkVendedor() {
+      try {
+        const response = await fetch("/api/usuarios/perfil/me", { cache: "no-store", credentials: "include" })
+        if (!response.ok) return
+
+        const perfil = await response.json().catch(() => null)
+        if (!perfil || perfil.sk_vendedor == null) return
+        if (String(perfil.sk_vendedor) === String(normalizedUser.sk_vendedor ?? "")) return
+
+        const patch = { sk_vendedor: perfil.sk_vendedor, empresa_id: perfil.empresa_id ?? currentEmpresaId }
+        updateStoredUser(patch)
+        setAuthUser((state) => (state ? { ...state, ...patch } : state))
+        setSkVendedor(perfil.sk_vendedor ?? null)
+      } catch {
+        // Sem perfil atualizado agora, segue com o valor em cache (proximo mount tenta de novo).
+      }
+    }
+
+    revalidarSkVendedor()
 
     async function carregarLojas() {
       try {
