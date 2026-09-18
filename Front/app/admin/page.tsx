@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
-  Building2, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, LogOut,
+  Building2, ChevronDown, ChevronUp, Eye, EyeOff, Gauge, Loader2, LogOut,
   MessageSquareText, Plus, RefreshCw, Search, Trash2, UserCog, Users, Wifi, Wrench, X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -945,6 +945,10 @@ export default function AdminPage() {
             <span className="font-bold text-foreground">Admin Global</span>
           </div>
           <div className="flex items-center gap-3">
+            <button onClick={() => router.push("/admin/painel-acessos")} className={btnSecondary}>
+              <Gauge className="h-4 w-4" />
+              Painel de Acessos
+            </button>
             <button onClick={fetchData} disabled={loading} className={btnSecondary}>
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Atualizar

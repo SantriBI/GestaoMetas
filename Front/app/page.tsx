@@ -16,8 +16,13 @@ import {
   Radar,
   Activity,
   Cpu,
+  MessageCircle,
 } from "lucide-react"
 import Image from "next/image"
+
+const WHATSAPP_URL =
+  "https://wa.me/556196887965?text=" +
+  encodeURIComponent("Olá, gostaria de entender sobre o gestão de metas")
 
 const WEEK_BARS = [42, 68, 49, 82, 58, 91, 76]
 const SELLERS = [
@@ -74,12 +79,24 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          <button
-            onClick={() => router.push("/login")}
-            className="rounded-xl border border-[#166534] bg-[linear-gradient(135deg,#0b3b2e,#22c55e)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(34,197,94,0.28)] transition-all hover:-translate-y-0.5 hover:brightness-110"
-          >
-            Acessar Agora
-          </button>
+          <div className="flex items-center gap-3">
+            <a
+              href={WHATSAPP_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden items-center gap-2 rounded-xl border border-[#1d2a44] bg-[#0b111b]/90 px-5 py-2.5 text-sm font-semibold text-white/92 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-all hover:-translate-y-0.5 hover:border-[#22c55e]/40 sm:flex"
+            >
+              <MessageCircle className="h-4 w-4 text-[#4ade80]" />
+              Entre em contato
+            </a>
+
+            <button
+              onClick={() => router.push("/login")}
+              className="rounded-xl border border-[#166534] bg-[linear-gradient(135deg,#0b3b2e,#22c55e)] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(34,197,94,0.28)] transition-all hover:-translate-y-0.5 hover:brightness-110"
+            >
+              Acessar Agora
+            </button>
+          </div>
         </nav>
       </header>
 

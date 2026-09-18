@@ -1,6 +1,6 @@
 "use client"
 
-export type UserRole = "VENDEDOR" | "GERENTE" | "INDUSTRIA" | "ADMIN" | "SUPERADMIN" | "GERENTE_SISTEMAS"
+export type UserRole = "VENDEDOR" | "GERENTE" | "INDUSTRIA" | "ADMIN" | "SUPERADMIN" | "GERENTE_SISTEMAS" | "INGRED"
 
 export interface AuthUser {
   id_usuario: number | string
@@ -80,6 +80,7 @@ export function getDashboardRoute(role?: string | null) {
   if (role === "GERENTE_SISTEMAS") return "/gerente-sistemas"
   if (role === "VENDEDOR") return "/vendedor"
   if (role === "INDUSTRIA") return "/industria"
+  if (role === "INGRED") return "/admin/painel-acessos"
   return "/dashboard"
 }
 

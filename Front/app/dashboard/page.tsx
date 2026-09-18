@@ -21,6 +21,7 @@ import {
   Zap,
 } from "lucide-react"
 import { Vendedor, VendedorProcessado, processVendedor, formatCurrency } from "@/lib/types"
+import { AtualizacaoBaseInfo } from "@/components/atualizacao-base-info"
 import { KPICards } from "@/components/dashboard/kpi-cards"
 import { TeamStatus } from "@/components/dashboard/team-status"
 import { RadarVendas } from "@/components/dashboard/RadarVendas"
@@ -38,7 +39,12 @@ import { AppShellNav } from "@/components/layout/AppShellNav"
 import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { AuthUser, setStoredUser } from "@/lib/user-session"
 import { fetchMinhasLojas, TODAS_LOJAS_VALUE, type LojaAcesso } from "@/lib/loja-acesso"
-import { fetchPremiacaoEquipe, PremiacaoVendedorApiError, type PremiacaoEquipe } from "@/lib/premiacao-vendedor"
+import {
+  fetchPremiacaoEquipe,
+  fetchMesesDisponiveisPremiacao,
+  PremiacaoVendedorApiError,
+  type PremiacaoEquipe,
+} from "@/lib/premiacao-vendedor"
 import SeletorLoja from "@/components/SeletorLoja"
 
 type ActiveView = "jornada" | "grandprix" | null
@@ -61,6 +67,8 @@ export default function DashboardPage() {
   const [premiacaoEquipe, setPremiacaoEquipe] = useState<PremiacaoEquipe | null>(null)
   const [premiacaoEquipeLoading, setPremiacaoEquipeLoading] = useState(false)
   const [premiacaoEquipeError, setPremiacaoEquipeError] = useState<string | null>(null)
+  const [premiacaoMesSelecionado, setPremiacaoMesSelecionado] = useState("atual")
+  const [premiacaoMesesDisponiveis, setPremiacaoMesesDisponiveis] = useState<string[]>([])
   const [dataReferencia, setDataReferencia] = useState<string | Date | number | null>(null)
   const [fallbackDataReferencia, setFallbackDataReferencia] = useState<string | Date | number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -316,13 +324,19 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!lojasResolvidas || !authUser || !authUser.featurePremiacaoHabilitada) return
-    void carregarPremiacaoEquipe()
+    setPremiacaoMesSelecionado("atual")
+    void carregarMesesDisponiveisPremiacao()
   }, [lojasResolvidas, empresaId, empresaAcesso, authUser])
 
-  async function carregarPremiacaoEquipe() {
+  useEffect(() => {
+    if (!lojasResolvidas || !authUser || !authUser.featurePremiacaoHabilitada) return
+    void carregarPremiacaoEquipe(premiacaoMesSelecionado)
+  }, [lojasResolvidas, empresaId, empresaAcesso, authUser, premiacaoMesSelecionado])
+
+  async function carregarPremiacaoEquipe(mes: string) {
     setPremiacaoEquipeLoading(true)
     try {
-      const data = await fetchPremiacaoEquipe(empresaAcesso)
+      const data = await fetchPremiacaoEquipe(empresaAcesso, mes)
       setPremiacaoEquipe(data)
       setPremiacaoEquipeError(null)
     } catch (err) {
@@ -336,6 +350,17 @@ export default function DashboardPage() {
       setPremiacaoEquipe(null)
     } finally {
       setPremiacaoEquipeLoading(false)
+    }
+  }
+
+  async function carregarMesesDisponiveisPremiacao() {
+    try {
+      const { mesesDisponiveis } = await fetchMesesDisponiveisPremiacao(empresaAcesso)
+      setPremiacaoMesesDisponiveis(mesesDisponiveis)
+    } catch {
+      // Seletor fica so com "Mes atual" se a consulta de meses disponiveis falhar - nao
+      // impede a tela de premiacao do mes atual de funcionar.
+      setPremiacaoMesesDisponiveis([])
     }
   }
 
@@ -659,6 +684,11 @@ export default function DashboardPage() {
                         {isToday(dataReferenciaNormalizada) ? "Atualizado hoje" : `Base ${formatDateBR(dataReferenciaNormalizada)}`}
                       </span>
                     ) : null}
+                    <AtualizacaoBaseInfo
+                      empresaId={empresaId}
+                      empresaAcesso={empresaAcesso}
+                      className="inline-flex items-center gap-1 rounded-full border border-slate-200/60 bg-white/70 px-2 py-1 text-[11px] text-slate-500 transition hover:text-slate-700 dark:border-white/10 dark:bg-white/5 dark:text-white/55 dark:hover:text-white/80"
+                    />
                   </div>
                   <SeletorLoja
                     lojas={lojas}
@@ -817,7 +847,10 @@ export default function DashboardPage() {
                         premiacao={premiacaoEquipe}
                         loading={premiacaoEquipeLoading}
                         error={premiacaoEquipeError}
-                        onRetry={() => void carregarPremiacaoEquipe()}
+                        onRetry={() => void carregarPremiacaoEquipe(premiacaoMesSelecionado)}
+                        mesesDisponiveis={premiacaoMesesDisponiveis}
+                        mesSelecionado={premiacaoMesSelecionado}
+                        onSelecionarMes={setPremiacaoMesSelecionado}
                       />
                     </section>
                   ) : null}

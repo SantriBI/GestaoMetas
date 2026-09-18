@@ -1,5 +1,6 @@
 import {
   Building2,
+  Gauge,
   Home,
   Kanban,
   LayoutDashboard,
@@ -21,12 +22,21 @@ export interface NavItem {
 
 export function getNavItems(user: AuthUser | null): NavItem[] {
   const isAdmin = user?.role === "ADMIN"
+  const isIngred = user?.role === "INGRED"
   const isSystemManager = user?.role === "GERENTE_SISTEMAS"
   const effectiveRole = getEffectiveRole(user)
+
+  if (isIngred) {
+    return [
+      { href: "/admin/painel-acessos", label: "Painel de Acessos", icon: Gauge },
+      { href: "/perfil", label: "Perfil", icon: UserRound },
+    ]
+  }
 
   if (isAdmin) {
     return [
       { href: "/admin/organizacoes", label: "Organizações", icon: Building2 },
+      { href: "/admin/painel-acessos", label: "Painel de Acessos", icon: Gauge },
       { href: "/perfil", label: "Perfil", icon: UserRound },
     ]
   }
@@ -49,6 +59,7 @@ export function getNavItems(user: AuthUser | null): NavItem[] {
     ...(effectiveRole === "VENDEDOR" ? [{ href: lifeGoalHref, label: "Meta de Vida", icon: PiggyBank }] : []),
     { href: "/feed", label: "Feed", icon: MessageSquareMore },
     ...(effectiveRole === "GERENTE" ? [{ href: "/usuarios", label: "Usuarios", icon: UserCog }] : []),
+    ...(effectiveRole === "GERENTE" ? [{ href: "/usuarios/painel-acessos", label: "Painel de Acessos", icon: Gauge }] : []),
   ]
 
   if (isSystemManager) {
@@ -65,9 +76,13 @@ export function isNavItemActive(item: NavItem, pathname: string): boolean {
     case "Perfil":
       return pathname === "/perfil"
     case "Usuarios":
-      return pathname.startsWith("/usuarios")
+      return pathname.startsWith("/usuarios") && !pathname.startsWith("/usuarios/painel-acessos")
+    case "Painel de Acessos":
+      return pathname.startsWith("/usuarios/painel-acessos") || pathname.startsWith("/admin/painel-acessos")
     case "Organizações":
       return pathname.startsWith("/admin/organizacoes")
+    case "Painel de Acessos":
+      return pathname.startsWith("/admin/painel-acessos")
     case "Selecionar":
       return pathname.startsWith("/gerente-sistemas")
     case "Kanban":

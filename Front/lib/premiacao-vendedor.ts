@@ -53,7 +53,9 @@ export interface PremiacaoEquipeVendedor {
   nomeVendedor: string | null
   mesReferencia: string | null
   valorComissaoBase: number
-  margemMaisFrete: number
+  // null quando a origem dos dados nao guarda margem+frete "crua" (fechamento historico em
+  // FT_COMISSAO_HISTORICO - so o resultado ja derivado dela). No mes atual sempre vem numero.
+  margemMaisFrete: number | null
   statusGatilho: string | null
   elegivel: boolean
   faixaAcelerador: string | null
@@ -76,6 +78,7 @@ export interface PremiacaoEquipeResumo {
 }
 
 export interface PremiacaoEquipe {
+  mesReferencia: string | null
   vendedores: PremiacaoEquipeVendedor[]
   resumo: PremiacaoEquipeResumo
 }
@@ -83,13 +86,33 @@ export interface PremiacaoEquipe {
 // Mesmo padrao de escopo de loja do ranking (buildRankingUrl em app/dashboard/page.tsx):
 // empresa_acesso e sempre revalidado no backend contra o escopo real do gerente
 // (getScopedLojaScope), nunca aceito como confiavel so por vir do frontend.
-export async function fetchPremiacaoEquipe(empresaAcesso?: string | null) {
+//
+// `mes` e opcional - "atual"/undefined mantem o comportamento de sempre (le a view do mes em
+// andamento); um mes no formato "MM/YYYY" (vindo de fetchMesesDisponiveis) le o fechamento
+// daquele mes em FT_COMISSAO_HISTORICO.
+export async function fetchPremiacaoEquipe(empresaAcesso?: string | null, mes?: string | null) {
   const params = new URLSearchParams()
   if (empresaAcesso) params.set("empresa_acesso", empresaAcesso)
+  if (mes && mes !== "atual") params.set("mes", mes)
   const query = params.toString()
 
   const { data } = await request<{ data: PremiacaoEquipe }>(
     `/api/premiacao/equipe${query ? `?${query}` : ""}`
+  )
+  return data
+}
+
+export interface MesesDisponiveisPremiacao {
+  mesesDisponiveis: string[]
+}
+
+export async function fetchMesesDisponiveisPremiacao(empresaAcesso?: string | null) {
+  const params = new URLSearchParams()
+  if (empresaAcesso) params.set("empresa_acesso", empresaAcesso)
+  const query = params.toString()
+
+  const { data } = await request<{ data: MesesDisponiveisPremiacao }>(
+    `/api/premiacao/meses-disponiveis${query ? `?${query}` : ""}`
   )
   return data
 }

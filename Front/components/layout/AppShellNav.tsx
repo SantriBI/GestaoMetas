@@ -173,7 +173,9 @@ export function AppShellNav({ user }: AppShellNavProps) {
                     ? "Administrador"
                     : effectiveRole === "GERENTE_SISTEMAS"
                       ? "Gerente de Sistemas"
-                      : "Gerente"}
+                      : effectiveRole === "INGRED"
+                        ? "Secretária Executiva"
+                        : "Gerente"}
               </span>
             </span>
           </button>

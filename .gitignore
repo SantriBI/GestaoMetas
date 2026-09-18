@@ -5,3 +5,4 @@ Front/.next/
 Back/.env
 Back/.env.docker
 *.log
+Back/scripts/output/

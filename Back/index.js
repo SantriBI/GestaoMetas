@@ -27,6 +27,7 @@ import vendedorKanbanRoutes from './src/routes/vendedorKanban.js';
 import lojaAcessoRoutes from './src/routes/lojaAcesso.js';
 import parametrosPremiacaoRoutes from './src/routes/parametrosPremiacao.js';
 import premiacaoVendedorRoutes from './src/routes/premiacaoVendedor.js';
+import atualizacaoBaseRoutes from './src/routes/atualizacaoBase.js';
 
 
 
@@ -76,6 +77,7 @@ app.use('/api', vendedorKanbanRoutes);
 app.use('/api', lojaAcessoRoutes);
 app.use('/api', parametrosPremiacaoRoutes);
 app.use('/api', premiacaoVendedorRoutes);
+app.use('/api', atualizacaoBaseRoutes);
 
 const PORT = Number(process.env.PORT || 3001);
 

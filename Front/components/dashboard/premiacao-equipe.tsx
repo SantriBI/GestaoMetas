@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Loader2, Sparkles, Trophy } from "lucide-react"
 import { formatCurrency } from "@/lib/types"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import type { PremiacaoEquipe, PremiacaoEquipeVendedor } from "@/lib/premiacao-vendedor"
 
 interface PremiacaoEquipeSectionProps {
@@ -9,6 +10,13 @@ interface PremiacaoEquipeSectionProps {
   loading: boolean
   error: string | null
   onRetry: () => void
+  mesesDisponiveis: string[]
+  mesSelecionado: string
+  onSelecionarMes: (mes: string) => void
+}
+
+function formatCurrencyOuTraco(value: number | null | undefined) {
+  return typeof value === "number" ? formatCurrency(value) : "-"
 }
 
 function StatTile({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
@@ -29,10 +37,19 @@ function ElegibilidadeBadge({ vendedor }: { vendedor: PremiacaoEquipeVendedor })
   )
 }
 
-export function PremiacaoEquipeSection({ premiacao, loading, error, onRetry }: PremiacaoEquipeSectionProps) {
+export function PremiacaoEquipeSection({
+  premiacao,
+  loading,
+  error,
+  onRetry,
+  mesesDisponiveis,
+  mesSelecionado,
+  onSelecionarMes,
+}: PremiacaoEquipeSectionProps) {
   const resumo = premiacao?.resumo ?? null
   const vendedores = premiacao?.vendedores ?? []
   const shouldScroll = vendedores.length > 6
+  const isMesAtual = mesSelecionado === "atual"
 
   return (
     <div className="rounded-xl border border-border bg-card p-4 sm:p-6">
@@ -41,15 +58,36 @@ export function PremiacaoEquipeSection({ premiacao, loading, error, onRetry }: P
           <Trophy className="h-5 w-5 text-primary" />
           <h3 className="font-semibold text-foreground">Premiação da equipe</h3>
         </div>
-        {resumo?.mesReferencia ? (
-          <span className="text-xs text-muted-foreground">Referente a {resumo.mesReferencia}</span>
-        ) : null}
+        <div className="flex items-center gap-3">
+          {resumo?.mesReferencia ? (
+            <span className="text-xs text-muted-foreground">Referente a {resumo.mesReferencia}</span>
+          ) : null}
+          <Select value={mesSelecionado} onValueChange={onSelecionarMes}>
+            <SelectTrigger size="sm" className="w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="atual">Mês atual</SelectItem>
+              {mesesDisponiveis.map((mes) => (
+                <SelectItem key={mes} value={mes}>
+                  {mes}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <div className="mb-4 rounded-xl border border-amber-300/40 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-700 dark:border-amber-600/40 dark:bg-amber-900/30 dark:text-amber-200">
-        Valores parciais do mês em andamento, atualizados com as vendas recebidas até ontem. Não é o fechamento
-        do mês - os números ainda podem mudar até o mês terminar.
-      </div>
+      {isMesAtual ? (
+        <div className="mb-4 rounded-xl border border-amber-300/40 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-700 dark:border-amber-600/40 dark:bg-amber-900/30 dark:text-amber-200">
+          Valores parciais do mês em andamento, atualizados com as vendas recebidas até ontem. Não é o fechamento
+          do mês - os números ainda podem mudar até o mês terminar.
+        </div>
+      ) : (
+        <div className="mb-4 rounded-xl border border-border bg-secondary/35 px-4 py-3 text-sm leading-6 text-muted-foreground">
+          Fechamento do mês {resumo?.mesReferencia ?? mesSelecionado}.
+        </div>
+      )}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-sm text-muted-foreground">
@@ -108,7 +146,7 @@ export function PremiacaoEquipeSection({ premiacao, loading, error, onRetry }: P
                 <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <div className="text-xs uppercase tracking-wide text-muted-foreground">Margem + Frete</div>
-                    <div className="mt-1 font-medium text-foreground">{formatCurrency(vendedor.margemMaisFrete)}</div>
+                    <div className="mt-1 font-medium text-foreground">{formatCurrencyOuTraco(vendedor.margemMaisFrete)}</div>
                   </div>
                   <div>
                     <div className="text-xs uppercase tracking-wide text-muted-foreground">Faixa</div>
@@ -171,7 +209,7 @@ export function PremiacaoEquipeSection({ premiacao, loading, error, onRetry }: P
                       <ElegibilidadeBadge vendedor={vendedor} />
                     </td>
                     <td className="overflow-hidden whitespace-nowrap px-3 py-4 text-foreground">
-                      {formatCurrency(vendedor.margemMaisFrete)}
+                      {formatCurrencyOuTraco(vendedor.margemMaisFrete)}
                     </td>
                     <td className="px-3 py-4">
                       <div className="flex flex-col">

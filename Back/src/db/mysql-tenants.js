@@ -138,7 +138,7 @@ export async function ensureCentralSchema() {
       id_usuario      INT UNSIGNED     NOT NULL AUTO_INCREMENT,
       login           VARCHAR(200)     NOT NULL,
       senha_hash      VARCHAR(255)     NOT NULL,
-      role            ENUM('SUPERADMIN','ADMIN','GERENTE','VENDEDOR','PAINEL','INDUSTRIA','GERENTE_SISTEMAS') NOT NULL DEFAULT 'VENDEDOR',
+      role            ENUM('SUPERADMIN','ADMIN','GERENTE','VENDEDOR','PAINEL','INDUSTRIA','GERENTE_SISTEMAS','INGRED') NOT NULL DEFAULT 'VENDEDOR',
       empresa_id      INT UNSIGNED,
       sk_vendedor     INT,
       nome            VARCHAR(200),
@@ -254,11 +254,11 @@ async function ensureCentralUsuarioRoleEnum() {
   )
 
   const columnType = String(rows[0]?.column_type ?? "")
-  if (columnType.includes("'GERENTE_SISTEMAS'")) return
+  if (columnType.includes("'GERENTE_SISTEMAS'") && columnType.includes("'INGRED'")) return
 
   await centralPool.query(`
     ALTER TABLE usuarios_auth
-    MODIFY COLUMN role ENUM('SUPERADMIN','ADMIN','GERENTE','VENDEDOR','PAINEL','INDUSTRIA','GERENTE_SISTEMAS') NOT NULL DEFAULT 'VENDEDOR'
+    MODIFY COLUMN role ENUM('SUPERADMIN','ADMIN','GERENTE','VENDEDOR','PAINEL','INDUSTRIA','GERENTE_SISTEMAS','INGRED') NOT NULL DEFAULT 'VENDEDOR'
   `)
 }
 

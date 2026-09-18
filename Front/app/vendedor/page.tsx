@@ -29,6 +29,7 @@ import {
 } from "lucide-react"
 import { formatCurrency } from "@/lib/types"
 import RankingAlerts from "@/components/RankingAlerts"
+import { AtualizacaoBaseInfo } from "@/components/atualizacao-base-info"
 import { ChallengeNotificationBanner } from "@/components/challenges/ChallengeNotificationBanner"
 import { CardDashboard, dashboardCardThemes, dashboardCardThemesLight, type CardDashboardConfig } from "@/components/dashboard/CardDashboard"
 import { AppShellNav } from "@/components/layout/AppShellNav"
@@ -1220,7 +1221,7 @@ export default function VendedorDashboard() {
         )}
 
         {dataReferenciaValida ? (
-          <div className="flex justify-end">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs text-muted-foreground ${isDark ? "border-white/10 bg-white/5" : "border-slate-200/60 bg-white/80"}`}>
               <span
                 className={`h-2 w-2 rounded-full ${
@@ -1229,6 +1230,7 @@ export default function VendedorDashboard() {
               />
               <span>Dados atualizados até: {dataReferenciaFormatada}</span>
             </div>
+            <AtualizacaoBaseInfo empresaId={empresaId} empresaAcesso={empresaAcesso} />
           </div>
         ) : null}
 

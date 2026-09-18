@@ -1,5 +1,6 @@
 import { queryOracleByEmpresaId } from "../db/oracle-tenants.js"
 import { getLojasManuaisPorUsuario, resolveLojasByCodigos } from "./gerenteLojasService.js"
+import { buildLojaInCondition } from "./lojaScopeService.js"
 
 const ACCESS_TABLE = "FATO_FUNCIONARIOS_ACESSOS"
 
@@ -127,6 +128,35 @@ async function getLojasManuaisResolvidas(empresaId, idUsuario, automaticas) {
  *   nenhuma loja padrao - usamos a(s) loja(s) onde o CPF esta cadastrado como funcionario ate
  *   o ERP corrigir o flag; um admin ainda pode liberar lojas extras manualmente.
  */
+/**
+ * CPFs cadastrados em FATO_FUNCIONARIOS_ACESSOS dentro das lojas de lojaScope (SK_EMPRESAS) -
+ * usado para recortar usuarios_auth (que so tem CPF, sem loja) pelo escopo de loja do gerente
+ * no Painel de Acessos da equipe. lojaScope.applies=false (usuario sem mapeamento de loja) nao
+ * deveria chegar aqui; o chamador trata isso mantendo a lista completa sem filtro.
+ */
+export async function getCpfsByLojaScope(empresaId, lojaScope) {
+  if (!lojaScope?.applies) return null
+
+  const columns = await resolveAccessColumns(empresaId)
+  if (!columns.cpfColumn || !columns.empresaAcessoColumn) return []
+
+  const lojaCondition = buildLojaInCondition("EMP.SK_EMPRESAS", lojaScope, "panorama_equipe_loja")
+
+  const rows = await queryOracleByEmpresaId(
+    empresaId,
+    `
+    SELECT DISTINCT REGEXP_REPLACE(FAT.${columns.cpfColumn}, '[^0-9]', '') AS cpf
+    FROM ${ACCESS_TABLE} FAT
+    LEFT JOIN DIM_EMPRESAS EMP
+      ON EMP.EMPRESA_ID = FAT.${columns.empresaAcessoColumn}
+    WHERE ${lojaCondition.clause}
+    `,
+    lojaCondition.binds
+  )
+
+  return rows.map((row) => String(row.CPF ?? row.cpf ?? "").trim()).filter(Boolean)
+}
+
 export async function getLojasForRole({ empresaId, cpf, role, idUsuario = null }) {
   const lojas = await getLojasAcessoByCpf(empresaId, cpf)
   const normalizedRole = String(role ?? "").toUpperCase()

@@ -14,9 +14,11 @@ import {
   updateAuthUserPassword,
   updateAuthUserPhoto,
 } from "../services/authUsersService.js"
-import { requireAuth } from "../middleware/auth.js"
-import { getRequestedEmpresaId } from "../services/requestScope.js"
+import { requireAuth, requireRole } from "../middleware/auth.js"
+import { getRequestedEmpresaId, getScopedLojaScope } from "../services/requestScope.js"
+import { getCpfsByLojaScope } from "../services/lojaAcessoService.js"
 import centralPool from "../db/mysql.js"
+import { queryTenantByEmpresaId } from "../db/mysql-tenants.js"
 
 const router = express.Router()
 const uploadDir = path.resolve(process.cwd(), "uploads", "usuarios")
@@ -270,6 +272,154 @@ router.get("/usuarios/gerenciamento", requireAuth, async (req, res) => {
   } catch (error) {
     console.error("Erro ao listar usuarios gerenciaveis:", error)
     return res.status(500).json({ error: "Erro ao listar usuarios." })
+  }
+})
+
+const PANORAMA_LIMIAR_INATIVA_DIAS = 5
+
+function normalizeCpfDigits(value) {
+  return String(value ?? "").replace(/\D/g, "")
+}
+
+function classificarStatusAcesso(ultimoLogin, agora) {
+  const diasSemAcesso = ultimoLogin ? Math.floor((agora - new Date(ultimoLogin).getTime()) / 86400000) : null
+  const status =
+    diasSemAcesso === null
+      ? "nunca_acessou"
+      : diasSemAcesso <= 1
+        ? "em_dia"
+        : diasSemAcesso <= PANORAMA_LIMIAR_INATIVA_DIAS
+          ? "atencao"
+          : "inativa"
+  return { diasSemAcesso, status }
+}
+
+router.get("/usuarios/panorama-acesso/equipe", requireAuth, requireRole("GERENTE", "GERENTE_SISTEMAS"), async (req, res) => {
+  try {
+    const empresaId = req.auth?.empresa_id ?? null
+    if (!empresaId) {
+      return res.status(403).json({ error: "Empresa do gerente nao encontrada." })
+    }
+
+    const lojaScope = await getScopedLojaScope(req, { required: false })
+    if (lojaScope.error) {
+      return res.status(lojaScope.error.status).json({ error: lojaScope.error.message })
+    }
+
+    const usuarios = await queryTenantByEmpresaId(
+      empresaId,
+      "SELECT nome, nome_completo, login, cpf, sk_vendedor, ultimo_login FROM usuarios_auth WHERE ativo = 'S' AND role = 'VENDEDOR'"
+    )
+
+    let vendedoresEscopo = usuarios
+    if (lojaScope.applies) {
+      const cpfsPermitidos = await getCpfsByLojaScope(empresaId, lojaScope)
+      const permitidosSet = new Set(cpfsPermitidos ?? [])
+      vendedoresEscopo = usuarios.filter((u) => permitidosSet.has(normalizeCpfDigits(u.cpf)))
+    }
+
+    const agora = Date.now()
+    const vendedores = vendedoresEscopo
+      .map((u) => {
+        const { diasSemAcesso, status } = classificarStatusAcesso(u.ultimo_login, agora)
+        return {
+          nome: u.nome_completo ?? u.nome ?? u.login,
+          login: u.login,
+          ultimo_login: u.ultimo_login,
+          dias_sem_acesso: diasSemAcesso,
+          status,
+        }
+      })
+      .sort((a, b) => (b.dias_sem_acesso ?? Infinity) - (a.dias_sem_acesso ?? Infinity))
+
+    const resumo = vendedores.reduce(
+      (acc, vendedor) => {
+        acc.total += 1
+        acc[vendedor.status] = (acc[vendedor.status] ?? 0) + 1
+        return acc
+      },
+      { total: 0, em_dia: 0, atencao: 0, inativa: 0, nunca_acessou: 0 }
+    )
+
+    return res.json({ resumo, vendedores })
+  } catch (error) {
+    console.error("Erro ao montar panorama de acesso da equipe:", error)
+    return res.status(500).json({ error: "Erro ao montar panorama de acesso da equipe." })
+  }
+})
+
+router.get("/usuarios/panorama-acesso", requireAuth, requireRole("SUPERADMIN", "ADMIN", "INGRED"), async (req, res) => {
+  try {
+    const organizations = await getActiveOrganizations()
+    const agora = Date.now()
+
+    const empresas = []
+    for (const org of organizations) {
+      try {
+        const usuarios = await queryTenantByEmpresaId(
+          org.id_organizacao,
+          "SELECT nome, nome_completo, login, role, ultimo_login FROM usuarios_auth WHERE ativo = 'S'"
+        )
+
+        let ultimoAcesso = null
+        let usuarioMaisRecente = null
+        for (const u of usuarios) {
+          if (u.ultimo_login && (!ultimoAcesso || u.ultimo_login > ultimoAcesso)) {
+            ultimoAcesso = u.ultimo_login
+            usuarioMaisRecente = u.nome_completo ?? u.nome ?? u.login
+          }
+        }
+
+        const { diasSemAcesso, status } = classificarStatusAcesso(ultimoAcesso, agora)
+
+        empresas.push({
+          empresa_id: org.id_organizacao,
+          empresa_nome: org.nome,
+          ultimo_acesso: ultimoAcesso,
+          dias_sem_acesso: diasSemAcesso,
+          status,
+          usuario_mais_recente: usuarioMaisRecente,
+          total_usuarios_ativos: usuarios.length,
+          usuarios: usuarios
+            .map((u) => ({
+              nome: u.nome_completo ?? u.nome ?? u.login,
+              login: u.login,
+              role: u.role,
+              ultimo_login: u.ultimo_login,
+            }))
+            .sort((a, b) => String(b.ultimo_login ?? "").localeCompare(String(a.ultimo_login ?? ""))),
+        })
+      } catch (orgError) {
+        console.warn("Falha ao montar panorama de acesso do tenant:", org.id_organizacao, orgError?.message ?? orgError)
+        empresas.push({
+          empresa_id: org.id_organizacao,
+          empresa_nome: org.nome,
+          ultimo_acesso: null,
+          dias_sem_acesso: null,
+          status: "erro",
+          usuario_mais_recente: null,
+          total_usuarios_ativos: 0,
+          usuarios: [],
+        })
+      }
+    }
+
+    empresas.sort((a, b) => (b.dias_sem_acesso ?? Infinity) - (a.dias_sem_acesso ?? Infinity))
+
+    const resumo = empresas.reduce(
+      (acc, empresa) => {
+        acc.total += 1
+        acc.total_usuarios += empresa.total_usuarios_ativos
+        acc[empresa.status] = (acc[empresa.status] ?? 0) + 1
+        return acc
+      },
+      { total: 0, total_usuarios: 0, em_dia: 0, atencao: 0, inativa: 0, nunca_acessou: 0, erro: 0 }
+    )
+
+    return res.json({ resumo, empresas })
+  } catch (error) {
+    console.error("Erro ao montar panorama de acesso:", error)
+    return res.status(500).json({ error: "Erro ao montar panorama de acesso." })
   }
 })
 

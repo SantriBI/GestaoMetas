@@ -74,6 +74,11 @@ export default function LoginPage() {
         return
       }
 
+      if (data.role === "INGRED") {
+        router.push("/admin/painel-acessos")
+        return
+      }
+
     } catch (err) {
       setError("Erro de conexÃ£o com o servidor")
       setIsLoading(false)
