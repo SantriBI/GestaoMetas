@@ -93,7 +93,12 @@ export default function PainelAcessosPage() {
 
   useEffect(() => {
     const currentUser = getStoredUser()
-    if (!currentUser || !["SUPERADMIN", "ADMIN", "INGRED"].includes(currentUser.role)) {
+    const isAllowed =
+      currentUser?.role === "SUPERADMIN" ||
+      currentUser?.role === "ADMIN" ||
+      (currentUser?.role === "GERENTE_SISTEMAS" && !!currentUser?.painelAcessosGlobal)
+
+    if (!isAllowed) {
       router.push("/login")
       return
     }

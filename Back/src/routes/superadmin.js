@@ -263,7 +263,7 @@ router.get("/superadmin/gerentes-sistemas", async (req, res) => {
   try {
     const [users] = await centralPool.query(
       `
-      SELECT id_usuario, nome, nome_completo, login, cpf, ativo, ultimo_login, criado_em
+      SELECT id_usuario, nome, nome_completo, login, cpf, ativo, ultimo_login, criado_em, painel_acessos_global
       FROM usuarios_auth
       WHERE role = 'GERENTE_SISTEMAS'
       ORDER BY COALESCE(nome_completo, nome, login)
@@ -274,6 +274,7 @@ router.get("/superadmin/gerentes-sistemas", async (req, res) => {
       users.map(async (user) => ({
         ...user,
         role: "GERENTE_SISTEMAS",
+        painelAcessosGlobal: String(user.painel_acessos_global ?? "N").toUpperCase() === "S",
         organizacoes: await listSystemManagerOrganizations(user.id_usuario),
       }))
     )
@@ -292,18 +293,23 @@ router.post("/superadmin/gerentes-sistemas", async (req, res) => {
   const nome = String(req.body?.nome ?? "").trim()
   const cpf = normalizeCPF(req.body?.cpf ?? login)
   const organizacoes = normalizeOrganizationIds(req.body?.organizacoes ?? req.body?.empresaIds)
+  const painelAcessos = !!req.body?.painelAcessos
 
   if (!login) return res.status(400).json({ error: "Login e obrigatorio." })
   if (senha.length < 6) return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." })
-  if (!organizacoes.length) return res.status(400).json({ error: "Informe pelo menos uma organizacao." })
+  if (!organizacoes.length && !painelAcessos) {
+    return res.status(400).json({ error: "Informe pelo menos uma organizacao ou libere o Painel de Acessos." })
+  }
 
   try {
-    const [orgRows] = await centralPool.query(
-      `SELECT id_organizacao FROM organizacoes_auth WHERE id_organizacao IN (${organizacoes.map(() => "?").join(",")}) AND ativo = 'S'`,
-      organizacoes
-    )
-    if (orgRows.length !== organizacoes.length) {
-      return res.status(422).json({ error: "Uma ou mais organizacoes nao existem ou estao inativas." })
+    if (organizacoes.length) {
+      const [orgRows] = await centralPool.query(
+        `SELECT id_organizacao FROM organizacoes_auth WHERE id_organizacao IN (${organizacoes.map(() => "?").join(",")}) AND ativo = 'S'`,
+        organizacoes
+      )
+      if (orgRows.length !== organizacoes.length) {
+        return res.status(422).json({ error: "Uma ou mais organizacoes nao existem ou estao inativas." })
+      }
     }
 
     const [duplicates] = await centralPool.query(
@@ -327,31 +333,33 @@ router.post("/superadmin/gerentes-sistemas", async (req, res) => {
             cpf = COALESCE(NULLIF(?, ''), cpf),
             ativo = 'S',
             senha_temporaria = 'N',
+            painel_acessos_global = ?,
             token_version = token_version + 1
         WHERE id_usuario = ?
         `,
-        [hash, nome, nome, cpf, idUsuario]
+        [hash, nome, nome, cpf, painelAcessos ? "S" : "N", idUsuario]
       )
     } else {
       const [result] = await centralPool.query(
         `
         INSERT INTO usuarios_auth
-          (login, senha_hash, role, nome, nome_completo, cpf, ativo, senha_temporaria)
-        VALUES (?, ?, 'GERENTE_SISTEMAS', ?, ?, ?, 'S', 'N')
+          (login, senha_hash, role, nome, nome_completo, cpf, ativo, senha_temporaria, painel_acessos_global)
+        VALUES (?, ?, 'GERENTE_SISTEMAS', ?, ?, ?, 'S', 'N', ?)
         `,
-        [login, hash, nome || login, nome || login, cpf || null]
+        [login, hash, nome || login, nome || login, cpf || null, painelAcessos ? "S" : "N"]
       )
       idUsuario = result.insertId
     }
 
     await replaceSystemManagerOrganizations({ idUsuario, empresaIds: organizacoes })
-    auditAction(req, "UPSERT_GERENTE_SISTEMAS", `id:${idUsuario} orgs:${organizacoes.join(",")}`)
+    auditAction(req, "UPSERT_GERENTE_SISTEMAS", `id:${idUsuario} orgs:${organizacoes.join(",")} painel:${painelAcessos}`)
 
     return res.status(duplicates.length ? 200 : 201).json({
       message: duplicates.length ? "Gerente de Sistemas atualizado com sucesso." : "Gerente de Sistemas cadastrado com sucesso.",
       id_usuario: idUsuario,
       role: "GERENTE_SISTEMAS",
       organizacoes,
+      painelAcessosGlobal: painelAcessos,
     })
   } catch (error) {
     return handleError(res, error, "Erro ao salvar Gerente de Sistemas.")
@@ -367,20 +375,25 @@ router.patch("/superadmin/gerentes-sistemas/:id", async (req, res) => {
   const organizacoes = req.body?.organizacoes === undefined && req.body?.empresaIds === undefined
     ? null
     : normalizeOrganizationIds(req.body?.organizacoes ?? req.body?.empresaIds)
+  const painelAcessos = req.body?.painelAcessos === undefined ? undefined : !!req.body.painelAcessos
 
   if (novaSenha && novaSenha.length < 6) {
     return res.status(400).json({ error: "Senha deve ter pelo menos 6 caracteres." })
   }
-  if (organizacoes && !organizacoes.length) {
-    return res.status(400).json({ error: "Informe pelo menos uma organizacao." })
-  }
 
   try {
     const [users] = await centralPool.query(
-      "SELECT id_usuario FROM usuarios_auth WHERE id_usuario = ? AND role = 'GERENTE_SISTEMAS' LIMIT 1",
+      "SELECT id_usuario, painel_acessos_global FROM usuarios_auth WHERE id_usuario = ? AND role = 'GERENTE_SISTEMAS' LIMIT 1",
       [id]
     )
     if (!users.length) return res.status(404).json({ error: "Gerente de Sistemas nao encontrado." })
+
+    const currentPainelAcessos = String(users[0].painel_acessos_global ?? "N").toUpperCase() === "S"
+    const effectivePainelAcessos = painelAcessos === undefined ? currentPainelAcessos : painelAcessos
+
+    if (organizacoes && !organizacoes.length && !effectivePainelAcessos) {
+      return res.status(400).json({ error: "Informe pelo menos uma organizacao ou libere o Painel de Acessos." })
+    }
 
     const updates = []
     const params = []
@@ -395,18 +408,25 @@ router.patch("/superadmin/gerentes-sistemas/:id", async (req, res) => {
       params.push(await bcrypt.hash(novaSenha, 10))
     }
 
+    if (painelAcessos !== undefined) {
+      updates.push("painel_acessos_global = ?")
+      params.push(painelAcessos ? "S" : "N")
+    }
+
     if (updates.length) {
       params.push(id)
       await centralPool.query(`UPDATE usuarios_auth SET ${updates.join(", ")} WHERE id_usuario = ?`, params)
     }
 
     if (organizacoes) {
-      const [orgRows] = await centralPool.query(
-        `SELECT id_organizacao FROM organizacoes_auth WHERE id_organizacao IN (${organizacoes.map(() => "?").join(",")}) AND ativo = 'S'`,
-        organizacoes
-      )
-      if (orgRows.length !== organizacoes.length) {
-        return res.status(422).json({ error: "Uma ou mais organizacoes nao existem ou estao inativas." })
+      if (organizacoes.length) {
+        const [orgRows] = await centralPool.query(
+          `SELECT id_organizacao FROM organizacoes_auth WHERE id_organizacao IN (${organizacoes.map(() => "?").join(",")}) AND ativo = 'S'`,
+          organizacoes
+        )
+        if (orgRows.length !== organizacoes.length) {
+          return res.status(422).json({ error: "Uma ou mais organizacoes nao existem ou estao inativas." })
+        }
       }
       await replaceSystemManagerOrganizations({ idUsuario: id, empresaIds: organizacoes })
     }

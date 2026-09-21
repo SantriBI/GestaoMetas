@@ -40,6 +40,7 @@ function normalizeRow(row, source = "central", empresaId = null) {
     token_version: Number(row.token_version ?? 0),
     vendedor_id: row.vendedor_id ?? null,
     funcionario_id: row.funcionario_id ?? null,
+    painel_acessos_global: row.painel_acessos_global ?? null,
     source,
   }
 }

@@ -22,11 +22,11 @@ export interface NavItem {
 
 export function getNavItems(user: AuthUser | null): NavItem[] {
   const isAdmin = user?.role === "ADMIN"
-  const isIngred = user?.role === "INGRED"
   const isSystemManager = user?.role === "GERENTE_SISTEMAS"
+  const isPainelOnlyManager = isSystemManager && !!user?.painelAcessosGlobal
   const effectiveRole = getEffectiveRole(user)
 
-  if (isIngred) {
+  if (isPainelOnlyManager) {
     return [
       { href: "/admin/painel-acessos", label: "Painel de Acessos", icon: Gauge },
       { href: "/perfil", label: "Perfil", icon: UserRound },
@@ -49,7 +49,7 @@ export function getNavItems(user: AuthUser | null): NavItem[] {
     ]
   }
 
-  const dashboardHref = getDashboardRoute(effectiveRole)
+  const dashboardHref = getDashboardRoute(effectiveRole, user?.painelAcessosGlobal)
   const lifeGoalHref = "/vendedor/minha-meta-de-vida"
 
   const items: NavItem[] = [
@@ -81,8 +81,6 @@ export function isNavItemActive(item: NavItem, pathname: string): boolean {
       return pathname.startsWith("/usuarios/painel-acessos") || pathname.startsWith("/admin/painel-acessos")
     case "Organizações":
       return pathname.startsWith("/admin/organizacoes")
-    case "Painel de Acessos":
-      return pathname.startsWith("/admin/painel-acessos")
     case "Selecionar":
       return pathname.startsWith("/gerente-sistemas")
     case "Kanban":

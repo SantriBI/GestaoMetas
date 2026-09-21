@@ -28,7 +28,7 @@ export function AppShellNav({ user }: AppShellNavProps) {
   const pathname = usePathname()
   const router = useRouter()
   const effectiveRole = getEffectiveRole(user)
-  const dashboardHref = getDashboardRoute(effectiveRole)
+  const dashboardHref = getDashboardRoute(effectiveRole, user?.painelAcessosGlobal)
   const [feedActivityCount, setFeedActivityCount] = useState(0)
 
   const palette = {
@@ -167,14 +167,14 @@ export function AppShellNav({ user }: AppShellNavProps) {
                 {user?.nome ?? "Usuario"}
               </span>
               <span className={cn("block text-xs", palette.role)}>
-                {effectiveRole === "VENDEDOR"
-                  ? "Vendedor"
-                  : effectiveRole === "ADMIN"
-                    ? "Administrador"
-                    : effectiveRole === "GERENTE_SISTEMAS"
-                      ? "Gerente de Sistemas"
-                      : effectiveRole === "INGRED"
-                        ? "Secretária Executiva"
+                {user?.painelAcessosGlobal
+                  ? "Secretária Executiva"
+                  : effectiveRole === "VENDEDOR"
+                    ? "Vendedor"
+                    : effectiveRole === "ADMIN"
+                      ? "Administrador"
+                      : effectiveRole === "GERENTE_SISTEMAS"
+                        ? "Gerente de Sistemas"
                         : "Gerente"}
               </span>
             </span>

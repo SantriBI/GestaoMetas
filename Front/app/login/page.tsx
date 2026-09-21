@@ -60,7 +60,7 @@ export default function LoginPage() {
       }
 
       if (data.role === "GERENTE_SISTEMAS") {
-        router.push("/gerente-sistemas")
+        router.push(data.painelAcessosGlobal ? "/admin/painel-acessos" : "/gerente-sistemas")
         return
       }
 
@@ -71,11 +71,6 @@ export default function LoginPage() {
 
       if (data.role === "GERENTE") {
         router.push("/dashboard")
-        return
-      }
-
-      if (data.role === "INGRED") {
-        router.push("/admin/painel-acessos")
         return
       }
 

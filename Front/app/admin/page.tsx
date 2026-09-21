@@ -75,6 +75,8 @@ interface GerenteSistema {
   ultimo_login: string | null
   role: "GERENTE_SISTEMAS"
   organizacoes: GerenteSistemaOrganizacao[]
+  /** Liberado apenas para o Painel de Acessos, sem nenhuma organizacao associada. */
+  painelAcessosGlobal: boolean
 }
 
 interface LojaOpcao {
@@ -444,10 +446,12 @@ export default function AdminPage() {
   const [gerenteSistemaCpf, setGerenteSistemaCpf] = useState("")
   const [gerenteSistemaSenha, setGerenteSistemaSenha] = useState("")
   const [gerenteSistemaOrgIds, setGerenteSistemaOrgIds] = useState<number[]>([])
+  const [gerenteSistemaPainelAcessos, setGerenteSistemaPainelAcessos] = useState(false)
   const [savingGerenteSistema, setSavingGerenteSistema] = useState(false)
   const [editGerenteSistema, setEditGerenteSistema] = useState<GerenteSistema | null>(null)
   const [editGerenteSistemaSenha, setEditGerenteSistemaSenha] = useState("")
   const [editGerenteSistemaOrgIds, setEditGerenteSistemaOrgIds] = useState<number[]>([])
+  const [editGerenteSistemaPainelAcessos, setEditGerenteSistemaPainelAcessos] = useState(false)
 
   // Feedback filters
   const [feedbackEmpresaId, setFeedbackEmpresaId] = useState("")
@@ -824,6 +828,7 @@ export default function AdminPage() {
     setGerenteSistemaCpf("")
     setGerenteSistemaSenha("")
     setGerenteSistemaOrgIds([])
+    setGerenteSistemaPainelAcessos(false)
   }
 
   async function onCreateGerenteSistema(e: React.FormEvent) {
@@ -831,7 +836,10 @@ export default function AdminPage() {
     if (!gerenteSistemaLogin.trim()) { toast.error("Informe o login."); return }
     if (!gerenteSistemaNome.trim()) { toast.error("Informe o nome."); return }
     if (gerenteSistemaSenha.length < 6) { toast.error("Senha deve ter pelo menos 6 caracteres."); return }
-    if (!gerenteSistemaOrgIds.length) { toast.error("Selecione pelo menos uma organizacao."); return }
+    if (!gerenteSistemaOrgIds.length && !gerenteSistemaPainelAcessos) {
+      toast.error("Selecione pelo menos uma organizacao ou libere o Painel de Acessos.")
+      return
+    }
 
     setSavingGerenteSistema(true)
     try {
@@ -843,6 +851,7 @@ export default function AdminPage() {
           nome: gerenteSistemaNome.trim(),
           cpf: gerenteSistemaCpf.trim() || undefined,
           organizacoes: gerenteSistemaOrgIds,
+          painelAcessos: gerenteSistemaPainelAcessos,
         }),
       })
       toast.success("Gerente de Sistemas cadastrado com sucesso!")
@@ -860,12 +869,16 @@ export default function AdminPage() {
     setEditGerenteSistema(item)
     setEditGerenteSistemaSenha("")
     setEditGerenteSistemaOrgIds(item.organizacoes.map((org) => Number(org.id_organizacao)).filter(Boolean))
+    setEditGerenteSistemaPainelAcessos(item.painelAcessosGlobal)
     setShowGerenteSistemaForm(false)
   }
 
   async function onSaveGerenteSistema() {
     if (!editGerenteSistema) return
-    if (!editGerenteSistemaOrgIds.length) { toast.error("Selecione pelo menos uma organizacao."); return }
+    if (!editGerenteSistemaOrgIds.length && !editGerenteSistemaPainelAcessos) {
+      toast.error("Selecione pelo menos uma organizacao ou libere o Painel de Acessos.")
+      return
+    }
     if (editGerenteSistemaSenha && editGerenteSistemaSenha.length < 6) { toast.error("Senha deve ter pelo menos 6 caracteres."); return }
 
     setSavingGerenteSistema(true)
@@ -876,12 +889,14 @@ export default function AdminPage() {
           nome: editGerenteSistema.nome_completo ?? editGerenteSistema.nome ?? editGerenteSistema.login,
           novaSenha: editGerenteSistemaSenha || undefined,
           organizacoes: editGerenteSistemaOrgIds,
+          painelAcessos: editGerenteSistemaPainelAcessos,
         }),
       })
       toast.success("Gerente de Sistemas atualizado!")
       setEditGerenteSistema(null)
       setEditGerenteSistemaSenha("")
       setEditGerenteSistemaOrgIds([])
+      setEditGerenteSistemaPainelAcessos(false)
       void fetchData()
     } catch (err) {
       toast.error((err as Error).message)
@@ -1366,27 +1381,44 @@ export default function AdminPage() {
                     </Field>
                   </div>
 
-                  <Field label="Organizacoes liberadas" required>
-                    <div className="grid max-h-64 gap-2 overflow-y-auto rounded-xl border border-[#1c2940] bg-background/40 p-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {activeOrgs.map((org) => (
-                        <label key={org.id_organizacao} className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm transition-colors hover:bg-muted">
-                          <input
-                            type="checkbox"
-                            className="mt-0.5 h-4 w-4 accent-emerald-500"
-                            checked={gerenteSistemaOrgIds.includes(org.id_organizacao)}
-                            onChange={() => toggleGerenteSistemaOrg(org.id_organizacao)}
-                          />
-                          <span>
-                            <span className="block font-medium text-foreground">{org.nome}</span>
-                            <span className="block text-xs text-muted-foreground">ID {org.id_organizacao}</span>
-                          </span>
-                        </label>
-                      ))}
-                      {activeOrgs.length === 0 && (
-                        <p className="text-sm text-muted-foreground">Nenhuma organizacao ativa encontrada.</p>
-                      )}
-                    </div>
-                  </Field>
+                  <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#1c2940] bg-background/40 px-3 py-2.5 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 accent-emerald-500"
+                      checked={gerenteSistemaPainelAcessos}
+                      onChange={(e) => setGerenteSistemaPainelAcessos(e.target.checked)}
+                    />
+                    <span>
+                      <span className="block font-medium text-foreground">Liberar apenas o Painel de Acessos</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Sem acesso a nenhuma organizacao/loja - so ve o ultimo acesso de todos os clientes. Uso tipico: secretaria executiva.
+                      </span>
+                    </span>
+                  </label>
+
+                  {!gerenteSistemaPainelAcessos && (
+                    <Field label="Organizacoes liberadas" required>
+                      <div className="grid max-h-64 gap-2 overflow-y-auto rounded-xl border border-[#1c2940] bg-background/40 p-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {activeOrgs.map((org) => (
+                          <label key={org.id_organizacao} className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm transition-colors hover:bg-muted">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 h-4 w-4 accent-emerald-500"
+                              checked={gerenteSistemaOrgIds.includes(org.id_organizacao)}
+                              onChange={() => toggleGerenteSistemaOrg(org.id_organizacao)}
+                            />
+                            <span>
+                              <span className="block font-medium text-foreground">{org.nome}</span>
+                              <span className="block text-xs text-muted-foreground">ID {org.id_organizacao}</span>
+                            </span>
+                          </label>
+                        ))}
+                        {activeOrgs.length === 0 && (
+                          <p className="text-sm text-muted-foreground">Nenhuma organizacao ativa encontrada.</p>
+                        )}
+                      </div>
+                    </Field>
+                  )}
 
                   <div className="flex flex-wrap gap-3">
                     <button type="submit" disabled={savingGerenteSistema} className={btnPrimary}>
@@ -1408,30 +1440,49 @@ export default function AdminPage() {
                   <Field label="Nova senha (vazio = manter)">
                     <PasswordInput value={editGerenteSistemaSenha} onChange={setEditGerenteSistemaSenha} />
                   </Field>
-                  <Field label="Organizacoes liberadas" required>
-                    <div className="grid max-h-64 gap-2 overflow-y-auto rounded-xl border border-[#1c2940] bg-background/40 p-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {activeOrgs.map((org) => (
-                        <label key={org.id_organizacao} className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm transition-colors hover:bg-muted">
-                          <input
-                            type="checkbox"
-                            className="mt-0.5 h-4 w-4 accent-emerald-500"
-                            checked={editGerenteSistemaOrgIds.includes(org.id_organizacao)}
-                            onChange={() => toggleGerenteSistemaOrg(org.id_organizacao, true)}
-                          />
-                          <span>
-                            <span className="block font-medium text-foreground">{org.nome}</span>
-                            <span className="block text-xs text-muted-foreground">ID {org.id_organizacao}</span>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </Field>
+
+                  <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#1c2940] bg-background/40 px-3 py-2.5 text-sm">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 accent-emerald-500"
+                      checked={editGerenteSistemaPainelAcessos}
+                      onChange={(e) => setEditGerenteSistemaPainelAcessos(e.target.checked)}
+                    />
+                    <span>
+                      <span className="block font-medium text-foreground">Liberar apenas o Painel de Acessos</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Sem acesso a nenhuma organizacao/loja - so ve o ultimo acesso de todos os clientes. Uso tipico: secretaria executiva.
+                      </span>
+                    </span>
+                  </label>
+
+                  {!editGerenteSistemaPainelAcessos && (
+                    <Field label="Organizacoes liberadas" required>
+                      <div className="grid max-h-64 gap-2 overflow-y-auto rounded-xl border border-[#1c2940] bg-background/40 p-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {activeOrgs.map((org) => (
+                          <label key={org.id_organizacao} className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm transition-colors hover:bg-muted">
+                            <input
+                              type="checkbox"
+                              className="mt-0.5 h-4 w-4 accent-emerald-500"
+                              checked={editGerenteSistemaOrgIds.includes(org.id_organizacao)}
+                              onChange={() => toggleGerenteSistemaOrg(org.id_organizacao, true)}
+                            />
+                            <span>
+                              <span className="block font-medium text-foreground">{org.nome}</span>
+                              <span className="block text-xs text-muted-foreground">ID {org.id_organizacao}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </Field>
+                  )}
+
                   <div className="flex flex-wrap gap-3">
                     <button onClick={onSaveGerenteSistema} disabled={savingGerenteSistema} className={btnPrimary}>
                       {savingGerenteSistema ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                       Salvar
                     </button>
-                    <button onClick={() => { setEditGerenteSistema(null); setEditGerenteSistemaSenha(""); setEditGerenteSistemaOrgIds([]) }} className={btnSecondary}>
+                    <button onClick={() => { setEditGerenteSistema(null); setEditGerenteSistemaSenha(""); setEditGerenteSistemaOrgIds([]); setEditGerenteSistemaPainelAcessos(false) }} className={btnSecondary}>
                       <X className="h-4 w-4" />Cancelar
                     </button>
                   </div>
@@ -1458,7 +1509,11 @@ export default function AdminPage() {
                         <Badge ativo={item.ativo} />
                       </div>
                       <div className="mt-3 flex flex-wrap gap-1.5">
-                        {item.organizacoes.length ? item.organizacoes.map((org) => (
+                        {item.painelAcessosGlobal ? (
+                          <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-200">
+                            Somente Painel de Acessos
+                          </span>
+                        ) : item.organizacoes.length ? item.organizacoes.map((org) => (
                           <span key={org.id_organizacao} className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-200">
                             {org.nome}
                           </span>
@@ -1502,7 +1557,11 @@ export default function AdminPage() {
                             <td className="px-4 py-3"><Badge ativo={item.ativo} /></td>
                             <td className="px-4 py-3">
                               <div className="flex max-w-xl flex-wrap gap-1.5">
-                                {item.organizacoes.length ? item.organizacoes.map((org) => (
+                                {item.painelAcessosGlobal ? (
+                                  <span className="rounded-full border border-blue-500/25 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-200">
+                                    Somente Painel de Acessos
+                                  </span>
+                                ) : item.organizacoes.length ? item.organizacoes.map((org) => (
                                   <span key={org.id_organizacao} className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-200">
                                     {org.nome}
                                   </span>

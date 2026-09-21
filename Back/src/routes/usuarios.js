@@ -348,7 +348,14 @@ router.get("/usuarios/panorama-acesso/equipe", requireAuth, requireRole("GERENTE
   }
 })
 
-router.get("/usuarios/panorama-acesso", requireAuth, requireRole("SUPERADMIN", "ADMIN", "INGRED"), async (req, res) => {
+function requirePanoramaAcessoGlobal(req, res, next) {
+  const role = actorRole(req)
+  if (role === "SUPERADMIN" || role === "ADMIN") return next()
+  if (role === "GERENTE_SISTEMAS" && req.auth?.painelAcessosGlobal) return next()
+  return res.status(403).json({ error: "Acesso negado." })
+}
+
+router.get("/usuarios/panorama-acesso", requireAuth, requirePanoramaAcessoGlobal, async (req, res) => {
   try {
     const organizations = await getActiveOrganizations()
     const agora = Date.now()

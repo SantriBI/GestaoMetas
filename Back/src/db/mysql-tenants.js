@@ -218,6 +218,10 @@ export async function ensureCentralSchema() {
   }
 
   await ensureUsuariosAuthColumn(centralPool, null, "token_version", "INT UNSIGNED NOT NULL DEFAULT 0")
+  // Gerente de Sistemas liberado apenas para o Painel de Acessos (sem nenhuma organizacao
+  // associada em gerente_sistema_organizacoes) - caso de uso: secretaria executiva que so
+  // acompanha ultimo acesso de todos os clientes, sem ver dados de loja/venda de nenhum deles.
+  await ensureUsuariosAuthColumn(centralPool, null, "painel_acessos_global", "CHAR(1) NOT NULL DEFAULT 'N'")
   await ensureOrganizacoesAuthColumn("FEATURE_COMISSOES_HABILITADA", "TINYINT(1) NOT NULL DEFAULT 0")
   await ensureOrganizacoesAuthColumn("FEATURE_PREMIACAO_HABILITADA", "TINYINT(1) NOT NULL DEFAULT 0")
 

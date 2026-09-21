@@ -1,6 +1,6 @@
 "use client"
 
-export type UserRole = "VENDEDOR" | "GERENTE" | "INDUSTRIA" | "ADMIN" | "SUPERADMIN" | "GERENTE_SISTEMAS" | "INGRED"
+export type UserRole = "VENDEDOR" | "GERENTE" | "INDUSTRIA" | "ADMIN" | "SUPERADMIN" | "GERENTE_SISTEMAS"
 
 export interface AuthUser {
   id_usuario: number | string
@@ -18,6 +18,8 @@ export interface AuthUser {
   vendedor_nome_visualizado?: string | null
   gerente_sistemas_view?: "GERENTE" | "VENDEDOR" | null
   gerente_sistemas_original_role?: "GERENTE_SISTEMAS" | null
+  /** GERENTE_SISTEMAS liberado apenas para o Painel de Acessos, sem nenhuma organizacao associada. */
+  painelAcessosGlobal?: boolean
   featureComissoesHabilitada?: boolean
   featurePremiacaoHabilitada?: boolean
 }
@@ -74,13 +76,13 @@ export function getEffectiveRole(user?: Pick<AuthUser, "role" | "gerente_sistema
   return user.role
 }
 
-export function getDashboardRoute(role?: string | null) {
+export function getDashboardRoute(role?: string | null, painelAcessosGlobal?: boolean) {
+  if (role === "GERENTE_SISTEMAS" && painelAcessosGlobal) return "/admin/painel-acessos"
   if (role === "SUPERADMIN") return "/admin"
   if (role === "ADMIN") return "/admin/organizacoes"
   if (role === "GERENTE_SISTEMAS") return "/gerente-sistemas"
   if (role === "VENDEDOR") return "/vendedor"
   if (role === "INDUSTRIA") return "/industria"
-  if (role === "INGRED") return "/admin/painel-acessos"
   return "/dashboard"
 }
 

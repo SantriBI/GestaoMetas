@@ -50,6 +50,7 @@ export async function requireAuth(req, res, next) {
       empresa_id_original: user.empresa_id ?? claims.empresa_id ?? null,
       sk_vendedor: user.sk_vendedor ?? claims.sk_vendedor ?? null,
       cpf: user.cpf ?? claims.cpf ?? null,
+      painelAcessosGlobal: String(user.painel_acessos_global ?? "N").toUpperCase() === "S",
       token_version: Number(user.token_version ?? claims.token_version ?? 0),
       ...featureFlags,
     }

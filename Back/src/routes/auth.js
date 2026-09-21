@@ -102,6 +102,7 @@ router.post("/login", loginRateLimiter, async (req, res) => {
         sk_vendedor: centralUser.sk_vendedor ?? null,
         foto_url: centralUser.foto_url ?? null,
         senha_temporaria: centralUser.senha_temporaria ?? "N",
+        painelAcessosGlobal: String(centralUser.painel_acessos_global ?? "N").toUpperCase() === "S",
         featureComissoesHabilitada,
         featurePremiacaoHabilitada,
       })
