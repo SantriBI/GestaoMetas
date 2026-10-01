@@ -53,8 +53,8 @@ export interface PremiacaoEquipeVendedor {
   nomeVendedor: string | null
   mesReferencia: string | null
   valorComissaoBase: number
-  // null quando a origem dos dados nao guarda margem+frete "crua" (fechamento historico em
-  // FT_COMISSAO_HISTORICO - so o resultado ja derivado dela). No mes atual sempre vem numero.
+  // Mes atual e historico vem da mesma view (VW_PREMIACAO_VENDEDOR_MENSAL), que ja devolve 0
+  // quando o vendedor nao tem apuracao - na pratica sempre vem numero; null fica so por tipo.
   margemMaisFrete: number | null
   statusGatilho: string | null
   elegivel: boolean
@@ -88,8 +88,8 @@ export interface PremiacaoEquipe {
 // (getScopedLojaScope), nunca aceito como confiavel so por vir do frontend.
 //
 // `mes` e opcional - "atual"/undefined mantem o comportamento de sempre (le a view do mes em
-// andamento); um mes no formato "MM/YYYY" (vindo de fetchMesesDisponiveis) le o fechamento
-// daquele mes em FT_COMISSAO_HISTORICO.
+// andamento); um mes no formato "MM/YYYY" (vindo de fetchMesesDisponiveis) le aquele mes em
+// VW_PREMIACAO_VENDEDOR_MENSAL.
 export async function fetchPremiacaoEquipe(empresaAcesso?: string | null, mes?: string | null) {
   const params = new URLSearchParams()
   if (empresaAcesso) params.set("empresa_acesso", empresaAcesso)

@@ -2,6 +2,23 @@
 -- FASE 3 DO MOTOR DE PREMIACAO - VW_PREMIACAO_VENDEDOR_COMISSAO_ERP
 -- Executar como DM_VENDAS (mesmo schema usado pela API em runtime).
 --
+-- ATUALIZACAO 2026-10-01: a comissao passa a vir de VW_COMISSAO_ERP_MES_ATUAL
+-- (vw_comissao_erp_mes_atual.sql, executar antes deste script), sobre a fato nova
+-- FT_COMISSAO_PARAMETRIZADA_TESTE (devolucoes automaticas = 'N', igual a tela do ERP).
+-- A fato antiga usava 'T' e descontava devolucoes a mais. O join com a apuracao passa a
+-- usar o mes da propria comissao (com.MES_REFERENCIA, 'MM/YYYY') em vez de
+-- TO_CHAR(SYSDATE, 'MM/YYYY'). Colunas de saida inalteradas. Rollback: voltar o FROM para
+-- FT_COMISSAO_PARAMETRIZADA e o join para TO_CHAR(SYSDATE, 'MM/YYYY'). O cabecalho abaixo
+-- descreve a fato antiga e fica como historico.
+--
+-- ATUALIZACAO 2026-10-01 (2): a formula da premiacao foi movida para
+-- VW_PREMIACAO_VENDEDOR_MENSAL (vw_premiacao_vendedor_mensal.sql, executar antes deste
+-- script). Esta view agora so filtra o mes corrente; colunas de saida inalteradas. Efeito
+-- colateral: o join com a apuracao virou LEFT JOIN na mensal, entao vendedor sem apuracao
+-- passa a aparecer (margem 0, NAO ELEGIVEL, premiacao 0) em vez de sumir.
+-- Rollback: recriar com o SELECT anterior (FROM VW_COMISSAO_ERP_MES_ATUAL com JOIN
+-- DIM_VENDEDOR + JOIN VW_APURACAO_PREMIACAO_VENDEDOR por VENDEDOR_ID e MES_REFERENCIA).
+--
 -- Muda a fonte da comissao base: em vez de calcular item a item por percentual
 -- de grupo de produto (Fase 2 - VW_VALOR_BASE_PREMIACAO_VENDEDOR), usa a
 -- comissao ja pronta que vem do ERP em FT_COMISSAO_PARAMETRIZADA.VALOR_COMISSAO_A_PAGAR
@@ -47,27 +64,19 @@
 
 CREATE OR REPLACE VIEW VW_PREMIACAO_VENDEDOR_COMISSAO_ERP AS
 SELECT
-    com.SK_VENDEDOR,
-    com.SK_EMPRESAS,
-    dv.VENDEDOR_ID,
-    dv.NOME_VENDEDOR,
-    ap.MES_REFERENCIA,
-    com.VALOR_COMISSAO_A_PAGAR,
-    ap.MARGEM_MAIS_FRETE,
-    ap.STATUS_GATILHO,
-    ap.FAIXA_ACELERADOR,
-    ap.PERC_ACELERADOR,
-    ap.BONUS_FIXO_ADICIONAL,
-    CASE
-        WHEN ap.STATUS_GATILHO = 'NÃO ELEGÍVEL' THEN 0
-        ELSE (com.VALOR_COMISSAO_A_PAGAR * ap.PERC_ACELERADOR) + NVL(ap.BONUS_FIXO_ADICIONAL, 0)
-    END AS VALOR_PREMIACAO_FINAL
-FROM FT_COMISSAO_PARAMETRIZADA com
-JOIN DIM_VENDEDOR dv
-    ON dv.SK_VENDEDOR = com.SK_VENDEDOR
-JOIN VW_APURACAO_PREMIACAO_VENDEDOR ap
-    ON ap.VENDEDOR_ID = dv.VENDEDOR_ID
-   AND ap.MES_REFERENCIA = TO_CHAR(SYSDATE, 'MM/YYYY')
-WHERE com.SK_VENDEDOR <> -1;
+    m.SK_VENDEDOR,
+    m.SK_EMPRESAS,
+    m.VENDEDOR_ID,
+    m.NOME_VENDEDOR,
+    m.MES_REFERENCIA,
+    m.VALOR_COMISSAO_A_PAGAR,
+    m.MARGEM_MAIS_FRETE,
+    m.STATUS_GATILHO,
+    m.FAIXA_ACELERADOR,
+    m.PERC_ACELERADOR,
+    m.BONUS_FIXO_ADICIONAL,
+    m.VALOR_PREMIACAO_FINAL
+FROM VW_PREMIACAO_VENDEDOR_MENSAL m
+WHERE m.MES_REFERENCIA = TO_CHAR(SYSDATE, 'MM/YYYY');
 
-COMMENT ON TABLE VW_PREMIACAO_VENDEDOR_COMISSAO_ERP IS 'Premiacao final do vendedor no mes corrente: comissao pronta do ERP (FT_COMISSAO_PARAMETRIZADA.VALOR_COMISSAO_A_PAGAR) x acelerador da faixa de margem+frete (VW_APURACAO_PREMIACAO_VENDEDOR), mais bonus fixo, zerado se NAO ELEGIVEL (margem+frete < R$20.000). Fase 3 do motor de premiacao - exposta ao vendedor via GET /api/premiacao/minha-premiacao e a equipe do gerente via GET /api/premiacao/equipe. SK_EMPRESAS (de FT_COMISSAO_PARAMETRIZADA) e o mesmo dominio de DIM_EMPRESAS.SK_EMPRESAS, usado para filtrar por loja no escopo do gerente.';
+COMMENT ON TABLE VW_PREMIACAO_VENDEDOR_COMISSAO_ERP IS 'Premiacao final do vendedor no mes corrente: filtro de VW_PREMIACAO_VENDEDOR_MENSAL (comissao do ERP com devolucoes automaticas = N x acelerador da faixa de margem+frete, mais bonus fixo, zerado se NAO ELEGIVEL; sem apuracao = margem 0 / NAO ELEGIVEL). Exposta ao vendedor via GET /api/premiacao/minha-premiacao e a equipe do gerente via GET /api/premiacao/equipe. SK_EMPRESAS e o mesmo dominio de DIM_EMPRESAS.SK_EMPRESAS, usado para filtrar por loja no escopo do gerente.';

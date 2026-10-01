@@ -72,7 +72,7 @@ export function createPremiacaoVendedorController(deps = {}) {
   }
 
   /**
-   * Meses disponiveis em FT_COMISSAO_HISTORICO para o gerente logado (popula o seletor de mes
+   * Meses disponiveis em VW_COMISSAO_ERP_MENSAL para o gerente logado (popula o seletor de mes
    * da tela de equipe). Mesma revalidacao de papel/escopo de loja que getPremiacaoEquipe.
    */
   async function getMesesDisponiveisPremiacao(req, res) {

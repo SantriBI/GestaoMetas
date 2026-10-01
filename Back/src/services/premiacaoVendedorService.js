@@ -42,12 +42,11 @@ function normalizeSkVendedor(skVendedor) {
 // listarPremiacaoEquipe (visao do gerente, mes atual e historico) - a formula/regra de
 // elegibilidade precisa ser identica nas tres origens de dados.
 //
-// margem_mais_frete: no mes atual vem direto da view (VW_PREMIACAO_VENDEDOR_COMISSAO_ERP); no
-// historico vem de um LEFT JOIN com VW_APURACAO_PREMIACAO_VENDEDOR (ver
-// buscarLinhasBrutasHistorico) - por ser LEFT JOIN, pode vir null no raro caso de nao achar
-// par pro vendedor/mes. hasOwnProperty (via normalizeRow) distingue "coluna nao veio nesta
-// query" (null, sem inventar 0) de "veio 0 do Oracle"; quando a coluna existe mas o valor e
-// null (join sem match), cai no `?? 0` abaixo.
+// margem_mais_frete: mes atual (VW_PREMIACAO_VENDEDOR_COMISSAO_ERP) e historico
+// (VW_PREMIACAO_VENDEDOR_MENSAL) vem da mesma view, que ja faz NVL(..., 0) quando o vendedor
+// nao tem apuracao no mes. hasOwnProperty (via normalizeRow) distingue "coluna nao veio nesta
+// query" (null, sem inventar 0) de "veio 0 do Oracle"; null com a coluna presente cai no
+// `?? 0` abaixo (protecao extra).
 function mapPremiacaoRow(row) {
   const temMargemMaisFrete = Object.prototype.hasOwnProperty.call(row, "margem_mais_frete")
   const margemMaisFrete = temMargemMaisFrete ? Number(row.margem_mais_frete ?? 0) : null
@@ -84,7 +83,7 @@ function mapPremiacaoRow(row) {
 /**
  * Regra de negocio unica da tela de equipe, aplicada da MESMA forma independente da origem
  * dos dados (mes atual, via VW_PREMIACAO_VENDEDOR_COMISSAO_ERP, ou mes fechado, via
- * FT_COMISSAO_HISTORICO): filtra pra dentro so vendedores com conta ativa no tenant
+ * VW_PREMIACAO_VENDEDOR_MENSAL): filtra pra dentro so vendedores com conta ativa no tenant
  * (usuarios_auth ativo='S' AND role='VENDEDOR' - mesmo filtro que o ranking usa). O zerar de
  * valorComissaoBase pra quem nao e elegivel ja acontece dentro de mapPremiacaoRow, que
  * tambem e compartilhado pelas duas origens - entao as DUAS regras da feature (conta ativa +
@@ -171,51 +170,43 @@ async function buscarLinhasBrutasMesAtual(empresaId, lojaScope, query) {
   )
 }
 
-// FT_COMISSAO_HISTORICO e o fechamento mensal (upsert diario ate fechar, depois congelado) -
-// nao guarda MARGEM_MAIS_FRETE (so o resultado ja derivado dela: STATUS_GATILHO,
-// FAIXA_ACELERADOR, PERC_ACELERADOR, BONUS_FIXO_ADICIONAL, VALOR_PREMIACAO_FINAL - esses
-// continuam vindo de H, o fechamento oficial/congelado, nunca recalculados). A margem+frete
-// crua pra exibicao vem de VW_APURACAO_PREMIACAO_VENDEDOR (mesma view que ja alimenta o mes
-// atual em VW_PREMIACAO_VENDEDOR_COMISSAO_ERP) - ela guarda o historico completo por
-// VENDEDOR_ID + MES_REFERENCIA, nao so o mes corrente (confirmado ao vivo em 2026-09-16, org 7:
-// 67/67 linhas de FT_COMISSAO_HISTORICO de 08/2026 acharam par). LEFT JOIN por seguranca (nao
-// derruba a linha de comissao se por algum motivo a apuracao de margem nao tiver aquele
-// vendedor/mes) - nesse caso MARGEM_MAIS_FRETE vem null e mapPremiacaoRow trata como 0.
-// Nao tem coluna de conta ativa: esse filtro entra depois, via aplicarRegrasNegocioEquipe,
-// igual ao caminho do mes atual.
+// Meses passados vem de VW_PREMIACAO_VENDEDOR_MENSAL: mesma formula/colunas do mes atual
+// (VW_PREMIACAO_VENDEDOR_COMISSAO_ERP e so um filtro dela), sobre a fato nova de comissao
+// (devolucoes automaticas = N). Substitui FT_COMISSAO_HISTORICO (2026-10-01), gravada pelo job
+// antigo com devolucoes descontadas e sem o ultimo dia do mes. A margem+frete ja vem na view
+// (LEFT JOIN na apuracao com NVL: sem apuracao = margem 0 / NAO ELEGIVEL). Gatilho/faixa/
+// acelerador sao recalculados ao vivo pela apuracao - mudar a escada ou a margem altera a
+// premiacao exibida dos meses passados. Conta ativa: filtro aplicado depois, via
+// aplicarRegrasNegocioEquipe, igual ao caminho do mes atual.
 async function buscarLinhasBrutasHistorico(empresaId, lojaScope, mesReferencia, query) {
   // Prefixo curto de proposito: Oracle limita nome de bind variable a 30 bytes (client 12.1
   // deste tenant nao tem extended identifiers) - "loja_scope_premiacao_historico_0" (32 chars)
   // estourava o limite e truncava pra um nome identico em todos os binds, causando
   // ORA-01008 (achado ao vivo em 2026-09-16, org 7). Mantem folga ate index de 2 digitos.
-  const lojaCondition = buildLojaInCondition("H.SK_EMPRESAS", lojaScope, "prem_hist_loja")
+  const lojaCondition = buildLojaInCondition("SK_EMPRESAS", lojaScope, "prem_hist_loja")
 
   return query(
     empresaId,
     `
     SELECT
-      H.SK_VENDEDOR,
-      VND.VENDEDOR_ID,
-      VND.NOME_VENDEDOR,
-      H.MES_REFERENCIA,
-      H.VALOR_COMISSAO_A_PAGAR,
-      AP.MARGEM_MAIS_FRETE,
-      H.STATUS_GATILHO,
-      H.FAIXA_ACELERADOR,
-      H.PERC_ACELERADOR,
-      H.BONUS_FIXO_ADICIONAL,
-      H.VALOR_PREMIACAO_FINAL
-    FROM FT_COMISSAO_HISTORICO H
-    JOIN DIM_VENDEDOR VND ON VND.SK_VENDEDOR = H.SK_VENDEDOR
-    LEFT JOIN VW_APURACAO_PREMIACAO_VENDEDOR AP
-      ON AP.VENDEDOR_ID = VND.VENDEDOR_ID
-     AND AP.MES_REFERENCIA = H.MES_REFERENCIA
+      SK_VENDEDOR,
+      VENDEDOR_ID,
+      NOME_VENDEDOR,
+      MES_REFERENCIA,
+      VALOR_COMISSAO_A_PAGAR,
+      MARGEM_MAIS_FRETE,
+      STATUS_GATILHO,
+      FAIXA_ACELERADOR,
+      PERC_ACELERADOR,
+      BONUS_FIXO_ADICIONAL,
+      VALOR_PREMIACAO_FINAL
+    FROM VW_PREMIACAO_VENDEDOR_MENSAL
     WHERE ${lojaCondition.clause}
-      AND H.MES_REFERENCIA = :mesReferenciaHistorico
+      AND MES_REFERENCIA = :mesReferenciaHistorico
     ORDER BY
-      CASE WHEN H.STATUS_GATILHO = 'NÃO ELEGÍVEL' THEN 1 ELSE 0 END,
-      H.VALOR_PREMIACAO_FINAL DESC,
-      AP.MARGEM_MAIS_FRETE DESC
+      CASE WHEN STATUS_GATILHO = 'NÃO ELEGÍVEL' THEN 1 ELSE 0 END,
+      VALOR_PREMIACAO_FINAL DESC,
+      MARGEM_MAIS_FRETE DESC
     `,
     { ...lojaCondition.binds, mesReferenciaHistorico: mesReferencia }
   )
@@ -229,7 +220,7 @@ async function buscarLinhasBrutasHistorico(empresaId, lojaScope, mesReferencia, 
  *
  * Sem `mes` (ou `mes: "atual"`), le o mes em andamento de VW_PREMIACAO_VENDEDOR_COMISSAO_ERP -
  * comportamento identico ao de antes desta feature de comparacao de meses, sem regressao. Com
- * `mes` no formato MM/YYYY, le o fechamento daquele mes em FT_COMISSAO_HISTORICO.
+ * `mes` no formato MM/YYYY, le aquele mes em VW_PREMIACAO_VENDEDOR_MENSAL.
  *
  * As DUAS regras de negocio da feature (zerar valorComissaoBase se nao elegivel, e listar so
  * vendedores com conta ativa no tenant - usuarios_auth ativo='S' AND role='VENDEDOR', mesmo
@@ -278,14 +269,13 @@ export async function listarPremiacaoEquipe(
 }
 
 /**
- * Meses disponiveis em FT_COMISSAO_HISTORICO para o escopo de loja do gerente logado, do mais
- * recente para o mais antigo - usado pra popular o seletor de mes na tela de equipe. Nao inclui
- * o mes atual: apesar do nome, FT_COMISSAO_HISTORICO recebe upsert diario TAMBEM pro mes em
- * andamento (ate fechar) - sem excluir explicitamente, o mes atual apareceria duplicado no
- * seletor (uma vez como "Mes atual", outra vez como item do historico, com valores
- * potencialmente diferentes por ainda nao estar fechado - achado ao vivo em 2026-09-16, org 7,
- * onde 09/2026 - mes corrente na epoca - aparecia na lista). Comparado contra o SYSDATE do
- * proprio Oracle (nao Date do Node) pra bater com o mesmo criterio de "mes atual" que
+ * Meses disponiveis na fato nova de comissao (VW_COMISSAO_ERP_MENSAL - mesmos meses de
+ * VW_PREMIACAO_VENDEDOR_MENSAL, que tem a comissao como lado principal do join, sem o custo da
+ * apuracao) para o escopo de loja do gerente logado, do mais recente para o mais antigo - usado
+ * pra popular o seletor de mes na tela de equipe. Nao inclui o mes atual: a view tambem traz o
+ * mes em andamento, que ja aparece como "Mes atual" - sem excluir, apareceria duplicado no
+ * seletor (achado ao vivo em 2026-09-16, org 7). Comparado contra o SYSDATE do proprio Oracle
+ * (nao Date do Node) pra bater com o mesmo criterio de "mes atual" que
  * VW_PREMIACAO_VENDEDOR_COMISSAO_ERP ja usa (TO_CHAR(SYSDATE, 'MM/YYYY')).
  */
 export async function listarMesesDisponiveis(empresaId, lojaScope, { query = queryOracleByEmpresaId } = {}) {
@@ -299,7 +289,7 @@ export async function listarMesesDisponiveis(empresaId, lojaScope, { query = que
     empresaId,
     `
     SELECT DISTINCT MES_REFERENCIA
-    FROM FT_COMISSAO_HISTORICO
+    FROM VW_COMISSAO_ERP_MENSAL
     WHERE ${lojaCondition.clause}
       AND MES_REFERENCIA <> TO_CHAR(SYSDATE, 'MM/YYYY')
     ORDER BY TO_DATE('01/' || MES_REFERENCIA, 'DD/MM/YYYY') DESC

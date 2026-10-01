@@ -503,14 +503,21 @@ async function calculateSalesRevenue(skVendedor, trackingStartDate, empresaId, l
   return roundCurrency(rows[0]?.FATURAMENTO_TOTAL ?? rows[0]?.faturamento_total)
 }
 
-function normalizeCommissionRate(value) {
-  const parsed = optionalNumberValue(value)
-  if (parsed === null || parsed <= 0) {
+// PERCENTUAL_COMISSAO vem sempre em escala de percentual (0,8127 = 0,8127%, nao 81,27%) -
+// confirmado na fato em 2026-10-01 (min 0, max ~1,46). Antes, valores < 1 eram usados direto
+// como taxa, inflando a taxa da Meta de Vida em 100x. Nao usa optionalNumberValue porque ele
+// arredonda para 2 casas (0,8127 viraria 0,81) antes da divisao.
+export function normalizeCommissionRate(value) {
+  if (value === null || value === undefined || String(value).trim() === "") {
     return null
   }
 
-  const rate = parsed > 1 ? parsed / 100 : parsed
-  return Number(rate.toFixed(4))
+  const parsed = Number(String(value).replace(",", "."))
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null
+  }
+
+  return Number((parsed / 100).toFixed(6))
 }
 
 async function loadCommissionSnapshotFromOracle({ skVendedor, vendedorId }) {
@@ -525,7 +532,7 @@ async function loadCommissionSnapshotFromOracle({ skVendedor, vendedorId }) {
       com.vendas_liquidas AS receita_ate_ontem,
       com.percentual_comissao AS percentual_comissao,
       com.valor_comissao_a_pagar AS valor_comissao_a_pagar
-    FROM ft_comissao_parametrizada com
+    FROM vw_comissao_erp_mes_atual com
     LEFT JOIN dim_vendedor vendedor
       ON vendedor.sk_vendedor = com.sk_vendedor
     LEFT JOIN dim_empresas emp
@@ -562,7 +569,7 @@ async function loadCommissionSnapshotFromOracle({ skVendedor, vendedorId }) {
 }
 
 async function resolveCommissionSnapshot(seller, trackingStartDate) {
-  // NOTA: ft_comissao_parametrizada/dim_vendedor/dim_empresas (Meta de Vida propriamente dita)
+  // NOTA: vw_comissao_erp_mes_atual/dim_vendedor/dim_empresas (Meta de Vida propriamente dita)
   // ainda nao tem o schema de loja confirmado - TODO: aplicar filtro de loja aqui quando
   // o schema dessas tabelas for verificado. Por ora fica sem filtro.
   const oracleSnapshot = await loadCommissionSnapshotFromOracle(seller)

@@ -1,5 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { listarPremiacaoEquipe, listarMesesDisponiveis, PremiacaoVendedorError } from "../premiacaoVendedorService.js"
 
 function linha({ skVendedor, nomeVendedor, margemMaisFrete, statusGatilho, valorPremiacaoFinal }) {
@@ -18,9 +20,9 @@ function linha({ skVendedor, nomeVendedor, margemMaisFrete, statusGatilho, valor
   }
 }
 
-// Fechamento historico (FT_COMISSAO_HISTORICO) nao guarda MARGEM_MAIS_FRETE - vem de um LEFT
-// JOIN com VW_APURACAO_PREMIACAO_VENDEDOR (ver buscarLinhasBrutasHistorico), por isso o campo
-// e opcional aqui: quando omitido, simula o caso raro de LEFT JOIN sem match (null).
+// Linha de VW_PREMIACAO_VENDEDOR_MENSAL (meses passados). A view ja faz NVL(..., 0) na
+// margem quando nao ha apuracao; quando margemMaisFrete e omitido aqui, simula um null vindo
+// do Oracle mesmo assim (protecao extra do mapPremiacaoRow).
 function linhaHistorico({ skVendedor, nomeVendedor, margemMaisFrete, statusGatilho, valorComissaoBase, valorPremiacaoFinal }) {
   return {
     SK_VENDEDOR: skVendedor,
@@ -140,7 +142,7 @@ test("listarPremiacaoEquipe: filtra vendedores sem conta ativa no tenant (fora d
   assert.equal(resultadoHistorico.vendedores[0].nomeVendedor, "Ana")
 })
 
-test("listarPremiacaoEquipe: mes=08/2026 le FT_COMISSAO_HISTORICO com LEFT JOIN em VW_APURACAO_PREMIACAO_VENDEDOR pra trazer margemMaisFrete, e zera valorComissaoBase se nao elegivel", async () => {
+test("listarPremiacaoEquipe: mes=08/2026 le VW_PREMIACAO_VENDEDOR_MENSAL (nao FT_COMISSAO_HISTORICO), traz margemMaisFrete e zera valorComissaoBase se nao elegivel", async () => {
   const chamadas = []
   const query = async (empresaId, sql, binds) => {
     chamadas.push({ empresaId, sql, binds })
@@ -157,8 +159,9 @@ test("listarPremiacaoEquipe: mes=08/2026 le FT_COMISSAO_HISTORICO com LEFT JOIN 
     mes: "08/2026",
   })
 
-  assert.match(chamadas[0].sql, /FT_COMISSAO_HISTORICO/)
-  assert.match(chamadas[0].sql, /VW_APURACAO_PREMIACAO_VENDEDOR/)
+  assert.match(chamadas[0].sql, /FROM VW_PREMIACAO_VENDEDOR_MENSAL/)
+  assert.doesNotMatch(chamadas[0].sql, /FT_COMISSAO_HISTORICO/)
+  assert.match(chamadas[0].sql, /SK_EMPRESAS IN \(:prem_hist_loja_0\)/)
   assert.equal(chamadas[0].binds.mesReferenciaHistorico, "08/2026")
   assert.equal(resultado.mesReferencia, "08/2026")
 
@@ -170,8 +173,23 @@ test("listarPremiacaoEquipe: mes=08/2026 le FT_COMISSAO_HISTORICO com LEFT JOIN 
   assert.equal(bruno.margemMaisFrete, 16000)
 })
 
-test("listarPremiacaoEquipe: mes=08/2026 com LEFT JOIN sem match em VW_APURACAO_PREMIACAO_VENDEDOR (caso raro) trata margemMaisFrete como 0, nao quebra", async () => {
+test("listarPremiacaoEquipe: vendedor sem apuracao no mes (linha com os NVL da VW_PREMIACAO_VENDEDOR_MENSAL) aparece com margem 0, NAO ELEGIVEL, faixa ate 20.000 e premiacao 0", async () => {
+  // Caso real: LUANA ROSMARI MEDINA, SK 15269, 09/2026, comissao -1,40, sem apuracao de margem.
   const query = async () => [
+    {
+      SK_VENDEDOR: 3,
+      VENDEDOR_ID: 3,
+      NOME_VENDEDOR: "Luana",
+      MES_REFERENCIA: "09/2026",
+      VALOR_COMISSAO_A_PAGAR: -1.4,
+      MARGEM_MAIS_FRETE: 0,
+      STATUS_GATILHO: "NÃO ELEGÍVEL",
+      FAIXA_ACELERADOR: "Até 20.000,00",
+      PERC_ACELERADOR: 0,
+      BONUS_FIXO_ADICIONAL: 0,
+      VALOR_PREMIACAO_FINAL: 0,
+    },
+    // Protecao extra: mesmo que a margem chegue null, vira 0.
     linhaHistorico({ skVendedor: 1, nomeVendedor: "Ana", statusGatilho: "ELEGÍVEL", valorComissaoBase: 1000, valorPremiacaoFinal: 500 }),
   ]
 
@@ -179,10 +197,38 @@ test("listarPremiacaoEquipe: mes=08/2026 com LEFT JOIN sem match em VW_APURACAO_
   const resultado = await listarPremiacaoEquipe(7, lojaScope, {
     query,
     getAllowedSellerCodes: getAllowedSellerCodesTodos,
-    mes: "08/2026",
+    mes: "09/2026",
   })
 
-  assert.equal(resultado.vendedores[0].margemMaisFrete, 0)
+  const luana = resultado.vendedores.find((v) => v.nomeVendedor === "Luana")
+  assert.equal(luana.margemMaisFrete, 0)
+  assert.equal(luana.statusGatilho, "NÃO ELEGÍVEL")
+  assert.equal(luana.elegivel, false)
+  assert.equal(luana.faixaAcelerador, "Até 20.000,00")
+  assert.equal(luana.percAcelerador, 0)
+  assert.equal(luana.bonusFixoAdicional, 0)
+  assert.equal(luana.valorPremiacaoFinal, 0)
+  assert.equal(luana.valorComissaoBase, 0)
+  assert.equal(luana.faltanteGatilho, 20000)
+  // extrairLimiteSuperiorFaixa precisa conseguir ler o literal da faixa (regex "ate X,YY").
+  assert.equal(luana.faltanteProximaFaixa, 20000)
+
+  const ana = resultado.vendedores.find((v) => v.nomeVendedor === "Ana")
+  assert.equal(ana.margemMaisFrete, 0)
+})
+
+test("VW_PREMIACAO_VENDEDOR_MENSAL: literal da faixa no NVL e identico ao da primeira faixa do CASE de VW_APURACAO_PREMIACAO_VENDEDOR", () => {
+  const sqlDir = fileURLToPath(new URL("../../../Back/sql/", import.meta.url))
+  const mensal = readFileSync(`${sqlDir}vw_premiacao_vendedor_mensal.sql`, "utf8")
+  const apuracao = readFileSync(`${sqlDir}vw_apuracao_premiacao_vendedor_fix_gatilho_margem_mais_frete.sql`, "utf8")
+
+  const literalMensal = /NVL\(ap\.FAIXA_ACELERADOR,\s*'([^']+)'\)/.exec(mensal)?.[1]
+  const literalApuracao = /MARGEM_MAIS_FRETE <= 20000\s+THEN '([^']+)'/.exec(apuracao)?.[1]
+
+  assert.ok(literalMensal, "NVL da faixa nao encontrado na view mensal")
+  assert.equal(literalMensal, literalApuracao)
+  assert.match(mensal, /LEFT JOIN DM_VENDAS\.VW_APURACAO_PREMIACAO_VENDEDOR ap/)
+  assert.match(mensal, /com\.MES_REFERENCIA,/)
 })
 
 test("listarPremiacaoEquipe: mes invalido (fora do formato MM/YYYY) lanca PremiacaoVendedorError", async () => {
@@ -211,9 +257,11 @@ test("listarPremiacaoEquipe: mes='atual' (explicito) se comporta igual a nao pas
   assert.match(chamadas[0], /VW_PREMIACAO_VENDEDOR_COMISSAO_ERP/)
 })
 
-test("listarMesesDisponiveis: consulta FT_COMISSAO_HISTORICO com o escopo de loja e retorna a lista de meses", async () => {
+test("listarMesesDisponiveis: consulta VW_COMISSAO_ERP_MENSAL (nao FT_COMISSAO_HISTORICO) com o escopo de loja, sem o mes atual, e retorna a lista de meses", async () => {
   const query = async (_empresaId, sql, binds) => {
-    assert.match(sql, /FT_COMISSAO_HISTORICO/)
+    assert.match(sql, /FROM VW_COMISSAO_ERP_MENSAL/)
+    assert.doesNotMatch(sql, /FT_COMISSAO_HISTORICO/)
+    assert.match(sql, /MES_REFERENCIA <> TO_CHAR\(SYSDATE, 'MM\/YYYY'\)/)
     assert.match(sql, /SK_EMPRESAS IN/)
     assert.deepEqual(binds, { prem_meses_loja_0: 541 })
     return [{ MES_REFERENCIA: "09/2026" }, { MES_REFERENCIA: "08/2026" }]
