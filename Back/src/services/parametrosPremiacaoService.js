@@ -156,6 +156,41 @@ export async function salvarPercentualGrupo(
 }
 
 /**
+ * Busca o percentual vigente cadastrado para um (nivel, nomeGrupo) especifico - mesma tabela
+ * de listarGruposComPercentualVigente, mas para um unico grupo ja escolhido (usado pelo
+ * simulador de premiacao, Fase 1, que recebe nivel+grupo prontos do seletor do front). Retorna
+ * null se o grupo nao tiver cadastro vigente.
+ */
+export async function buscarPercentualVigenteGrupo(empresaId, nivel, nomeGrupo, { query = queryOracleByEmpresaId } = {}) {
+  if (!empresaId) throw new ParametrosPremiacaoError("empresa_id e obrigatorio.", 400)
+  const nivelNum = normalizeNivel(nivel)
+  const nome = normalizeNomeGrupo(nomeGrupo)
+
+  const rows = await query(
+    empresaId,
+    `
+    SELECT PERCENTUAL, DT_INICIO_VIGENCIA
+    FROM ${TABLE}
+    WHERE NIVEL = :nivel
+      AND NOME_GRUPO = :nomeGrupo
+      AND DT_FIM_VIGENCIA IS NULL
+    FETCH FIRST 1 ROW ONLY
+    `,
+    { nivel: nivelNum, nomeGrupo: nome }
+  )
+
+  if (!rows[0]) return null
+
+  const item = normalizeRow(rows[0])
+  return {
+    nivel: nivelNum,
+    nomeGrupo: nome,
+    percentual: Number(item.percentual),
+    vigenteDesde: item.dt_inicio_vigencia ?? null,
+  }
+}
+
+/**
  * Resolve o percentual vigente de um produto: NIVEL 3 primeiro (mais especifico), depois
  * NIVEL 2, depois NIVEL 1. Retorna null se nenhum nivel tiver regra cadastrada.
  */
