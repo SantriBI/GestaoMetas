@@ -19,6 +19,19 @@
 -- Rollback: recriar com o SELECT anterior (FROM VW_COMISSAO_ERP_MES_ATUAL com JOIN
 -- DIM_VENDEDOR + JOIN VW_APURACAO_PREMIACAO_VENDEDOR por VENDEDOR_ID e MES_REFERENCIA).
 --
+-- ATUALIZACAO 2026-10-01 (3) - INCIDENTE NJS-040: a versao (2) acima (filtro de mes sobre
+-- VW_PREMIACAO_VENDEDOR_MENSAL) e suspeita de fazer o Oracle apurar a margem de TODOS os
+-- meses em VW_APURACAO_PREMIACAO_VENDEDOR a cada consulta (o filtro fica no lado da comissao
+-- e pode nao chegar na apuracao pelo LEFT JOIN), segurando conexoes do pool - a confirmar
+-- pelo plano de execucao. Volta a ler direto de
+-- VW_COMISSAO_ERP_MES_ATUAL, com o mes corrente CONSTANTE no join da apuracao
+-- (ap.MES_REFERENCIA = TO_CHAR(SYSDATE, 'MM/YYYY')), como antes da (2). Mantem o LEFT JOIN e
+-- os NVL da mensal: mesmas colunas de saida e mesma formula da premiacao - a igualdade das
+-- expressoes entre as duas views e garantida por
+-- Back/src/services/__tests__/premiacaoViewsFormula.test.js. Ao mudar a formula, mudar nas
+-- DUAS views. Nao depende mais de VW_PREMIACAO_VENDEDOR_MENSAL (so de
+-- vw_comissao_erp_mes_atual.sql e de VW_APURACAO_PREMIACAO_VENDEDOR).
+--
 -- Muda a fonte da comissao base: em vez de calcular item a item por percentual
 -- de grupo de produto (Fase 2 - VW_VALOR_BASE_PREMIACAO_VENDEDOR), usa a
 -- comissao ja pronta que vem do ERP em FT_COMISSAO_PARAMETRIZADA.VALOR_COMISSAO_A_PAGAR
@@ -64,19 +77,27 @@
 
 CREATE OR REPLACE VIEW VW_PREMIACAO_VENDEDOR_COMISSAO_ERP AS
 SELECT
-    m.SK_VENDEDOR,
-    m.SK_EMPRESAS,
-    m.VENDEDOR_ID,
-    m.NOME_VENDEDOR,
-    m.MES_REFERENCIA,
-    m.VALOR_COMISSAO_A_PAGAR,
-    m.MARGEM_MAIS_FRETE,
-    m.STATUS_GATILHO,
-    m.FAIXA_ACELERADOR,
-    m.PERC_ACELERADOR,
-    m.BONUS_FIXO_ADICIONAL,
-    m.VALOR_PREMIACAO_FINAL
-FROM VW_PREMIACAO_VENDEDOR_MENSAL m
-WHERE m.MES_REFERENCIA = TO_CHAR(SYSDATE, 'MM/YYYY');
+    com.SK_VENDEDOR,
+    com.SK_EMPRESAS,
+    dv.VENDEDOR_ID,
+    dv.NOME_VENDEDOR,
+    com.MES_REFERENCIA,
+    com.VALOR_COMISSAO_A_PAGAR,
+    NVL(ap.MARGEM_MAIS_FRETE, 0)                   AS MARGEM_MAIS_FRETE,
+    NVL(ap.STATUS_GATILHO, 'NÃO ELEGÍVEL')         AS STATUS_GATILHO,
+    NVL(ap.FAIXA_ACELERADOR, 'Até 20.000,00')      AS FAIXA_ACELERADOR,
+    NVL(ap.PERC_ACELERADOR, 0)                     AS PERC_ACELERADOR,
+    NVL(ap.BONUS_FIXO_ADICIONAL, 0)                AS BONUS_FIXO_ADICIONAL,
+    CASE
+        WHEN NVL(ap.STATUS_GATILHO, 'NÃO ELEGÍVEL') = 'NÃO ELEGÍVEL' THEN 0
+        ELSE (com.VALOR_COMISSAO_A_PAGAR * ap.PERC_ACELERADOR) + NVL(ap.BONUS_FIXO_ADICIONAL, 0)
+    END AS VALOR_PREMIACAO_FINAL
+FROM VW_COMISSAO_ERP_MES_ATUAL com
+JOIN DIM_VENDEDOR dv
+    ON dv.SK_VENDEDOR = com.SK_VENDEDOR
+LEFT JOIN VW_APURACAO_PREMIACAO_VENDEDOR ap
+    ON ap.VENDEDOR_ID = dv.VENDEDOR_ID
+   AND ap.MES_REFERENCIA = TO_CHAR(SYSDATE, 'MM/YYYY')
+WHERE com.SK_VENDEDOR <> -1;
 
-COMMENT ON TABLE VW_PREMIACAO_VENDEDOR_COMISSAO_ERP IS 'Premiacao final do vendedor no mes corrente: filtro de VW_PREMIACAO_VENDEDOR_MENSAL (comissao do ERP com devolucoes automaticas = N x acelerador da faixa de margem+frete, mais bonus fixo, zerado se NAO ELEGIVEL; sem apuracao = margem 0 / NAO ELEGIVEL). Exposta ao vendedor via GET /api/premiacao/minha-premiacao e a equipe do gerente via GET /api/premiacao/equipe. SK_EMPRESAS e o mesmo dominio de DIM_EMPRESAS.SK_EMPRESAS, usado para filtrar por loja no escopo do gerente.';
+COMMENT ON TABLE VW_PREMIACAO_VENDEDOR_COMISSAO_ERP IS 'Premiacao final do vendedor no mes corrente: comissao do ERP do mes (VW_COMISSAO_ERP_MES_ATUAL, devolucoes automaticas = N) x acelerador da faixa de margem+frete (VW_APURACAO_PREMIACAO_VENDEDOR filtrada no mes corrente, LEFT JOIN), mais bonus fixo, zerado se NAO ELEGIVEL; sem apuracao = margem 0 / NAO ELEGIVEL. Formula identica a VW_PREMIACAO_VENDEDOR_MENSAL (teste premiacaoViewsFormula.test.js). Exposta ao vendedor via GET /api/premiacao/minha-premiacao e a equipe do gerente via GET /api/premiacao/equipe. SK_EMPRESAS e o mesmo dominio de DIM_EMPRESAS.SK_EMPRESAS, usado para filtrar por loja no escopo do gerente.';

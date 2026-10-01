@@ -13,6 +13,8 @@ export interface MinhaPremiacao {
   gatilhoMinimoMargem: number
   faltanteGatilho: number
   faltanteProximaFaixa: number | null
+  // Interruptor do simulador no backend (SIMULADOR_PREMIACAO_HABILITADO); so vem em minha-premiacao.
+  simuladorHabilitado?: boolean
 }
 
 export class PremiacaoVendedorApiError extends Error {

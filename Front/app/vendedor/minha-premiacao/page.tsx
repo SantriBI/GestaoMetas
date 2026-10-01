@@ -60,8 +60,17 @@ export default function MinhaPremiacaoPage() {
   useEffect(() => {
     if (!authUser) return
     void loadPremiacao()
-    void loadDadosSimulador()
   }, [authUser])
+
+  // O simulador (grupos, contadores e simulacao) so e chamado quando o backend diz que esta
+  // ligado (SIMULADOR_PREMIACAO_HABILITADO) - desligado desde o incidente NJS-040, porque as
+  // consultas dele varrem a fato de vendas. A premiacao em si nao depende disso.
+  const simuladorHabilitado = premiacao?.simuladorHabilitado === true
+
+  useEffect(() => {
+    if (!simuladorHabilitado) return
+    void loadDadosSimulador()
+  }, [simuladorHabilitado])
 
   async function loadPremiacao() {
     setLoading(true)
@@ -272,124 +281,126 @@ export default function MinhaPremiacaoPage() {
           ) : null}
         </section>
 
-        <section className="rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,28,0.94),rgba(9,17,30,0.86))] p-6 shadow-[0_22px_60px_rgba(2,6,23,0.24)]">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
-              <Calculator className="h-5 w-5 text-cyan-200" />
+        {simuladorHabilitado ? (
+          <section className="rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,16,28,0.94),rgba(9,17,30,0.86))] p-6 shadow-[0_22px_60px_rgba(2,6,23,0.24)]">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+                <Calculator className="h-5 w-5 text-cyan-200" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-white">Simulador</h3>
+                <p className="text-sm text-white/56">Se eu vender mais, quanto minha premiacao muda?</p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-xl font-black text-white">Simulador</h3>
-              <p className="text-sm text-white/56">Se eu vender mais, quanto minha premiacao muda?</p>
-            </div>
-          </div>
 
-          {contadores?.grupoPreferido && contadores.faltanteGatilhoEmVenda != null && contadores.faltanteGatilhoEmVenda > 0 ? (
-            <p className="mt-4 rounded-2xl border border-amber-300/16 bg-amber-400/8 px-4 py-3 text-sm leading-6 text-amber-50/90">
-              No seu ritmo de margem em <strong>{contadores.grupoPreferido.nomeGrupo}</strong>, faltam aproximadamente{" "}
-              {formatCurrency(contadores.faltanteGatilhoEmVenda)} de venda para bater o gatilho minimo.
-            </p>
-          ) : null}
-          {contadores?.grupoPreferido && contadores.faltanteProximaFaixaEmVenda != null ? (
-            <p className="mt-2 rounded-2xl border border-emerald-300/16 bg-emerald-400/8 px-4 py-3 text-sm leading-6 text-emerald-50/90">
-              No seu ritmo de margem em <strong>{contadores.grupoPreferido.nomeGrupo}</strong>, faltam aproximadamente{" "}
-              {formatCurrency(contadores.faltanteProximaFaixaEmVenda)} de venda para subir de faixa.
-            </p>
-          ) : null}
+            {contadores?.grupoPreferido && contadores.faltanteGatilhoEmVenda != null && contadores.faltanteGatilhoEmVenda > 0 ? (
+              <p className="mt-4 rounded-2xl border border-amber-300/16 bg-amber-400/8 px-4 py-3 text-sm leading-6 text-amber-50/90">
+                No seu ritmo de margem em <strong>{contadores.grupoPreferido.nomeGrupo}</strong>, faltam aproximadamente{" "}
+                {formatCurrency(contadores.faltanteGatilhoEmVenda)} de venda para bater o gatilho minimo.
+              </p>
+            ) : null}
+            {contadores?.grupoPreferido && contadores.faltanteProximaFaixaEmVenda != null ? (
+              <p className="mt-2 rounded-2xl border border-emerald-300/16 bg-emerald-400/8 px-4 py-3 text-sm leading-6 text-emerald-50/90">
+                No seu ritmo de margem em <strong>{contadores.grupoPreferido.nomeGrupo}</strong>, faltam aproximadamente{" "}
+                {formatCurrency(contadores.faltanteProximaFaixaEmVenda)} de venda para subir de faixa.
+              </p>
+            ) : null}
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-            <label className="flex flex-col gap-1.5 text-sm text-white/70">
-              Grupo de produto
-              <select
-                value={grupoSelecionado}
-                onChange={(event) => setGrupoSelecionado(event.target.value)}
-                disabled={grupos.length === 0}
-                className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-white outline-none focus:border-cyan-300/40 disabled:opacity-50"
+            <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+              <label className="flex flex-col gap-1.5 text-sm text-white/70">
+                Grupo de produto
+                <select
+                  value={grupoSelecionado}
+                  onChange={(event) => setGrupoSelecionado(event.target.value)}
+                  disabled={grupos.length === 0}
+                  className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-white outline-none focus:border-cyan-300/40 disabled:opacity-50"
+                >
+                  {grupos.length === 0 ? (
+                    <option value="">Sem historico de vendas por grupo</option>
+                  ) : (
+                    grupos.map((grupo) => (
+                      <option key={grupo.nomeGrupo} value={grupo.nomeGrupo} className="bg-[#0a1522] text-white">
+                        {grupo.nomeGrupo}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1.5 text-sm text-white/70">
+                Vender mais (R$)
+                <input
+                  type="number"
+                  min={0}
+                  step="100"
+                  value={valorSimulado}
+                  onChange={(event) => setValorSimulado(event.target.value)}
+                  className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-white outline-none focus:border-cyan-300/40"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={() => void handleSimular()}
+                disabled={simulando || grupos.length === 0}
+                className="inline-flex items-center justify-center gap-2 self-end rounded-2xl border border-cyan-300/24 bg-cyan-400/12 px-5 py-2.5 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-400/20 disabled:opacity-50"
               >
-                {grupos.length === 0 ? (
-                  <option value="">Sem historico de vendas por grupo</option>
-                ) : (
-                  grupos.map((grupo) => (
-                    <option key={grupo.nomeGrupo} value={grupo.nomeGrupo} className="bg-[#0a1522] text-white">
-                      {grupo.nomeGrupo}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-
-            <label className="flex flex-col gap-1.5 text-sm text-white/70">
-              Vender mais (R$)
-              <input
-                type="number"
-                min={0}
-                step="100"
-                value={valorSimulado}
-                onChange={(event) => setValorSimulado(event.target.value)}
-                className="rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-2.5 text-white outline-none focus:border-cyan-300/40"
-              />
-            </label>
-
-            <button
-              type="button"
-              onClick={() => void handleSimular()}
-              disabled={simulando || grupos.length === 0}
-              className="inline-flex items-center justify-center gap-2 self-end rounded-2xl border border-cyan-300/24 bg-cyan-400/12 px-5 py-2.5 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-400/20 disabled:opacity-50"
-            >
-              {simulando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
-              Simular
-            </button>
-          </div>
-
-          {erroSimulador ? (
-            <p className="mt-4 rounded-2xl border border-rose-300/18 bg-rose-400/8 px-4 py-3 text-sm leading-6 text-rose-50/90">
-              {erroSimulador}
-            </p>
-          ) : null}
-
-          {resultadoSimulacao ? (
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-[20px] border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/48">Margem + Frete</p>
-                <p className="mt-2 text-lg font-black text-white">{formatCurrency(resultadoSimulacao.simulado.margemMaisFrete)}</p>
-                <p className="mt-1 text-xs text-emerald-200/80">
-                  +{formatCurrency(resultadoSimulacao.diferenca.margemMaisFrete)}
-                </p>
-              </div>
-              <div className="rounded-[20px] border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/48">Acelerador resultante</p>
-                <p className="mt-2 text-lg font-black text-white">
-                  {(resultadoSimulacao.simulado.percAcelerador * 100).toFixed(0)}%
-                </p>
-                <p className="mt-1 text-xs text-white/56">
-                  {resultadoSimulacao.simulado.elegivel ? "Elegivel" : "Ainda nao elegivel"}
-                  {resultadoSimulacao.simulado.bonusFixoAdicional > 0
-                    ? ` · bonus +${formatCurrency(resultadoSimulacao.simulado.bonusFixoAdicional)}`
-                    : ""}
-                </p>
-              </div>
-              <div className="rounded-[24px] border border-emerald-300/30 bg-emerald-400/12 p-4">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/56">Premiacao final simulada</p>
-                <p className="mt-2 text-lg font-black text-emerald-200">
-                  {formatCurrency(resultadoSimulacao.simulado.valorPremiacaoFinal)}
-                </p>
-                <p className="mt-1 text-xs text-emerald-100/80">
-                  +{formatCurrency(resultadoSimulacao.diferenca.valorPremiacaoFinal)}
-                </p>
-              </div>
-
-              {resultadoSimulacao.simulado.faltanteProximaFaixa && resultadoSimulacao.simulado.faltanteProximaFaixa > 0 ? (
-                <p className="sm:col-span-3 text-sm leading-6 text-white/64">
-                  Depois dessa venda, ainda faltariam {formatCurrency(resultadoSimulacao.simulado.faltanteProximaFaixa)} de
-                  margem+frete para a proxima faixa.
-                </p>
-              ) : null}
+                {simulando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
+                Simular
+              </button>
             </div>
-          ) : null}
 
-          <p className="mt-5 text-xs leading-5 text-white/40">
-            Estimativa baseada na sua margem media historica no grupo escolhido - nao e uma projecao garantida.
-          </p>
-        </section>
+            {erroSimulador ? (
+              <p className="mt-4 rounded-2xl border border-rose-300/18 bg-rose-400/8 px-4 py-3 text-sm leading-6 text-rose-50/90">
+                {erroSimulador}
+              </p>
+            ) : null}
+
+            {resultadoSimulacao ? (
+              <div className="mt-6 grid gap-4 sm:grid-cols-3">
+                <div className="rounded-[20px] border border-white/10 bg-white/[0.04] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/48">Margem + Frete</p>
+                  <p className="mt-2 text-lg font-black text-white">{formatCurrency(resultadoSimulacao.simulado.margemMaisFrete)}</p>
+                  <p className="mt-1 text-xs text-emerald-200/80">
+                    +{formatCurrency(resultadoSimulacao.diferenca.margemMaisFrete)}
+                  </p>
+                </div>
+                <div className="rounded-[20px] border border-white/10 bg-white/[0.04] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/48">Acelerador resultante</p>
+                  <p className="mt-2 text-lg font-black text-white">
+                    {(resultadoSimulacao.simulado.percAcelerador * 100).toFixed(0)}%
+                  </p>
+                  <p className="mt-1 text-xs text-white/56">
+                    {resultadoSimulacao.simulado.elegivel ? "Elegivel" : "Ainda nao elegivel"}
+                    {resultadoSimulacao.simulado.bonusFixoAdicional > 0
+                      ? ` · bonus +${formatCurrency(resultadoSimulacao.simulado.bonusFixoAdicional)}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="rounded-[24px] border border-emerald-300/30 bg-emerald-400/12 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/56">Premiacao final simulada</p>
+                  <p className="mt-2 text-lg font-black text-emerald-200">
+                    {formatCurrency(resultadoSimulacao.simulado.valorPremiacaoFinal)}
+                  </p>
+                  <p className="mt-1 text-xs text-emerald-100/80">
+                    +{formatCurrency(resultadoSimulacao.diferenca.valorPremiacaoFinal)}
+                  </p>
+                </div>
+
+                {resultadoSimulacao.simulado.faltanteProximaFaixa && resultadoSimulacao.simulado.faltanteProximaFaixa > 0 ? (
+                  <p className="sm:col-span-3 text-sm leading-6 text-white/64">
+                    Depois dessa venda, ainda faltariam {formatCurrency(resultadoSimulacao.simulado.faltanteProximaFaixa)} de
+                    margem+frete para a proxima faixa.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <p className="mt-5 text-xs leading-5 text-white/40">
+              Estimativa baseada na sua margem media historica no grupo escolhido - nao e uma projecao garantida.
+            </p>
+          </section>
+        ) : null}
 
         <button
           type="button"

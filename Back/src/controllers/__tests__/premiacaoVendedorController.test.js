@@ -84,3 +84,20 @@ test("getPremiacaoEquipe: gerente valido recebe o resultado do service, com o lo
   assert.equal(chamadas[0].empresaId, 7)
   assert.deepEqual(chamadas[0].lojaScope, lojaScopeFake)
 })
+
+test("getMinhaPremiacao: devolve simuladorHabilitado junto da premiacao (interruptor do backend)", async () => {
+  const premiacao = { vendedorId: 10, valorPremiacaoFinal: 1500 }
+
+  for (const habilitado of [false, true]) {
+    const controller = createPremiacaoVendedorController({
+      buscarPremiacao: async () => premiacao,
+      simuladorHabilitado: () => habilitado,
+    })
+    const res = createFakeRes()
+
+    await controller.getMinhaPremiacao({ auth: { empresa_id: 19, sk_vendedor: 123 } }, res)
+
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(res.body.data, { ...premiacao, simuladorHabilitado: habilitado })
+  }
+})

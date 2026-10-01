@@ -520,19 +520,22 @@ export function normalizeCommissionRate(value) {
   return Number((parsed / 100).toFixed(6))
 }
 
-async function loadCommissionSnapshotFromOracle({ skVendedor, vendedorId }) {
-  if (!skVendedor && !vendedorId) {
-    return null
-  }
+// Fontes da comissao da Meta de Vida, em ordem de preferencia. VW_COMISSAO_ERP_MES_ATUAL (fato
+// nova, devolucoes 'N') so existe onde comissao/premiacao foi implantada (ex.: org 19); as
+// demais organizacoes (ex.: org 22, Fachi) so tem a fato antiga FT_COMISSAO_PARAMETRIZADA, que
+// era a fonte ate 2026-10-01 - mesmas colunas, 1 linha por vendedor, so o mes corrente. A
+// mesma consulta roda nas duas; ORA-00942 passa para a proxima fonte.
+const COMMISSION_SNAPSHOT_SOURCES = ["vw_comissao_erp_mes_atual", "ft_comissao_parametrizada"]
 
-  const sql = `
+function buildCommissionSnapshotSql(source) {
+  return `
     SELECT
       vendedor.sk_vendedor AS sk_vendedor,
       vendedor.vendedor_id AS vendedor_id,
       com.vendas_liquidas AS receita_ate_ontem,
       com.percentual_comissao AS percentual_comissao,
       com.valor_comissao_a_pagar AS valor_comissao_a_pagar
-    FROM vw_comissao_erp_mes_atual com
+    FROM ${source} com
     LEFT JOIN dim_vendedor vendedor
       ON vendedor.sk_vendedor = com.sk_vendedor
     LEFT JOIN dim_empresas emp
@@ -544,28 +547,78 @@ async function loadCommissionSnapshotFromOracle({ skVendedor, vendedorId }) {
       )
     FETCH FIRST 1 ROWS ONLY
   `
-  const binds = {
-    sk_vendedor: skVendedor ?? null,
-    vendedor_id: vendedorId ?? null,
+}
+
+/**
+ * Carregador da comissao da Meta de Vida com deteccao da fonte por organizacao. Na primeira
+ * consulta de cada organizacao tenta as fontes em ordem (sem log de erro do oracle-tenants para
+ * o ORA-00942 esperado) e guarda em memoria a que funcionou - ou que nenhuma existe, caso em que
+ * a comissao fica "indisponivel" sem consultar o Oracle de novo. As proximas consultas vao
+ * direto na fonte guardada. A deteccao vale ate o processo reiniciar: depois de criar as views
+ * numa organizacao, reiniciar o backend para ela passar a ler a fato nova.
+ * Erro diferente de ORA-00942 (timeout, conexao) nao e guardado: volta a detectar na proxima.
+ */
+export function createCommissionSnapshotLoader({ runQuery, sourceByEmpresa = new Map(), logger = console }) {
+  async function fetchRows(empresaId, binds) {
+    if (sourceByEmpresa.has(empresaId)) {
+      const source = sourceByEmpresa.get(empresaId)
+      return source ? runQuery(buildCommissionSnapshotSql(source), binds) : null
+    }
+
+    for (const source of COMMISSION_SNAPSHOT_SOURCES) {
+      try {
+        const rows = await runQuery(buildCommissionSnapshotSql(source), binds, { suppressErrorLog: true })
+        sourceByEmpresa.set(empresaId, source)
+        logger.info(`[meta-de-vida] organizacao ${empresaId}: comissao lida de ${source}.`)
+        return rows
+      } catch (error) {
+        if (getOracleErrorCode(error) !== ORACLE_TABLE_NOT_FOUND) throw error
+      }
+    }
+
+    sourceByEmpresa.set(empresaId, null)
+    logger.warn(
+      `[meta-de-vida] organizacao ${empresaId}: nenhuma fonte de comissao (${COMMISSION_SNAPSHOT_SOURCES.join(", ")}); ` +
+      "comissao fica indisponivel ate reiniciar o backend."
+    )
+    return null
   }
 
-  try {
-    const rows = await query(sql, binds)
-    if (!Array.isArray(rows) || !rows.length) {
+  return async function loadCommissionSnapshot({ empresaId, skVendedor, vendedorId }) {
+    if (!skVendedor && !vendedorId) {
       return null
     }
 
-    const item = normalizeRow(rows[0])
-    return {
-      salesRevenue: roundCurrency(item.receita_ate_ontem),
-      commissionAmount: roundCurrency(item.valor_comissao_a_pagar),
-      commissionRate: normalizeCommissionRate(item.percentual_comissao) ?? DEFAULT_COMMISSION_RATE,
-      source: "oracle",
+    const binds = {
+      sk_vendedor: skVendedor ?? null,
+      vendedor_id: vendedorId ?? null,
     }
-  } catch (error) {
-    console.warn("Nao foi possivel carregar a comissao no Oracle da Meta de Vida. Mantendo fallback estimado.", error)
-    return null
+
+    try {
+      const rows = await fetchRows(empresaId, binds)
+      if (!Array.isArray(rows) || !rows.length) {
+        return null
+      }
+
+      const item = normalizeRow(rows[0])
+      return {
+        salesRevenue: roundCurrency(item.receita_ate_ontem),
+        commissionAmount: roundCurrency(item.valor_comissao_a_pagar),
+        commissionRate: normalizeCommissionRate(item.percentual_comissao) ?? DEFAULT_COMMISSION_RATE,
+        source: "oracle",
+      }
+    } catch (error) {
+      logger.warn("Nao foi possivel carregar a comissao no Oracle da Meta de Vida. Mantendo fallback estimado.", error)
+      return null
+    }
   }
+}
+
+const loadCommissionSnapshot = createCommissionSnapshotLoader({ runQuery: query })
+
+function loadCommissionSnapshotFromOracle({ skVendedor, vendedorId }) {
+  const empresaId = objetivoDbContext.getStore()?.empresaId
+  return loadCommissionSnapshot({ empresaId, skVendedor, vendedorId })
 }
 
 async function resolveCommissionSnapshot(seller, trackingStartDate) {

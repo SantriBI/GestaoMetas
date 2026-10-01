@@ -16,6 +16,13 @@ function getOracleErrorCode(err) {
 }
 
 const TRANSIENT_ORACLE_ERROR_CODES = new Set([8103])
+// Teto por chamada ao banco (execute/fetch). Sem ele, uma consulta lenta segurava a conexao e
+// a thread do libuv indefinidamente e, com poucas delas, esgotava o pool (NJS-040, 2026-10-01).
+const ORACLE_CALL_TIMEOUT_MS = 30000
+// NJS-123: callTimeout estourou (DPI-1067 no thick). NJS-500: conexao morta (DPI-1080,
+// ORA-03113...). Em ambos a sessao pode ter ficado em estado indefinido - descarta do pool
+// (close com drop) em vez de devolver para o proximo request reaproveitar.
+const DISCARD_CONNECTION_ERROR_CODES = new Set(["NJS-123", "NJS-500"])
 const MAX_SELECT_RETRIES = 2
 const RETRY_DELAY_MS = 150
 const LEGACY_ENCRYPTED_PASSWORD_RE = /^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/i
@@ -80,6 +87,25 @@ function sleep(ms) {
 
 function isRetryableSelectError(err, isDml) {
   return !isDml && TRANSIENT_ORACLE_ERROR_CODES.has(getOracleErrorCode(err))
+}
+
+function shouldDiscardConnection(err) {
+  return DISCARD_CONNECTION_ERROR_CODES.has(err?.code) || /DPI-1067|DPI-1080|ORA-03156/.test(String(err?.message ?? ""))
+}
+
+async function releaseConnection(connection, discard, empresaId) {
+  if (!discard) {
+    await connection.close()
+    return
+  }
+
+  try {
+    await connection.close({ drop: true })
+  } catch (closeErr) {
+    // A sessao ja estava quebrada; o pool decrementa connectionsOut mesmo se o drop falhar
+    // (finally de pool._release), entao a vaga e liberada de qualquer jeito.
+    console.error(`[oracle-tenants] falha ao descartar conexao da organizacao ${empresaId}:`, closeErr?.message)
+  }
 }
 
 async function getOracleConfigByEmpresaId(empresaId) {
@@ -156,14 +182,17 @@ export async function queryOracleByEmpresaId(empresaId, sql, binds = {}, options
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     let connection = null
     let connectStringForLog = null
+    let discardConnection = false
 
     try {
       const { pool, connectString } = await getOraclePoolEntry(empresaId)
       connectStringForLog = connectString
       connection = await pool.getConnection()
+      connection.callTimeout = ORACLE_CALL_TIMEOUT_MS
       const result = await connection.execute(sql, binds, execOptions)
       return result.rows ?? []
     } catch (err) {
+      discardConnection = shouldDiscardConnection(err)
       const canRetry = isRetryableSelectError(err, isDml) && attempt < maxAttempts
       if (!canRetry) {
         if (!suppressErrorLog) {
@@ -179,7 +208,7 @@ export async function queryOracleByEmpresaId(empresaId, sql, binds = {}, options
       await sleep(RETRY_DELAY_MS * attempt)
     } finally {
       if (connection) {
-        await connection.close()
+        await releaseConnection(connection, discardConnection, empresaId)
       }
     }
   }

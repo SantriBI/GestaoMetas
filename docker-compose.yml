@@ -40,6 +40,11 @@
     environment:
       NODE_ENV: production
       PORT: ${BACKEND_PORT:-3001}
+      # node-oracledb em modo thick usa o thread pool do libuv (padrao 4) para toda chamada
+      # Oracle, compartilhado por todas as organizacoes: 4 consultas lentas de uma org travavam
+      # as outras (incidente NJS-040, 2026-10-01). Precisa ser >= soma dos poolMax (5 por org)
+      # + folga; so tem efeito como variavel de ambiente, antes do processo subir.
+      UV_THREADPOOL_SIZE: ${UV_THREADPOOL_SIZE:-64}
 
       # Credenciais e secrets vem de Back/.env. Nao defina placeholders aqui,
       # senao o Compose sobrescreve os valores reais do env_file.

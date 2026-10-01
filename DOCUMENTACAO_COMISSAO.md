@@ -5,6 +5,7 @@ Lista tudo o que o projeto lê/escreve para montar comissão, premiação, gatil
 
 > Estado do código em 2026-10-01 (inclui o simulador/escada de faixas ainda não commitados e a troca da fonte da comissão para a fato nova `FT_COMISSAO_PARAMETRIZADA_TESTE` via `VW_COMISSAO_ERP_MES_ATUAL`).
 > Schema Oracle: `DM_VENDAS` (todas as views/tabelas Oracle abaixo vivem lá).
+> **Incidente NJS-040 (2026-10-01):** a fase 3 voltou a ler direto da comissão do mês, com filtro de mês constante na apuração, e o **simulador está desligado** (`SIMULADOR_PREMIACAO_HABILITADO`). Ver seções 7 a 9.
 
 ---
 
@@ -31,11 +32,12 @@ FATO_VENDAS_LUCRATIVIDADE + DIM_VENDEDOR ──► VW_APURACAO_PREMIACAO_VENDEDO
                                                                                                              │
 FT_COMISSAO_PARAMETRIZADA_TESTE ──► VW_COMISSAO_ERP_MENSAL ──┬───────────────────────────────────────────────┴──► VW_PREMIACAO_VENDEDOR_MENSAL
                                                              │                                                     │  (todos os meses; fórmula da premiação)
-                                                             │                                                     ├──► equipe do gerente ?mes=MM/YYYY
-                                                             │                                                     └──► VW_PREMIACAO_VENDEDOR_COMISSAO_ERP (filtro do mês atual)
-                                                             │                                                            └──► minha-premiacao, equipe (mês atual), simulador
+                                                             │                                                     └──► equipe do gerente ?mes=MM/YYYY
                                                              ├──► seletor de meses do gerente (meses-disponiveis)
-                                                             └──► VW_COMISSAO_ERP_MES_ATUAL ──► Meta de Vida (objetivoVendedorService)
+                                                             └──► VW_COMISSAO_ERP_MES_ATUAL ──┬──► Meta de Vida (objetivoVendedorService)
+                                                                                              └──► VW_PREMIACAO_VENDEDOR_COMISSAO_ERP (mês atual; LEFT JOIN na apuração
+                                                                                                   filtrada por TO_CHAR(SYSDATE,'MM/YYYY'); mesma fórmula da mensal)
+                                                                                                   └──► minha-premiacao, equipe (mês atual), simulador (desligado)
 ```
 
 `FT_COMISSAO_HISTORICO` **não é mais lida** por nenhuma rota (desde 2026-10-01).
@@ -63,9 +65,10 @@ FT_COMISSAO_PARAMETRIZADA_TESTE ──► VW_COMISSAO_ERP_MENSAL ──┬──
 | `VENDAS_LIQUIDAS` | Meta de Vida (`receita_ate_ontem`) |
 | `PERIODO_INICIAL`, `PERIODO_FINAL`, `VLR_PEDIDOS`, `COMISSAO_BASE_VENDAS`, `COMISSAO_BASE`, `PREM_LUCRO`, `AJUSTE_VLR_MIN`, `PLUS`, `FRETE`, `ACRESC_DOMINGO_FERIADO`, `COMPL_VLR_MIN_DOMINGO_FERIADO`, `FINANCEIRO_VLR_RECEBIDO`, `FINANCEIRO_BASE_ESTORNO`, `DATA_CARGA` | expostas nas views, **não usadas** pela API (já embutidas no `VALOR_COMISSAO_A_PAGAR`) |
 
-#### `FT_COMISSAO_PARAMETRIZADA` — fato antiga (não usada mais pela API)
+#### `FT_COMISSAO_PARAMETRIZADA` — fato antiga (só fallback da Meta de Vida)
 - Usava devoluções automáticas = `'T'` e descontava devoluções a mais (ex.: Renata, SK 15280, até 29/09/2026: ERP 4.241,32 × fato antiga 4.100,43).
-- 1 linha por `SK_VENDEDOR`, só o mês corrente, sem coluna de data, sentinela `-1`. Mantida só como referência de rollback.
+- 1 linha por `SK_VENDEDOR`, só o mês corrente, sem coluna de data, sentinela `-1`.
+- Premiação e histórico não leem mais esta tabela. A **Meta de Vida** ainda a usa como segunda fonte, em organizações sem `VW_COMISSAO_ERP_MES_ATUAL` (ex.: org 22, Fachi). Ver seção 8.5.
 
 #### `FT_COMISSAO_HISTORICO` — **não é mais lida** (pode ser apagada no futuro)
 - Era o fechamento mensal usado no histórico do gerente. Foi gravada pelo job antigo: com devoluções automáticas descontadas e **sem o último dia de cada mês**. Ex.: Renata (SK 15280), 09/2026: comissão 4.100,43 / premiação 10.200,86 no histórico, contra 4.402,11 / 10.804,22 corretos.
@@ -155,21 +158,27 @@ WHERE com.SK_VENDEDOR <> -1
 ```
 Saída: `SK_VENDEDOR, SK_EMPRESAS, VENDEDOR_ID, NOME_VENDEDOR, MES_REFERENCIA, VALOR_COMISSAO_A_PAGAR, MARGEM_MAIS_FRETE, STATUS_GATILHO, FAIXA_ACELERADOR, PERC_ACELERADOR, BONUS_FIXO_ADICIONAL, VALOR_PREMIACAO_FINAL`.
 
-- **Único lugar da fórmula da premiação.** O mês atual (`VW_PREMIACAO_VENDEDOR_COMISSAO_ERP`) é um filtro desta view, e o histórico do gerente lê daqui.
+- **A fórmula da premiação existe em duas views:** aqui (todos os meses, histórico do gerente) e em `VW_PREMIACAO_VENDEDOR_COMISSAO_ERP` (mês atual). Até o incidente NJS-040 a fase 3 era um filtro desta view; isso foi desfeito por suspeita de o filtro de mês não chegar na apuração (ver seção 7). O teste `premiacaoViewsFormula.test.js` lê os dois scripts e falha se as colunas ou as expressões divergirem.
 - **LEFT JOIN na apuração:** um vendedor com comissão mas sem apuração no mês continua aparecendo, com margem 0, `'NÃO ELEGÍVEL'`, faixa `'Até 20.000,00'`, acelerador e bônus 0 e premiação 0. Caso real: LUANA ROSMARI MEDINA, SK 15269, 09/2026, comissão -1,40.
 - O literal `'Até 20.000,00'` tem que ser **idêntico** ao da primeira faixa do `CASE` de `VW_APURACAO_PREMIACAO_VENDEDOR`, porque `extrairLimiteSuperiorFaixa` lê esse texto por regex. Um teste (`premiacaoVendedorEquipe.test.js`) compara os dois arquivos SQL.
 - `MES_REFERENCIA` vem de `com.`, porque com o LEFT JOIN o `ap.MES_REFERENCIA` pode vir nulo. A coluna existe em `com` e em `ap`, então toda referência precisa de prefixo (sem prefixo dá ORA-00918).
 - **Meses passados recalculados ao vivo:** a comissão de mês fechado é protegida pela `CTRL_COMISSAO_FECHAMENTO_TESTE` (pipeline da fato nova). Já o gatilho, a faixa, o acelerador, o bônus e a premiação vêm da apuração. **Mudar a escada (o `CASE` de `VW_APURACAO_PREMIACAO_VENDEDOR`) ou a margem em `FATO_VENDAS_LUCRATIVIDADE` altera a premiação exibida dos meses passados.**
 
 #### `VW_PREMIACAO_VENDEDOR_COMISSAO_ERP` (Fase 3 — mês atual)
-Arquivo: [Back/Back/sql/vw_premiacao_vendedor_fase3.sql](Back/Back/sql/vw_premiacao_vendedor_fase3.sql) — executar depois de `vw_premiacao_vendedor_mensal.sql`.
+Arquivo: [Back/Back/sql/vw_premiacao_vendedor_fase3.sql](Back/Back/sql/vw_premiacao_vendedor_fase3.sql) — executar depois de `vw_comissao_erp_mes_atual.sql` e da apuração. Não depende mais da mensal.
 
 ```sql
-SELECT m.SK_VENDEDOR, m.SK_EMPRESAS, ..., m.VALOR_PREMIACAO_FINAL   -- mesmas 12 colunas
-FROM VW_PREMIACAO_VENDEDOR_MENSAL m
-WHERE m.MES_REFERENCIA = TO_CHAR(SYSDATE, 'MM/YYYY')
+SELECT com.SK_VENDEDOR, com.SK_EMPRESAS, dv.VENDEDOR_ID, dv.NOME_VENDEDOR,
+       com.MES_REFERENCIA, com.VALOR_COMISSAO_A_PAGAR,
+       NVL(ap.MARGEM_MAIS_FRETE, 0) AS MARGEM_MAIS_FRETE, ...   -- mesmos NVL e CASE da mensal
+FROM VW_COMISSAO_ERP_MES_ATUAL com
+JOIN DIM_VENDEDOR dv ON dv.SK_VENDEDOR = com.SK_VENDEDOR
+LEFT JOIN VW_APURACAO_PREMIACAO_VENDEDOR ap
+  ON ap.VENDEDOR_ID = dv.VENDEDOR_ID
+ AND ap.MES_REFERENCIA = TO_CHAR(SYSDATE, 'MM/YYYY')   -- constante, para o filtro chegar na apuração
+WHERE com.SK_VENDEDOR <> -1
 ```
-Saída idêntica à da mensal; o contrato com o backend e o front não mudou.
+Saída idêntica à da mensal (mesmas 12 colunas, mesma fórmula); o contrato com o backend e o front não mudou.
 
 - **Vendedores sem apuração agora aparecem no mês atual**, com margem 0 e não elegíveis. Antes eles sumiam, por causa do INNER JOIN que a fase 3 fazia com a apuração.
 - Vendedor sem linha de comissão no mês continua sumindo (por isso o ranking não usa esta view). No dia 1º do mês a view fica vazia.
@@ -198,13 +207,13 @@ DDL em [Back/sql/ddl_gestao_metas.sql](Back/sql/ddl_gestao_metas.sql). Ambas usa
 
 | Rota | Feature | Service | Lê |
 |---|---|---|---|
-| `GET /api/premiacao/minha-premiacao` | PREMIACAO | `buscarMinhaPremiacao` | `VW_PREMIACAO_VENDEDOR_COMISSAO_ERP` (por `SK_VENDEDOR` do token) |
+| `GET /api/premiacao/minha-premiacao` | PREMIACAO | `buscarMinhaPremiacao` | `VW_PREMIACAO_VENDEDOR_COMISSAO_ERP` (por `SK_VENDEDOR` do token). Devolve também `simuladorHabilitado` (interruptor do backend) |
 | `GET /api/premiacao/equipe` (sem `mes`) | PREMIACAO + gerente | `listarPremiacaoEquipe` | `VW_PREMIACAO_VENDEDOR_COMISSAO_ERP` filtrada por `SK_EMPRESAS` |
 | `GET /api/premiacao/equipe?mes=MM/YYYY` | PREMIACAO + gerente | `listarPremiacaoEquipe` | `VW_PREMIACAO_VENDEDOR_MENSAL` filtrada por `SK_EMPRESAS` e `MES_REFERENCIA` |
 | `GET /api/premiacao/meses-disponiveis` | PREMIACAO + gerente | `listarMesesDisponiveis` | `DISTINCT MES_REFERENCIA` de `VW_COMISSAO_ERP_MENSAL` (exclui o mês do `SYSDATE`) |
-| `GET /api/premiacao/minha-premiacao/simulador` | PREMIACAO | `simularCenario` | view fase 3 + `FATO_VENDAS_LUCRATIVIDADE`/`DIM_PRODUTOS` (6 meses) + `PARAM_PERCENTUAL_GRUPO_PREMIACAO` + `PARAM_FAIXA_ACELERADOR_PREMIACAO` |
-| `GET /api/premiacao/minha-premiacao/simulador/grupos` | PREMIACAO | `listarGruposHistoricosVendedor` | `FATO_VENDAS_LUCRATIVIDADE` + `DIM_PRODUTOS` |
-| `GET /api/premiacao/minha-premiacao/contadores` | PREMIACAO | `calcularContadoresVenda` | view fase 3 + ratio de margem do grupo preferido |
+| `GET /api/premiacao/minha-premiacao/simulador` | **`SIMULADOR_PREMIACAO_HABILITADO`** + PREMIACAO | `simularCenario` | view fase 3 + `FATO_VENDAS_LUCRATIVIDADE`/`DIM_PRODUTOS` (6 meses) + `PARAM_PERCENTUAL_GRUPO_PREMIACAO` + `PARAM_FAIXA_ACELERADOR_PREMIACAO` |
+| `GET /api/premiacao/minha-premiacao/simulador/grupos` | **`SIMULADOR_PREMIACAO_HABILITADO`** + PREMIACAO | `listarGruposHistoricosVendedor` | `FATO_VENDAS_LUCRATIVIDADE` + `DIM_PRODUTOS` |
+| `GET /api/premiacao/minha-premiacao/contadores` | **`SIMULADOR_PREMIACAO_HABILITADO`** + PREMIACAO | `calcularContadoresVenda` | view fase 3 + ratio de margem do grupo preferido |
 | `GET/POST /api/premiacao/faixas-acelerador` | COMISSOES (+ gerente no POST) | `listar/salvarFaixasAcelerador` | `PARAM_FAIXA_ACELERADOR_PREMIACAO` |
 | `GET /api/parametros-premiacao/grupos?nivel=` | COMISSOES | `listarGruposComPercentualVigente` | `DIM_PRODUTOS` + `PARAM_PERCENTUAL_GRUPO_PREMIACAO` |
 | `POST /api/parametros-premiacao/grupos/:nivel/:nomeGrupo` | COMISSOES + gerente | `salvarPercentualGrupo` | grava `PARAM_PERCENTUAL_GRUPO_PREMIACAO` |
@@ -219,7 +228,7 @@ Arquivos:
 
 | Onde | O quê |
 |---|---|
-| [objetivoVendedorService.js:523](Back/src/services/objetivoVendedorService.js#L523) (`loadCommissionSnapshotFromOracle`) | **Meta de Vida**: lê `VW_COMISSAO_ERP_MES_ATUAL` (`VENDAS_LIQUIDAS`, `PERCENTUAL_COMISSAO`, `VALOR_COMISSAO_A_PAGAR`) + `DIM_VENDEDOR` + `DIM_EMPRESAS`. Sem linha (inclusive no dia 1º do mês) → comissão 0, taxa padrão 3% (`DEFAULT_COMMISSION_RATE`), origem `"indisponivel"`. Usa o valor **bruto do ERP** (não zera por gatilho, não aplica acelerador). `PERCENTUAL_COMISSAO` é sempre dividido por 100 em `normalizeCommissionRate` (teste: `objetivoVendedorCommissionRate.test.js`). **A query não filtra mês e usa `FETCH FIRST 1 ROWS ONLY`**: ela depende de a view entregar só o mês corrente. Se apontar para `VW_COMISSAO_ERP_MENSAL` ou direto para a fato, que têm vários meses, vai pegar um mês arbitrário. |
+| [objetivoVendedorService.js:523](Back/src/services/objetivoVendedorService.js#L523) (`loadCommissionSnapshotFromOracle`) | **Meta de Vida**: lê `VW_COMISSAO_ERP_MES_ATUAL` ou, se a organização não tiver a view, `FT_COMISSAO_PARAMETRIZADA` (fonte detectada uma vez por organização, seção 8.5) (`VENDAS_LIQUIDAS`, `PERCENTUAL_COMISSAO`, `VALOR_COMISSAO_A_PAGAR`) + `DIM_VENDEDOR` + `DIM_EMPRESAS`. Sem linha (inclusive no dia 1º do mês) → comissão 0, taxa padrão 3% (`DEFAULT_COMMISSION_RATE`), origem `"indisponivel"`. Usa o valor **bruto do ERP** (não zera por gatilho, não aplica acelerador). `PERCENTUAL_COMISSAO` é sempre dividido por 100 em `normalizeCommissionRate` (teste: `objetivoVendedorCommissionRate.test.js`). **A query não filtra mês e usa `FETCH FIRST 1 ROWS ONLY`**: ela depende de a view entregar só o mês corrente. Se apontar para `VW_COMISSAO_ERP_MENSAL` ou direto para a fato, que têm vários meses, vai pegar um mês arbitrário. |
 | [rankingVendedores.js:426](Back/src/routes/rankingVendedores.js#L426) | Ranking: LEFT JOIN `VW_APURACAO_PREMIACAO_VENDEDOR` (mês do SYSDATE) para a coluna `margem`, só se `featurePremiacaoHabilitada`. |
 | [vendedor.js:181](Back/src/routes/vendedor.js#L181) | Dashboard do vendedor: `MARGEM_MAIS_FRETE` de `VW_APURACAO_PREMIACAO_VENDEDOR`, só se `featurePremiacaoHabilitada`. |
 | [atualizacaoBase.js](Back/src/routes/atualizacaoBase.js) | Data de referência da margem/comissão via `FATO_VENDAS_LUCRATIVIDADE` (D-1). |
@@ -244,6 +253,8 @@ Arquivos:
 - MySQL central, `organizacoes_auth.FEATURE_COMISSOES_HABILITADA` e `FEATURE_PREMIACAO_HABILITADA` ([featureFlagsService.js](Back/src/services/featureFlagsService.js), criadas em [mysql-tenants.js:225](Back/src/db/mysql-tenants.js#L225)).
 - `requireFeature("COMISSOES" | "PREMIACAO")` em [requireFeature.js](Back/src/middleware/requireFeature.js).
 - Gerente: `verificarSeUsuarioEhGerente` → `FATO_FUNCIONARIOS_ACESSOS.GERENTE='S'`, ou role `GERENTE` no app com CPF existente em `FATO_FUNCIONARIOS_ACESSOS`.
+- **Simulador:** além da flag PREMIACAO, as três rotas do simulador passam antes por `requireSimuladorPremiacao` ([requireSimuladorPremiacao.js](Back/src/middleware/requireSimuladorPremiacao.js)), que lê a variável de ambiente `SIMULADOR_PREMIACAO_HABILITADO` do backend (padrão: desligado). Desligado, responde 404 `{ desabilitado: true }` na hora, antes de `requireAuth`, sem tocar em MySQL nem Oracle. Vale para todas as organizações.
+- **Sem flag:** a Meta de Vida (`objetivoVendedorService`) lê a comissão em **qualquer** organização: `VW_COMISSAO_ERP_MES_ATUAL` ou, sem ela, `FT_COMISSAO_PARAMETRIZADA` (ver seção 8.5). Sem rota própria, mas atrás de `featurePremiacaoHabilitada` no código: margem no ranking (`rankingVendedores.js`) e no painel do vendedor (`vendedor.js`).
 
 ---
 
@@ -251,7 +262,7 @@ Arquivos:
 
 | Tela / componente | Client lib | Endpoints |
 |---|---|---|
-| [Front/app/vendedor/minha-premiacao/page.tsx](Front/app/vendedor/minha-premiacao/page.tsx) — premiação do vendedor + simulador | `lib/premiacao-vendedor.ts`, `lib/premiacao-simulador.ts` | minha-premiacao, simulador, simulador/grupos, contadores |
+| [Front/app/vendedor/minha-premiacao/page.tsx](Front/app/vendedor/minha-premiacao/page.tsx) — premiação do vendedor + simulador | `lib/premiacao-vendedor.ts`, `lib/premiacao-simulador.ts` | minha-premiacao; simulador, simulador/grupos e contadores **só se `simuladorHabilitado`** (desligado, a seção do simulador não aparece) |
 | [Front/app/vendedor/page.tsx](Front/app/vendedor/page.tsx) — card de premiação no painel | `lib/premiacao-vendedor.ts` | minha-premiacao |
 | [Front/app/dashboard/page.tsx](Front/app/dashboard/page.tsx) + [components/dashboard/premiacao-equipe.tsx](Front/components/dashboard/premiacao-equipe.tsx) — equipe do gerente, seletor de mês | `lib/premiacao-vendedor.ts` | equipe, meses-disponiveis |
 | [Front/app/comissoes/page.tsx](Front/app/comissoes/page.tsx) — cadastro % por grupo + escada de faixas | `lib/parametros-premiacao.ts`, `lib/premiacao-simulador.ts` | parametros-premiacao/*, faixas-acelerador |
@@ -269,17 +280,18 @@ O front só consome o JSON montado pelo backend (`valorComissaoBase`, `margemMai
    - Queries inline no simulador (`calcularRatioMargemPorGrupo`, `listarGruposHistoricosVendedor`) e em `listarGruposSemPercentual` — não usam a view.
    - `atualizacaoBase.js` (data D-1).
 3. **Histórico**: vem de `VW_PREMIACAO_VENDEDOR_MENSAL` (`buscarLinhasBrutasHistorico`) e de `VW_COMISSAO_ERP_MENSAL` (`listarMesesDisponiveis`). Mudar a fonte da comissão já muda o histórico. Manter `MES_REFERENCIA` `'MM/YYYY'` e `SK_EMPRESAS`.
-4. **Mudar a fórmula da premiação**: só em `VW_PREMIACAO_VENDEDOR_MENSAL`, porque o mês atual é um filtro dela. O simulador (`simularCenario`) replica a fórmula em JS e precisa acompanhar.
+4. **Mudar a fórmula da premiação**: em `VW_PREMIACAO_VENDEDOR_MENSAL` **e** em `VW_PREMIACAO_VENDEDOR_COMISSAO_ERP` (o teste `premiacaoViewsFormula.test.js` falha se as duas divergirem). O simulador (`simularCenario`) replica a fórmula em JS e precisa acompanhar.
 5. **Mudar escada/gatilho**: alterar o `CASE` da view **e** `PARAM_FAIXA_ACELERADOR_PREMIACAO` **e** as constantes `GATILHO_MINIMO_MARGEM` (2 arquivos). Manter o formato de texto `"X até Y,ZZ"` em `FAIXA_ACELERADOR` ou trocar `extrairLimiteSuperiorFaixa`.
 6. Manter os valores literais `'ELEGÍVEL'` / `'NÃO ELEGÍVEL'` (com acento) ou atualizar `mapPremiacaoRow` e os `ORDER BY`.
 7. Manter as chaves de join: comissão por `SK_VENDEDOR`; apuração por `VENDEDOR_ID` (DE-PARA via `DIM_VENDEDOR`).
 8. Rodar os testes:
    - `Back/src/services/__tests__/premiacaoVendedorFinalFormula.test.js`
    - `Back/src/services/__tests__/premiacaoVendedorEquipe.test.js`
+   - `Back/src/services/__tests__/premiacaoViewsFormula.test.js` (mesma fórmula nas views mensal e fase 3)
    - `Back/src/services/__tests__/premiacaoSimuladorService.test.js`
    - `Back/src/services/__tests__/parametrosPremiacao*.test.js`
    - `Back/src/controllers/__tests__/premiacaoVendedorController.test.js`, `parametrosPremiacaoController.test.js`
-   - `Back/src/middleware/__tests__/requireFeature.test.js`
+   - `Back/src/middleware/__tests__/requireFeature.test.js`, `requireSimuladorPremiacao.test.js`
    - `Back/src/services/__tests__/objetivoVendedorCommissionRate.test.js`
 
 ---
@@ -294,3 +306,99 @@ O front só consome o JSON montado pelo backend (`valorComissaoBase`, `margemMai
 - `VW_COMISSAO_ERP_MENSAL` também traz o mês corrente, por isso `listarMesesDisponiveis` usa `<> TO_CHAR(SYSDATE,'MM/YYYY')`. Sem isso, o mês atual apareceria duplicado no seletor.
 - Fachi: `sk_vendedor` já reverteu sozinho no cadastro de usuário (dashboard mostrando menos que o ERP) — conferir o vínculo `usuarios_auth.sk_vendedor` ao validar números.
 - Os scripts das views ficam em `Back/Back/sql/` (pasta aninhada), separados do DDL principal em `Back/sql/`.
+
+---
+
+## 7. Incidente NJS-040 (2026-10-01) e proteção do pool Oracle
+
+**O que aconteceu:** depois do deploy do simulador e da fato nova, o backend passou a dar `NJS-040: connection request timeout` nas organizações 19 (São Jorge) e 22 (Fachi), em rotas que não tinham nada a ver com a premiação (feed, atualização da base, lojas). O rollback para `50dcc57` zerou o erro (0 em 15 min).
+
+**Causa:**
+- O backend usa node-oracledb em modo **thick**. Toda chamada ao Oracle ocupa uma thread do pool do libuv, que tem **4 threads por padrão** e é **compartilhado por todas as organizações**. Poucas consultas lentas numa organização deixam as conexões das outras paradas, em uso, até o pool delas (5 conexões) encher e a fila estourar em 60s.
+- Consultas lentas novas:
+  - **Simulador:** três leituras completas de `FATO_VENDAS_LUCRATIVIDADE` a cada abertura da tela Minha Premiação. O filtro `TO_DATE(TO_CHAR(SK_DT_RECEBIMENTO))` não usa índice, e a lista de grupos era calculada duas vezes.
+  - **Fase 3 como filtro da mensal (suspeita):** o filtro de mês podia não chegar na apuração por causa do LEFT JOIN, e a apuração seria calculada para todos os meses.
+- **Não foi** conexão sem liberar: toda consulta passa por `queryOracleByEmpresaId`, que fecha a conexão no `finally`.
+
+**Proteções aplicadas:**
+| O quê | Onde | Observação |
+|---|---|---|
+| `UV_THREADPOOL_SIZE=64` | `docker-compose.yml` (environment do backend) | Regra: ≥ 5 × nº de organizações + 4. Aumentar ao passar de ~12 organizações. Só vale como variável de ambiente; para mudar, recriar o container (`docker compose up -d backend`), não basta `restart`. |
+| `callTimeout` de 30s por chamada | [oracle-tenants.js](Back/src/db/oracle-tenants.js) (`ORACLE_CALL_TIMEOUT_MS`) | Estourou: erro `NJS-123` (DPI-1067 no thick) e a conexão é **descartada** do pool (`close({ drop: true })`), não devolvida. O mesmo vale para conexão morta (`NJS-500`). **Qualquer consulta legítima acima de 30s passa a falhar:** medir antes de criar view ou relatório pesado. |
+| Fase 3 lê direto de `VW_COMISSAO_ERP_MES_ATUAL` com `ap.MES_REFERENCIA = TO_CHAR(SYSDATE,'MM/YYYY')` | `vw_premiacao_vendedor_fase3.sql` | Fórmula igual à da mensal, garantida por `premiacaoViewsFormula.test.js`. |
+| Simulador desligado | `SIMULADOR_PREMIACAO_HABILITADO` (padrão desligado) | Ver seção 9 para religar. |
+
+Para conferir no banco se uma view apura todos os meses: rodar `EXPLAIN PLAN` + `DBMS_XPLAN.DISPLAY` e olhar o "Predicate Information" da linha `TABLE ACCESS ... FATO_VENDAS_LUCRATIVIDADE`. Se o filtro `TO_CHAR(TRUNC(TO_DATE(TO_CHAR("F"."SK_DT_RECEBIMENTO"),'YYYYMMDD'),'MM'),'MM/YYYY') = ...` aparece ali, o mês foi aplicado antes do GROUP BY. Se a linha só tem `"SK_DT_RECEBIMENTO" IS NOT NULL`, a view está apurando todos os meses.
+
+---
+
+## 8. Pré-requisitos para ligar comissão/premiação em uma organização
+
+As flags ficam por organização no MySQL central e não verificam se o banco do cliente está pronto. Ligar a flag sem os objetos abaixo faz as rotas falharem (ORA-00942) ou, pior, rodarem consultas pesadas num banco sem índice. Conferir tudo **no schema `DM_VENDAS` do Oracle do cliente** antes de ligar.
+
+### 8.1 Dados de origem (ERP/DW)
+1. **Fato nova de comissão** `FT_COMISSAO_PARAMETRIZADA_TESTE`, alimentada pelo **pipeline do Pentaho** (job diário que chama `PROCESSAR_REGRA_COMISSAO` com devoluções automáticas = `'N'`), e a tabela de controle `CTRL_COMISSAO_FECHAMENTO_TESTE` (congela o mês fechado). O job precisa estar agendado e rodando para o cliente. Conferir:
+   - 1 linha por `SK_VENDEDOR` + `MES_REFERENCIA` (sem duplicidade);
+   - `SK_EMPRESAS` no domínio de `DIM_EMPRESAS`;
+   - `PERCENTUAL_COMISSAO` em escala de percentual;
+   - mês atual presente (exceto no dia 1º).
+2. `FATO_VENDAS_LUCRATIVIDADE` com as colunas da seção 2.1, `SK_DT_RECEBIMENTO` numérico `YYYYMMDD`, carga D-1.
+3. Dimensões `DIM_VENDEDOR` (`SK_VENDEDOR` ↔ `VENDEDOR_ID`), `DIM_PRODUTOS` (`NOME_PAI_NIVEL1/2/3`), `DIM_EMPRESAS` e `FATO_FUNCIONARIOS_ACESSOS` (gerentes e lojas).
+
+### 8.2 Objetos criados por este projeto (nesta ordem, como `DM_VENDAS`)
+1. `vw_apuracao_premiacao_vendedor_fix_gatilho_margem_mais_frete.sql` → `VW_APURACAO_PREMIACAO_VENDEDOR`. **A escada de acelerador é fixa no `CASE`**: se o cliente tiver outra regra, ajustar a view.
+2. `vw_comissao_erp_mes_atual.sql` → `VW_COMISSAO_ERP_MENSAL` e `VW_COMISSAO_ERP_MES_ATUAL`.
+3. `vw_premiacao_vendedor_mensal.sql` → `VW_PREMIACAO_VENDEDOR_MENSAL`.
+4. `vw_premiacao_vendedor_fase3.sql` → `VW_PREMIACAO_VENDEDOR_COMISSAO_ERP`.
+5. `Back/sql/ddl_gestao_metas.sql` → `PARAM_PERCENTUAL_GRUPO_PREMIACAO` (tela Comissões).
+6. `Back/sql/param_faixa_acelerador_premiacao.sql` → `PARAM_FAIXA_ACELERADOR_PREMIACAO` **populada** (13 faixas, igual ao `CASE` da apuração).
+
+### 8.3 Validação antes de ligar
+- `SELECT COUNT(*) FROM VW_PREMIACAO_VENDEDOR_COMISSAO_ERP` responde em poucos segundos e bate com o número de vendedores com comissão no mês.
+- `EXPLAIN PLAN` da fase 3 e da mensal com filtro de mês (seção 7): o filtro de mês tem que chegar na leitura da fato.
+- Comparar 2 ou 3 vendedores com a tela de comissão do ERP.
+
+### 8.4 Flags (MySQL central, `organizacoes_auth`)
+| Flag | Libera | Depende de |
+|---|---|---|
+| `FEATURE_PREMIACAO_HABILITADA` | minha-premiacao, equipe (mês atual e histórico), meses-disponiveis, margem no ranking e no painel do vendedor | 8.1 e 8.2 itens 1 a 4 |
+| `FEATURE_COMISSOES_HABILITADA` | tela Comissões: % por grupo, cobertura de grupos (lê `FATO_VENDAS_LUCRATIVIDADE`), escada de faixas | `DIM_PRODUTOS`, `FATO_VENDAS_LUCRATIVIDADE`, 8.2 itens 5 e 6 |
+
+```sql
+-- conferir (confirmar o id pelo nome: ids diferem entre ambientes)
+SELECT id_organizacao, nome, FEATURE_COMISSOES_HABILITADA, FEATURE_PREMIACAO_HABILITADA
+FROM organizacoes_auth
+ORDER BY id_organizacao;
+```
+
+### 8.5 O que roda sem flag
+- **Meta de Vida:** roda em toda organização que usa a Meta de Vida, com a fonte de comissão detectada por organização (`createCommissionSnapshotLoader` em `objetivoVendedorService.js`):
+  1. Tenta `VW_COMISSAO_ERP_MES_ATUAL` (fato nova).
+  2. Se der ORA-00942, repete a mesma consulta em `FT_COMISSAO_PARAMETRIZADA`, a fonte até 2026-10-01 (organizações sem as views, ex.: org 22, Fachi).
+  3. Se as duas derem ORA-00942, a comissão fica "indisponível" e a tela mostra a receita calculada pela fato de vendas.
+  - A fonte que funcionou (ou "nenhuma") fica **em memória por organização** até o backend reiniciar. As consultas seguintes vão direto nela, sem repetir a tentativa na view e sem erro no log; a detecção grava uma linha `[meta-de-vida]` no log. Um erro que não seja ORA-00942 (timeout, conexão) não é guardado: a detecção roda de novo na próxima vez.
+  - **Depois de criar as views numa organização, reiniciar o backend.** Sem isso, ela continua lendo a fato antiga.
+  - A taxa (`PERCENTUAL_COMISSAO`) é sempre dividida por 100 nas duas fontes (`normalizeCommissionRate`). Antes de 2026-10-01, valores abaixo de 1 eram usados direto como taxa.
+
+---
+
+## 9. Religar o simulador
+
+O simulador está **desligado** por `SIMULADOR_PREMIACAO_HABILITADO` (padrão desligado). O código continua no repo e os testes continuam rodando. Desligado, as três rotas respondem 404 `{ desabilitado: true }` sem consultar banco, e a tela Minha Premiação não chama essas rotas nem mostra a seção (o backend devolve `simuladorHabilitado: false` em minha-premiacao). A aba de faixas da tela Comissões continua funcionando: ela só lê e grava `PARAM_FAIXA_ACELERADOR_PREMIACAO`.
+
+Para religar, nesta ordem:
+1. **Filtro numérico de data (3b):** em `calcularRatioMargemPorGrupo` e `listarGruposHistoricosVendedor` ([premiacaoSimuladorService.js](Back/src/services/premiacaoSimuladorService.js)), trocar
+   `TO_DATE(TO_CHAR(f.SK_DT_RECEBIMENTO), 'YYYYMMDD') >= ADD_MONTHS(TRUNC(SYSDATE), -6)` por
+   `f.SK_DT_RECEBIMENTO >= TO_NUMBER(TO_CHAR(ADD_MONTHS(TRUNC(SYSDATE), -6), 'YYYYMMDD'))`.
+   Antes, confirmar que a coluna é `NUMBER` (`user_tab_columns`).
+2. **Uma lista de grupos por abertura de tela (3c):** `calcularContadoresVenda` já calcula a lista de grupos para achar o grupo preferido. Ela deve devolver essa lista (`grupos`), e o front deve parar de chamar `/simulador/grupos` em paralelo com `/contadores` (`loadDadosSimulador` em `minha-premiacao/page.tsx`; campo `grupos` em `ContadoresVendaPremiacao`). Ajustar os testes de `calcularContadoresVenda`.
+3. **Índice na fato:** `CREATE INDEX ... ON DM_VENDAS.FATO_VENDAS_LUCRATIVIDADE (SK_VENDEDOR, SK_DT_RECEBIMENTO)`, combinado com quem mantém a carga do DW (impacto no tempo do job do Pentaho).
+4. **Estatísticas:** `EXEC DBMS_STATS.GATHER_TABLE_STATS('DM_VENDAS', 'FATO_VENDAS_LUCRATIVIDADE', cascade => TRUE);` depois de criar o índice.
+5. **Plano:** `EXPLAIN PLAN` das duas consultas do simulador. Tem que aparecer `INDEX RANGE SCAN` no índice novo, não `TABLE ACCESS FULL` na fato.
+6. **Teste de carga simples:** fora do horário de pico, disparar umas 20 aberturas simultâneas da tela (contadores + simulador) para vendedores diferentes da mesma organização, por 5 minutos. Critério para seguir:
+   - tempo das rotas abaixo de ~3s no p95;
+   - nenhum `NJS-040` nem `NJS-123` no log;
+   - sessões do usuário do app no Oracle (`v$session`) nunca acima do `poolMax` (5).
+7. **Ligar:** `SIMULADOR_PREMIACAO_HABILITADO=true` em `Back/.env.docker` do servidor, recriar o backend (`docker compose up -d backend`) e acompanhar o log por 30 minutos (`grep -c "NJS-040\|NJS-123"`). Para desligar de novo, voltar para `false` e recriar.
+
+O interruptor vale para **todas** as organizações com `FEATURE_PREMIACAO_HABILITADA`. Cada uma delas precisa do índice e das estatísticas dos itens 3 e 4 no seu próprio banco.

@@ -6,6 +6,7 @@ import {
 } from "../services/premiacaoVendedorService.js"
 import { verificarSeUsuarioEhGerente } from "../services/parametrosPremiacaoService.js"
 import { getScopedLojaScope } from "../services/requestScope.js"
+import { isSimuladorPremiacaoHabilitado } from "../middleware/requireSimuladorPremiacao.js"
 
 function handleError(res, error, fallbackMessage) {
   if (error instanceof PremiacaoVendedorError) {
@@ -22,6 +23,7 @@ export function createPremiacaoVendedorController(deps = {}) {
     listarMeses = listarMesesDisponiveis,
     verificarGerente = verificarSeUsuarioEhGerente,
     resolverLojaScope = getScopedLojaScope,
+    simuladorHabilitado = isSimuladorPremiacaoHabilitado,
   } = deps
 
   async function getMinhaPremiacao(req, res) {
@@ -34,7 +36,9 @@ export function createPremiacaoVendedorController(deps = {}) {
         return res.status(404).json({ error: "Nenhuma comissao do ERP encontrada para o mes corrente." })
       }
 
-      return res.json({ data: premiacao })
+      // simuladorHabilitado diz ao front se deve chamar/mostrar o simulador - o interruptor e
+      // variavel de ambiente do backend (SIMULADOR_PREMIACAO_HABILITADO), invisivel no front.
+      return res.json({ data: { ...premiacao, simuladorHabilitado: simuladorHabilitado() } })
     } catch (error) {
       return handleError(res, error, "Erro ao buscar premiacao do vendedor.")
     }
