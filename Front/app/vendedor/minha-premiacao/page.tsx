@@ -8,7 +8,12 @@ import { toast } from "sonner"
 import { AppShellNav } from "@/components/layout/AppShellNav"
 import { MobileTabBar } from "@/components/layout/MobileTabBar"
 import { formatCurrency } from "@/lib/types"
-import { fetchMinhaPremiacao, PremiacaoVendedorApiError, type MinhaPremiacao } from "@/lib/premiacao-vendedor"
+import {
+  fetchMinhaPremiacao,
+  PremiacaoVendedorApiError,
+  type MinhaPremiacao,
+  type PremiacaoDoMes,
+} from "@/lib/premiacao-vendedor"
 import {
   fetchContadoresVendaPremiacao,
   fetchGruposSimulador,
@@ -246,38 +251,18 @@ export default function MinhaPremiacaoPage() {
             </div>
           </div>
 
-          <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CalcStep
-              icon={<CircleDollarSign className="h-4 w-4 text-cyan-200" />}
-              label="Comissao base (ERP)"
-              value={formatCurrency(premiacao?.valorComissaoBase ?? 0)}
-            />
-            <CalcOperator symbol="×" />
-            <CalcStep
-              icon={<TrendingUp className="h-4 w-4 text-emerald-200" />}
-              label="Acelerador da faixa"
-              value={`${((premiacao?.percAcelerador ?? 0) * 100).toFixed(0)}%`}
-            />
-            <CalcOperator symbol="+" />
-            <CalcStep
-              icon={<Sparkles className="h-4 w-4 text-amber-200" />}
-              label="Bonus fixo"
-              value={formatCurrency(premiacao?.bonusFixoAdicional ?? 0)}
-            />
-            <CalcOperator symbol="=" />
-            <CalcStep
-              icon={<Gauge className="h-4 w-4 text-white" />}
-              label="Premiacao final"
-              value={formatCurrency(premiacao?.valorPremiacaoFinal ?? 0)}
-              highlight
-            />
-          </div>
+          {premiacao ? (
+            <div className="mt-6 space-y-4">
+              <ContaDoMes premiacao={premiacao} periodo="atual" />
 
-          {!premiacao?.elegivel ? (
-            <p className="mt-5 rounded-2xl border border-amber-300/16 bg-amber-400/8 px-4 py-3 text-sm leading-6 text-amber-50/90">
-              Como voce ainda nao bateu o gatilho minimo de margem+frete, o acelerador desta faixa e 0% e a
-              premiacao final fica zerada.
-            </p>
+              {premiacao.mesAnterior ? (
+                <ContaDoMes premiacao={premiacao.mesAnterior} periodo="anterior" margemMesAtual={margemMaisFrete} />
+              ) : (
+                <p className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm leading-6 text-white/56">
+                  Nenhuma comissao registrada para voce no mes anterior.
+                </p>
+              )}
+            </div>
           ) : null}
         </section>
 
@@ -411,6 +396,116 @@ export default function MinhaPremiacaoPage() {
           Atualizar leitura
         </button>
       </main>
+    </div>
+  )
+}
+
+const NOMES_MESES = [
+  "Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+]
+
+// "09/2026" -> "Setembro/2026"
+function formatMesReferencia(mesReferencia: string | null) {
+  const [mes, ano] = String(mesReferencia ?? "").split("/")
+  const nome = NOMES_MESES[Number(mes) - 1]
+  return nome && ano ? `${nome}/${ano}` : mesReferencia ?? ""
+}
+
+function formatAcelerador(percAcelerador: number) {
+  return `${(percAcelerador * 100).toFixed(0)}%`
+}
+
+// Uma linha da conta: primeiro de onde sai o acelerador (margem+frete -> faixa), depois a conta
+// da premiacao em si. Usada para o mes atual (parcial) e para o mes anterior (fechado).
+function ContaDoMes({
+  premiacao,
+  periodo,
+  margemMesAtual,
+}: {
+  premiacao: PremiacaoDoMes
+  periodo: "atual" | "anterior"
+  margemMesAtual?: number
+}) {
+  const atual = periodo === "atual"
+  const margem = premiacao.margemMaisFrete ?? 0
+  const faltaParaRepetir = !atual && margemMesAtual != null ? margem - margemMesAtual : 0
+
+  return (
+    <div
+      className={`rounded-[24px] border p-4 sm:p-5 ${
+        atual ? "border-emerald-300/18 bg-emerald-400/[0.05]" : "border-white/10 bg-white/[0.03]"
+      }`}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-base font-black text-white">{formatMesReferencia(premiacao.mesReferencia)}</p>
+        <span
+          className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+            atual
+              ? "border-amber-300/24 bg-amber-400/10 text-amber-100/90"
+              : "border-white/14 bg-white/[0.06] text-white/70"
+          }`}
+        >
+          {atual ? "Parcial · ate ontem" : "Fechado"}
+        </span>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-white/64">
+        <span>
+          Margem + frete <strong className="text-white">{formatCurrency(margem)}</strong>
+        </span>
+        <span className="text-white/32">→</span>
+        <span>
+          faixa <strong className="text-white">{premiacao.faixaAcelerador ?? "-"}</strong>
+        </span>
+        <span className="text-white/32">→</span>
+        <span>
+          acelerador <strong className="text-white">{formatAcelerador(premiacao.percAcelerador)}</strong> e bonus fixo{" "}
+          <strong className="text-white">{formatCurrency(premiacao.bonusFixoAdicional)}</strong>
+        </span>
+      </div>
+
+      <div className="mt-4 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <CalcStep
+          icon={<CircleDollarSign className="h-4 w-4 text-cyan-200" />}
+          label="Comissao base (ERP)"
+          value={formatCurrency(premiacao.valorComissaoBase)}
+        />
+        <CalcOperator symbol="×" />
+        <CalcStep
+          icon={<TrendingUp className="h-4 w-4 text-emerald-200" />}
+          label="Acelerador da faixa"
+          value={formatAcelerador(premiacao.percAcelerador)}
+        />
+        <CalcOperator symbol="+" />
+        <CalcStep
+          icon={<Sparkles className="h-4 w-4 text-amber-200" />}
+          label="Bonus fixo"
+          value={formatCurrency(premiacao.bonusFixoAdicional)}
+        />
+        <CalcOperator symbol="=" />
+        <CalcStep
+          icon={<Gauge className="h-4 w-4 text-white" />}
+          label="Premiacao final"
+          value={formatCurrency(premiacao.valorPremiacaoFinal)}
+          highlight={atual}
+        />
+      </div>
+
+      {!premiacao.elegivel ? (
+        <p className="mt-4 rounded-2xl border border-amber-300/16 bg-amber-400/8 px-4 py-3 text-sm leading-6 text-amber-50/90">
+          {atual
+            ? "Como voce ainda nao bateu o gatilho minimo de margem+frete, o acelerador desta faixa e 0% e a premiacao final fica zerada."
+            : "Neste mes voce nao bateu o gatilho minimo de margem+frete, entao o acelerador foi 0% e a premiacao final ficou zerada."}
+        </p>
+      ) : null}
+
+      {premiacao.elegivel && faltaParaRepetir > 0 ? (
+        <p className="mt-4 text-sm leading-6 text-white/56">
+          Para repetir a margem+frete de {formatMesReferencia(premiacao.mesReferencia)}, faltam{" "}
+          <strong className="text-white/80">{formatCurrency(faltaParaRepetir)}</strong> neste mes.
+        </p>
+      ) : null}
     </div>
   )
 }

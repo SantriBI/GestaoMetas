@@ -91,6 +91,7 @@ test("getMinhaPremiacao: devolve simuladorHabilitado junto da premiacao (interru
   for (const habilitado of [false, true]) {
     const controller = createPremiacaoVendedorController({
       buscarPremiacao: async () => premiacao,
+      buscarPremiacaoMesAnterior: async () => null,
       simuladorHabilitado: () => habilitado,
     })
     const res = createFakeRes()
@@ -98,6 +99,50 @@ test("getMinhaPremiacao: devolve simuladorHabilitado junto da premiacao (interru
     await controller.getMinhaPremiacao({ auth: { empresa_id: 19, sk_vendedor: 123 } }, res)
 
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(res.body.data, { ...premiacao, simuladorHabilitado: habilitado })
+    assert.deepEqual(res.body.data, { ...premiacao, mesAnterior: null, simuladorHabilitado: habilitado })
   }
+})
+
+test("getMinhaPremiacao: devolve o mes anterior junto do mes atual", async () => {
+  const premiacao = { vendedorId: 42, mesReferencia: "10/2026", valorPremiacaoFinal: 0 }
+  const mesAnterior = { vendedorId: 42, mesReferencia: "09/2026", valorPremiacaoFinal: 11304.22 }
+  const chamadas = []
+  const controller = createPremiacaoVendedorController({
+    buscarPremiacao: async () => premiacao,
+    buscarPremiacaoMesAnterior: async (empresaId, skVendedor) => {
+      chamadas.push({ empresaId, skVendedor })
+      return mesAnterior
+    },
+    simuladorHabilitado: () => false,
+  })
+  const res = createFakeRes()
+
+  await controller.getMinhaPremiacao({ auth: { empresa_id: 7, sk_vendedor: 15280 } }, res)
+
+  assert.equal(res.statusCode, 200)
+  assert.deepEqual(res.body.data, { ...premiacao, mesAnterior, simuladorHabilitado: false })
+  assert.deepEqual(chamadas, [{ empresaId: 7, skVendedor: 15280 }])
+})
+
+test("getMinhaPremiacao: falha no mes anterior nao derruba a premiacao do mes atual", async () => {
+  const premiacao = { vendedorId: 42, valorPremiacaoFinal: 100 }
+  const controller = createPremiacaoVendedorController({
+    buscarPremiacao: async () => premiacao,
+    buscarPremiacaoMesAnterior: async () => {
+      throw new Error("ORA-00942")
+    },
+    simuladorHabilitado: () => false,
+  })
+  const res = createFakeRes()
+  const consoleError = console.error
+  console.error = () => {}
+  try {
+    await controller.getMinhaPremiacao({ auth: { empresa_id: 7, sk_vendedor: 15280 } }, res)
+  } finally {
+    console.error = consoleError
+  }
+
+  assert.equal(res.statusCode, 200)
+  assert.equal(res.body.data.mesAnterior, null)
+  assert.equal(res.body.data.valorPremiacaoFinal, 100)
 })

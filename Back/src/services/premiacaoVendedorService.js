@@ -134,6 +134,45 @@ export async function buscarMinhaPremiacao(empresaId, skVendedor, { query = quer
   return mapPremiacaoRow(normalizeRow(rows[0]))
 }
 
+/**
+ * Premiacao do mes anterior (fechado) do vendedor logado, exibida junto da do mes atual na tela
+ * "Minha premiacao". Le VW_PREMIACAO_VENDEDOR_MENSAL - mesma origem dos meses passados da tela do
+ * gerente (buscarLinhasBrutasHistorico), so que filtrada pelo vendedor. O mes anterior e
+ * calculado pelo SYSDATE do Oracle, mesmo criterio de "mes atual" de
+ * VW_PREMIACAO_VENDEDOR_COMISSAO_ERP. Retorna null se o vendedor nao teve comissao no mes.
+ */
+export async function buscarMinhaPremiacaoMesAnterior(empresaId, skVendedor, { query = queryOracleByEmpresaId } = {}) {
+  if (!empresaId) throw new PremiacaoVendedorError("empresa_id e obrigatorio.", 400)
+  const skVendedorNum = normalizeSkVendedor(skVendedor)
+
+  const rows = await query(
+    empresaId,
+    `
+    SELECT
+      SK_VENDEDOR,
+      VENDEDOR_ID,
+      NOME_VENDEDOR,
+      MES_REFERENCIA,
+      VALOR_COMISSAO_A_PAGAR,
+      MARGEM_MAIS_FRETE,
+      STATUS_GATILHO,
+      FAIXA_ACELERADOR,
+      PERC_ACELERADOR,
+      BONUS_FIXO_ADICIONAL,
+      VALOR_PREMIACAO_FINAL
+    FROM VW_PREMIACAO_VENDEDOR_MENSAL
+    WHERE SK_VENDEDOR = :skVendedor
+      AND MES_REFERENCIA = TO_CHAR(ADD_MONTHS(SYSDATE, -1), 'MM/YYYY')
+    FETCH FIRST 1 ROW ONLY
+    `,
+    { skVendedor: skVendedorNum }
+  )
+
+  if (!rows[0]) return null
+
+  return mapPremiacaoRow(normalizeRow(rows[0]))
+}
+
 function validarMesReferencia(mes) {
   if (!MES_REFERENCIA_REGEX.test(mes)) {
     throw new PremiacaoVendedorError("mes deve estar no formato MM/YYYY.", 400)

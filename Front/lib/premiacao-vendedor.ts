@@ -1,4 +1,4 @@
-export interface MinhaPremiacao {
+export interface PremiacaoDoMes {
   vendedorId: number | string | null
   nomeVendedor: string | null
   mesReferencia: string | null
@@ -13,6 +13,11 @@ export interface MinhaPremiacao {
   gatilhoMinimoMargem: number
   faltanteGatilho: number
   faltanteProximaFaixa: number | null
+}
+
+export interface MinhaPremiacao extends PremiacaoDoMes {
+  // Mes anterior (fechado), de VW_PREMIACAO_VENDEDOR_MENSAL; null se o vendedor nao teve comissao.
+  mesAnterior?: PremiacaoDoMes | null
   // Interruptor do simulador no backend (SIMULADOR_PREMIACAO_HABILITADO); so vem em minha-premiacao.
   simuladorHabilitado?: boolean
 }

@@ -1,5 +1,6 @@
 import {
   buscarMinhaPremiacao,
+  buscarMinhaPremiacaoMesAnterior,
   listarPremiacaoEquipe,
   listarMesesDisponiveis,
   PremiacaoVendedorError,
@@ -19,6 +20,7 @@ function handleError(res, error, fallbackMessage) {
 export function createPremiacaoVendedorController(deps = {}) {
   const {
     buscarPremiacao = buscarMinhaPremiacao,
+    buscarPremiacaoMesAnterior = buscarMinhaPremiacaoMesAnterior,
     listarEquipe = listarPremiacaoEquipe,
     listarMeses = listarMesesDisponiveis,
     verificarGerente = verificarSeUsuarioEhGerente,
@@ -31,14 +33,22 @@ export function createPremiacaoVendedorController(deps = {}) {
       const empresaId = req.auth?.empresa_id ?? null
       const skVendedor = req.auth?.sk_vendedor ?? null
 
-      const premiacao = await buscarPremiacao(empresaId, skVendedor)
+      // O mes anterior e complemento da tela: se a consulta dele falhar, a premiacao do mes
+      // atual continua sendo exibida (mesAnterior: null).
+      const [premiacao, mesAnterior] = await Promise.all([
+        buscarPremiacao(empresaId, skVendedor),
+        buscarPremiacaoMesAnterior(empresaId, skVendedor).catch((error) => {
+          console.error("Erro ao buscar premiacao do mes anterior do vendedor.", error)
+          return null
+        }),
+      ])
       if (!premiacao) {
         return res.status(404).json({ error: "Nenhuma comissao do ERP encontrada para o mes corrente." })
       }
 
       // simuladorHabilitado diz ao front se deve chamar/mostrar o simulador - o interruptor e
       // variavel de ambiente do backend (SIMULADOR_PREMIACAO_HABILITADO), invisivel no front.
-      return res.json({ data: { ...premiacao, simuladorHabilitado: simuladorHabilitado() } })
+      return res.json({ data: { ...premiacao, mesAnterior, simuladorHabilitado: simuladorHabilitado() } })
     } catch (error) {
       return handleError(res, error, "Erro ao buscar premiacao do vendedor.")
     }
