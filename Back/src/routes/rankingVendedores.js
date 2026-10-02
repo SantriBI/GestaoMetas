@@ -37,25 +37,30 @@ async function getQueryContext(empresaId) {
   }
 }
 
-// Replica a CTE "mes_referencia" da VW_RANKING_VENDEDORES (mes atual se ja tiver
-// meta cadastrada, senao cai pro ultimo mes com meta) e so entao subtrai 1 mes
-// com ADD_MONTHS. Nunca calcula o mes anterior direto a partir de SYSDATE.
-export function buildMensalAnteriorSql(sellerScope, lojaCondition) {
+// Espelha a VW_RANKING_VENDEDORES deslocada 1 mes: a receita e sempre do mes
+// calendario anterior a SYSDATE (a view usa o mes de SYSDATE), e a meta e a do
+// proprio mes anterior ou, se ele nao tiver meta, a ultima meta cadastrada ate
+// ele (mesma regra de "meta herdada" da view). Nao parte do mes de referencia da
+// meta: com a meta do mes corrente ainda nao cadastrada isso pularia um mes.
+// Com incluirMargem, traz MARGEM_MAIS_FRETE do mes anterior da
+// VW_APURACAO_PREMIACAO_VENDEDOR (so existe em tenants com premiacao habilitada).
+export function buildMensalAnteriorSql(sellerScope, lojaCondition, { incluirMargem = false } = {}) {
   return `
     SELECT * FROM (
-      WITH mes_referencia AS (
+      WITH mes_vendas AS (
+          SELECT TO_CHAR(ADD_MONTHS(SYSDATE, -1), 'YYYYMM') AS yyyymm_ref FROM dual
+      ),
+      mes_anterior AS (
           SELECT
               NVL(
-                  MAX(CASE WHEN TO_CHAR(dti.DATA,'YYYYMM') = TO_CHAR(SYSDATE,'YYYYMM')
+                  MAX(CASE WHEN TO_CHAR(dti.DATA,'YYYYMM') = mv.yyyymm_ref
                            THEN TO_CHAR(dti.DATA,'YYYYMM') END),
                   MAX(TO_CHAR(dti.DATA,'YYYYMM'))
               ) AS yyyymm_ref
           FROM fato_meta meta
           JOIN dim_data dti ON dti.DATANUM = meta.SK_DATA
-      ),
-      mes_anterior AS (
-          SELECT TO_CHAR(ADD_MONTHS(TO_DATE(yyyymm_ref, 'YYYYMM'), -1), 'YYYYMM') AS yyyymm_ref
-          FROM mes_referencia
+          CROSS JOIN mes_vendas mv
+          WHERE TO_CHAR(dti.DATA,'YYYYMM') <= mv.yyyymm_ref
       ),
       base_meta AS (
           SELECT
@@ -84,7 +89,7 @@ export function buildMensalAnteriorSql(sellerScope, lojaCondition) {
           LEFT JOIN dim_data           dti            ON dti.DATANUM                    = cockpit.SK_DATA
           LEFT JOIN dim_tipo_orcamento tipo_orcamento ON tipo_orcamento.SK_TIPO_ORCAMENTO = cockpit.SK_TIPO_ORCAMENTO
           WHERE cockpit.SK_VENDEDOR <> -1
-            AND TO_CHAR(dti.DATA,'YYYYMM') = (SELECT yyyymm_ref FROM mes_anterior)
+            AND TO_CHAR(dti.DATA,'YYYYMM') = (SELECT yyyymm_ref FROM mes_vendas)
           GROUP BY cockpit.SK_EMPRESA, vendedor.SK_VENDEDOR
       ),
       funcionario_dados AS (
@@ -115,13 +120,18 @@ export function buildMensalAnteriorSql(sellerScope, lojaCondition) {
                             THEN NVL(v.receita_mes,0) / m.meta_mes
                             ELSE 0 END DESC
           )                                    AS RANKING_ATINGIMENTO,
-          0                                    AS META_HERDADA,
+          CASE WHEN (SELECT yyyymm_ref FROM mes_vendas) <> (SELECT yyyymm_ref FROM mes_anterior)
+               THEN 1 ELSE 0 END               AS META_HERDADA,
           m.vendedor_id                        AS VENDEDOR_ID,
           f.funcionario_id                     AS FUNCIONARIO_ID,
-          f.CPF_CNPJ_SEM_PONTOS                AS CPF_CNPJ_SEM_PONTOS
+          f.CPF_CNPJ_SEM_PONTOS                AS CPF_CNPJ_SEM_PONTOS${incluirMargem ? `,
+          p.MARGEM_MAIS_FRETE                  AS MARGEM_MAIS_FRETE` : ""}
       FROM base_meta m
       LEFT JOIN base_vendas     v ON v.sk_empresa  = m.sk_empresa  AND v.sk_vendedor = m.sk_vendedor
-      LEFT JOIN funcionario_dados f ON f.funcionario_id = m.vendedor_id
+      LEFT JOIN funcionario_dados f ON f.funcionario_id = m.vendedor_id${incluirMargem ? `
+      LEFT JOIN VW_APURACAO_PREMIACAO_VENDEDOR p
+        ON p.VENDEDOR_ID = m.vendedor_id
+       AND p.MES_REFERENCIA = TO_CHAR(ADD_MONTHS(SYSDATE, -1), 'MM/YYYY')` : ""}
     )
     WHERE ${sellerScope.clause}
       AND ${lojaCondition.clause}
@@ -494,7 +504,7 @@ router.get("/ranking-vendedores", requireAuth, async (req, res) => {
       const lojaCondition = buildLojaInCondition(lojaColumn, lojaScope, "loja_scope_mensal")
       binds = { ...binds, ...lojaCondition.binds }
       if (periodo === "anterior") {
-        sql = buildMensalAnteriorSql(sellerScope, lojaCondition)
+        sql = buildMensalAnteriorSql(sellerScope, lojaCondition, { incluirMargem: podeIncluirMargem })
       } else if (podeIncluirMargem) {
         const lojaConditionR = buildLojaInCondition(
           lojaColumn ? `r.${lojaColumn}` : lojaColumn,
